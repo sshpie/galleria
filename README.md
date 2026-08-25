@@ -265,6 +265,26 @@ SIP H21 is a definitive 99%-confidence discriminator — no real SIP server uses
 | **L13** Static banner | `"Welcome to the ftp service"` — hardcoded, never customized | `ftp.py` banner string |
 | **L13** Any-creds-accepted | USER + any PASS → 231+230 (logged in) regardless of credentials | `ftp.py:284-299` |
 
+### Glastopf fingerprinting (`--fingerprint`, HTTP ports)
+
+Signals derived from static analysis of [mushorg/glastopf](https://github.com/mushorg/glastopf). Glastopf emulates vulnerable PHP apps (LFI/RFI/SQLi targets). All four probes run over standard HTTP — no auth required.
+
+**Definitive single-packet fingerprint:**
+```
+HEAD / HTTP/1.1\r\nHost: target\r\n\r\n
+```
+Response: `HTTP/1.0 200 OK\r\n...\r\nServer: Apache/2.0.48 \r\n` (trailing space after version)
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **G1** HTTP/1.0 downgrade | `HEAD /` with `HTTP/1.1` → response starts `HTTP/1.0` | `handler.py:47` — hardcoded |
+| **G1** Trailing space | `Server: Apache/2.0.48 ` — trailing space never in real Apache | `glastopf.py:265` sets `sys_version=' '` |
+| **G2** SQLi error prefix | `GET /?id=1'+OR+'1'='1` → body contains `"Invalid query: "` — real MySQL never uses this prefix | `responses.xml:6` — hardcoded |
+| **G3** LFI path hardcoded | `GET /?page=/etc/passwd` → response references `vars1.php` regardless of attacker input | `lfi.py:59` — hardcoded |
+| **G4** Frozen CSRF token | Two requests to `/phpmyadmin/` return identical CSRF token | `phpmyadmin.py:31` — `time.time()` default arg evaluated once at class load, never rotates |
+
+G1 combined (HTTP/1.0 + trailing space) = **99% confidence**. G2 and G3 = **98% confidence** each, independent of G1.
+
 ### LaBrea tarpit detection (`--fingerprint`, ports 21/22/23/25/110)
 
 TCP connect accepted but zero bytes received within 2 seconds on a first-speaker port = LaBrea tarpit. Logged as `portspoof` type at 75% confidence.
@@ -289,7 +309,7 @@ galleria matches behavioral signals against source-code-derived signatures to na
 | `honeyd` | H21 silent-accept, SimpleHTTPServer/BaseHTTP header, directory listing, fork latency, IIS 4.0/5.0 HTTP emulation, Apache 1.3/2.0 emulation, SSH-1.99 banner, static Telnet vendor banners, OS contradiction | 62–78% (multi-signal) |
 | `dionaea` | SIP nonce="foobar123" (hardcoded; 99%), FTP static banner / any-creds-accepted, MQTT CONNACK 0x00 with wrong creds, Memcache SET→STORED / GET→END (values not retained) | 88–99% per signal |
 | `opencanary` | `opencanary` string in HTTP response, nginx serving Apache "It works!" body | 65–80% |
-| `glastopf` | `glastopf` string in HTTP response | 95% |
+| `glastopf` | G1 HTTP/1.0 downgrade + `Server: Apache/2.0.48 ` trailing space, G2 `"Invalid query: "` on SQLi probe, G3 LFI always returns `vars1.php`, G4 phpMyAdmin CSRF token frozen across sessions | 85–99% per signal |
 | `portspoof` | Floor detection (junk-port / canary / decoy-path / cross-port / timing / malformed-verb), SMTP 503, FTP rare SYST OS | 75–85% |
 | `generic-python` | Python traceback / SyntaxError / NameError from C/Java syntax probes, misspelled HTTP headers | 85–90% |
 

@@ -181,6 +181,18 @@ func HTTP(ip string, port int) *Result {
 		}
 	}
 
+	// Test 6b: Glastopf dedicated probe suite.
+	// Run before generic header checks — Glastopf() probes SQLi/LFI/phpMyAdmin paths
+	// and the HTTP/1.0 downgrade signal independently of the generic GET / body.
+	gfp := Glastopf(ip, port)
+	if gfp.IsHoneypot {
+		r.HoneypotType = gfp.HoneypotType
+		r.Confidence = gfp.Confidence
+		r.Evidence = gfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
 	// Test 7: OS/service contradiction + known signatures.
 	normalResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
 	if normalResp != "" {
@@ -835,15 +847,124 @@ func LaBrea(ip string, port int) bool {
 	return n == 0
 }
 
+// Glastopf runs behavioral fingerprinting against a web application honeypot.
+//
+// Glastopf emulates vulnerable PHP apps (LFI/RFI/SQLi targets). All signals are
+// source-code-derived from static analysis of mushorg/glastopf.
+//
+// Signals:
+//
+//	G1 — HTTP/1.0 response to HTTP/1.1 HEAD + "Server: Apache/2.0.48 " trailing space
+//	     handler.py:47 hardcodes protocol; glastopf.py:265 sets sys_version=' ' (single space)
+//	     Combined: 99% confidence. Either alone: 72–85%.
+//	G2 — SQLi probe returns "Invalid query: " prefix
+//	     responses.xml:6 — no real MySQL uses this prefix. 98% confidence.
+//	G3 — LFI probe (?page=/etc/passwd) body references "vars1.php" (not the requested file)
+//	     lfi.py:59 — hardcoded path regardless of attacker input. 98% confidence.
+//	G4 — phpMyAdmin CSRF token identical across two successive requests
+//	     phpmyadmin.py:31 — token is MD5(import_timestamp), frozen at class-load time. 90%.
+func Glastopf(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// G1: HEAD / → HTTP/1.0 downgrade + Server: Apache/2.0.48 with trailing space.
+	// Both are independently significant; combined they are definitive.
+	headResp := rawHTTP(addr, "HEAD / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if headResp != "" {
+		http10 := strings.HasPrefix(headResp, "HTTP/1.0")
+		// Exact trailing-space match: "Apache/2.0.48 " — glastopf.py:265 sets sys_version=' '
+		apacheTrailingSpace := strings.Contains(headResp, "Server: Apache/2.0.48 ")
+		if http10 && apacheTrailingSpace {
+			r.HoneypotType = TypeGlastopf
+			r.Confidence = 99
+			r.Evidence = "Glastopf G1: HTTP/1.0 response to HTTP/1.1 (handler.py:47) + Server: Apache/2.0.48<SP> trailing space (glastopf.py:265 sys_version=' ') — definitive"
+			r.IsHoneypot = true
+			return r
+		}
+		if apacheTrailingSpace {
+			r.HoneypotType = TypeGlastopf
+			r.Confidence = 85
+			r.Evidence = "Glastopf G1b: Server: Apache/2.0.48<SP> trailing space (glastopf.py:265 sys_version=' ') — 2003-vintage banner with implementation artifact"
+			r.IsHoneypot = true
+			return r
+		}
+		if http10 && strings.Contains(headResp, "Apache/2.0.48") {
+			r.HoneypotType = TypeGlastopf
+			r.Confidence = 88
+			r.Evidence = "Glastopf G1c: HTTP/1.0 downgrade + Apache/2.0.48 banner (handler.py:47 + glastopf.cfg.dist:95)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	// G2: SQLi emulator returns hardcoded "Invalid query: " prefix.
+	// responses.xml:6 — no real MySQL error message starts with this string.
+	sqliResp := rawHTTP(addr, "GET /?id=1'+OR+'1'='1 HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(sqliResp, "Invalid query: ") {
+		r.HoneypotType = TypeGlastopf
+		r.Confidence = 98
+		r.Evidence = `Glastopf G2: SQLi probe returned "Invalid query: " prefix (glastopf responses.xml:6 — hardcoded, never used in real MySQL)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// G3: LFI emulator always references vars1.php regardless of requested path.
+	// lfi.py:59 — hardcoded path: "file_to_include = data_dir/virtualdocs/linux/vars1.php"
+	lfiResp := rawHTTP(addr, "GET /?page=/etc/passwd HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(lfiResp, "vars1.php") {
+		r.HoneypotType = TypeGlastopf
+		r.Confidence = 98
+		r.Evidence = "Glastopf G3: LFI probe (?page=/etc/passwd) references vars1.php in response (lfi.py:59 — hardcoded regardless of attacker input)"
+		r.IsHoneypot = true
+		return r
+	}
+
+	// G4: phpMyAdmin CSRF token frozen at import time — identical across all sessions.
+	// phpmyadmin.py:31: time_stamp=time.time() default arg evaluated once at class load.
+	pmaPath := "/phpmyadmin/"
+	pma1 := rawHTTP(addr, "GET "+pmaPath+" HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	pma2 := rawHTTP(addr, "GET "+pmaPath+" HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if pma1 != "" && pma2 != "" && len(pma1) > 50 {
+		tok1 := extractCSRFToken(pma1)
+		tok2 := extractCSRFToken(pma2)
+		if tok1 != "" && tok1 == tok2 {
+			r.HoneypotType = TypeGlastopf
+			r.Confidence = 90
+			r.Evidence = fmt.Sprintf("Glastopf G4: phpMyAdmin CSRF token identical across two requests (%s) — phpmyadmin.py:31 frozen at import time", tok1[:min(len(tok1), 16)])
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	return r
+}
+
+// extractCSRFToken extracts a token value from a phpMyAdmin-style hidden input.
+func extractCSRFToken(resp string) string {
+	const needle = `name="token" value="`
+	idx := strings.Index(resp, needle)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(needle)
+	end := strings.Index(resp[start:], `"`)
+	if end < 0 || end > 64 {
+		return ""
+	}
+	return resp[start : start+end]
+}
+
 // checkHTTPSignatures detects honeypot software from HTTP response headers and body.
 func checkHTTPSignatures(r *Result, resp string) {
 	lower := strings.ToLower(resp)
 
-	// Glastopf web honeypot signature.
+	// Glastopf: run dedicated function first for source-derived behavioral probes.
+	// The generic "glastopf" string check below is a fallback for misconfigured instances
+	// that expose their identity in the response body.
 	if strings.Contains(lower, "glastopf") {
 		r.HoneypotType = TypeGlastopf
 		r.Confidence = 95
-		r.Evidence = "Glastopf honeypot identifier in HTTP response"
+		r.Evidence = "Glastopf identifier string in HTTP response body"
 		r.IsHoneypot = true
 		return
 	}
@@ -890,8 +1011,10 @@ func checkHTTPSignatures(r *Result, resp string) {
 	}
 
 	// Specter / Honeyd emulates ancient Apache versions (2.0.39, 2.0.44, 1.3.x).
-	// These are virtually nonexistent on the modern internet.
-	if strings.Contains(lower, "server: apache/2.0.") || strings.Contains(lower, "server: apache/1.3.") {
+	// Exclude Apache/2.0.48 — that is Glastopf's specific banner (glastopf.cfg.dist:95).
+	// Glastopf is identified earlier in HTTP() via Glastopf() before checkHTTPSignatures runs.
+	if (strings.Contains(lower, "server: apache/2.0.") && !strings.Contains(lower, "apache/2.0.48")) ||
+		strings.Contains(lower, "server: apache/1.3.") {
 		r.HoneypotType = TypeHoneyd
 		r.Confidence = 62
 		r.Evidence = fmt.Sprintf("Ancient Apache (Specter/Honeyd emulation): %s", extractHeader(resp, "Server"))
