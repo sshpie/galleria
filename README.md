@@ -20,6 +20,7 @@ Port Verification Blue Team Asset
 | Conpot | Fake industrial control systems |
 | Krawl | Fake login pages, captures creds |
 | express-honeypot | Fake PHP LFI/RFI targets |
+| EoHoneypotBundle | Hidden form fields catch bots |
 | Portspoof | Makes every port look open |
 
 Also identifies 339 AI/ML platforms including:

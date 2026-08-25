@@ -35,6 +35,7 @@ const (
 	TypeConpot        HoneypotType = "CONPOT"          // ICS/SCADA multi-protocol honeypot
 	TypeKrawl             HoneypotType = "KRAWL"               // FastAPI web honeypot with AI-generated deception pages
 	TypeExpressHoneypot  HoneypotType = "EXPRESS_HONEYPOT"    // Node.js/Express LFI/RFI decoy honeypot
+	TypeEoHoneypotBundle HoneypotType = "EO_HONEYPOT_BUNDLE"  // Symfony form honeypot protection bundle
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -207,7 +208,17 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ab: express-honeypot — "bee" theme hardcoded throughout.
+	// Test 6ab: EoHoneypotBundle — hardcoded tabindex/aria-hidden/CSS on form fields.
+	eofp := EoHoneypotBundleCheck(ip, port)
+	if eofp.IsHoneypot {
+		r.HoneypotType = eofp.HoneypotType
+		r.Confidence = eofp.Confidence
+		r.Evidence = eofp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ac: express-honeypot — "bee" theme hardcoded throughout.
 	ehfp := ExpressHoneypot(ip, port)
 	if ehfp.IsHoneypot {
 		r.HoneypotType = ehfp.HoneypotType
@@ -1627,6 +1638,56 @@ func Amun(ip string, port int) *Result {
 			r.IsHoneypot = true
 		}
 		return r
+	}
+
+	return r
+}
+
+// EoHoneypotBundleCheck runs fingerprinting for eymengunay/EoHoneypotBundle.
+//
+// EoHoneypotBundle is a Symfony PHP bundle that injects hidden honeypot form fields
+// into pages for bot detection. It is deployed on real websites — the site itself is
+// legitimate, but the hidden form field has three hardcoded static attributes that
+// identify the bundle and expose its bypass method in a single DOM query.
+//
+// The combined selector [tabindex="-1"][aria-hidden="true"] with position:fixed at
+// -100% is unique to EoHoneypotBundle's default configuration. Finding it reveals:
+//   - PHP/Symfony stack
+//   - EoHoneypotBundle version range
+//   - Trivial bypass: omit the field from POST submission
+//
+// Signals:
+//
+//	HTTP  — tabindex="-1" + aria-hidden="true" in same HTML context — 95%
+//	HTTP  — style="position: fixed; left: -100%; top: -100%;" — 92%
+//
+// Probes /, /contact, /register, /login in order.
+func EoHoneypotBundleCheck(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	paths := []string{"/", "/contact", "/register", "/login", "/signup"}
+	for _, path := range paths {
+		resp := rawHTTP(addr, "GET "+path+" HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		if resp == "" {
+			continue
+		}
+		// Primary: both tabindex=-1 and aria-hidden="true" in the same page — unique combination.
+		if strings.Contains(resp, `tabindex="-1"`) && strings.Contains(resp, `aria-hidden="true"`) {
+			r.HoneypotType = TypeEoHoneypotBundle
+			r.Confidence = 95
+			r.Evidence = fmt.Sprintf(`EoHoneypotBundle: tabindex="-1" + aria-hidden="true" on %s (HoneypotType.php:100-113 — hardcoded default attrs; bypass: omit field from POST)`, path)
+			r.IsHoneypot = true
+			return r
+		}
+		// Secondary: fixed CSS positioning at -100% — the hiding style.
+		if strings.Contains(resp, "left: -100%") && strings.Contains(resp, "top: -100%") {
+			r.HoneypotType = TypeEoHoneypotBundle
+			r.Confidence = 92
+			r.Evidence = fmt.Sprintf(`EoHoneypotBundle: position:fixed left/top -100%% on %s (div_layout.html.twig:2 hardcoded hiding style)`, path)
+			r.IsHoneypot = true
+			return r
+		}
 	}
 
 	return r
