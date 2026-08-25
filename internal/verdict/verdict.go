@@ -144,8 +144,52 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
-	// FTP: SYST contradiction catches Specter/Honeyd emulating rare OS strings.
+	// IMAP: Amun hardcodes "Lotus Domino 6.5.4 7.0.2 IMAP4" banner.
+	if port == 143 {
+		fp := fingerprint.Amun(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// POP3: Amun uses 220 greeting (RFC 1939 requires +OK).
+	if port == 110 {
+		fp := fingerprint.Amun(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// VNC: Amun's realvnc_modul.py:28 omits the trailing \n from the RFB banner.
+	if port == 5900 {
+		fp := fingerprint.Amun(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// FTP: Amun banner check runs first; fallthrough to Honeyd/Specter SYST check.
 	if port == 21 {
+		afp := fingerprint.Amun(ip, port)
+		if afp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(afp.HoneypotType)
+			v.Confidence = afp.Confidence
+			v.Evidence = afp.Evidence
+			return v
+		}
 		fp := fingerprint.FTP(ip, port)
 		if fp.IsHoneypot {
 			v.State = "HONEYPOT"

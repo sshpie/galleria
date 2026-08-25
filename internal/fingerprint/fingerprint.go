@@ -31,6 +31,7 @@ const (
 	TypeKippo         HoneypotType = "KIPPO"          // Kippo SSH honeypot (Cowrie predecessor)
 	TypeOpenCanary    HoneypotType = "OPENCANARY"     // multi-protocol Python honeypot
 	TypeCanarytokens  HoneypotType = "CANARYTOKENS"   // Thinkst canary token infrastructure
+	TypeAmun          HoneypotType = "AMUN"            // Amun worm honeypot
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -189,6 +190,16 @@ func HTTP(ip string, port int) *Result {
 		r.HoneypotType = ctfp.HoneypotType
 		r.Confidence = ctfp.Confidence
 		r.Evidence = ctfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6aa: Amun HTTP — developer emails hardcoded in default page (http_modul.py:100).
+	afp := Amun(ip, port)
+	if afp.IsHoneypot {
+		r.HoneypotType = afp.HoneypotType
+		r.Confidence = afp.Confidence
+		r.Evidence = afp.Evidence
 		r.IsHoneypot = true
 		return r
 	}
@@ -1486,6 +1497,113 @@ func Canarytokens(ip string, port int) *Result {
 		r.Confidence = 92
 		r.Evidence = "Canarytokens G_CT2: 'canarytokens' in HTTP response body"
 		r.IsHoneypot = true
+	}
+
+	return r
+}
+
+// Amun runs behavioral fingerprinting for the Amun worm honeypot.
+//
+// Amun is a Python-based low-interaction honeypot designed to capture malware exploiting
+// Windows vulnerabilities (DCOM, LSASS, ASN.1, Bagle). Each emulated service module
+// hardcodes static identifiers that are uniquely detectable pre-authentication.
+//
+// Signals:
+//
+//	HTTP  — body contains "tim.bohn@gmx.net" (http_modul.py:100 hardcoded dev email) — 99%
+//	HTTP  — Server: Apache/1.3.29 (Unix) PHP/4.3.4 (http_modul.py:100 hardcoded) — 88%
+//	FTP   — banner "220 Welcome to my FTP Server" (ftpd_modul.py hardcoded) — 90%
+//	FTP   — any credentials accepted (230) + PASV → "500 Unknown Command" (no PASV support) — 88%
+//	IMAP  — banner contains "Lotus Domino 6.5.4 7.0.2 IMAP4" (imap_modul.py hardcoded) — 95%
+//	POP3  — greeting starts with "220 mailserver" (wrong code; real POP3 uses +OK) — 90%
+//	VNC   — banner exactly "RFB 003.008" without trailing \n (realvnc_modul.py:28) — 92%
+func Amun(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// HTTP: developer emails hardcoded in default page body (http_modul.py:100).
+	if port == 80 || port == 8080 || port == 443 || port == 8000 {
+		resp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		if strings.Contains(resp, "tim.bohn@gmx.net") || strings.Contains(resp, "johan83@freenet.de") {
+			r.HoneypotType = TypeAmun
+			r.Confidence = 99
+			r.Evidence = `Amun HTTP: body contains hardcoded developer email "tim.bohn@gmx.net" (http_modul.py:100)`
+			r.IsHoneypot = true
+			return r
+		}
+		if strings.Contains(resp, "Apache/1.3.29 (Unix) PHP/4.3.4") {
+			r.HoneypotType = TypeAmun
+			r.Confidence = 88
+			r.Evidence = "Amun HTTP: Server: Apache/1.3.29 (Unix) PHP/4.3.4 (http_modul.py:100 hardcoded banner)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	// FTP: hardcoded banner + no PASV support (ftpd_modul.py).
+	if port == 21 {
+		banner := rawTCPRead(addr)
+		if strings.Contains(banner, "Welcome to my FTP Server") {
+			r.HoneypotType = TypeAmun
+			r.Confidence = 90
+			r.Evidence = `Amun FTP: "220 Welcome to my FTP Server" hardcoded banner (ftpd_modul.py)`
+			r.IsHoneypot = true
+			return r
+		}
+		// Any credentials accepted (230), then PASV returns 500 — no PASV support in ftpd_modul.py.
+		conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+		if err == nil {
+			conn.SetDeadline(time.Now().Add(probeTimeout))
+			io.ReadAll(io.LimitReader(conn, 256)) // drain banner
+			conn.Write([]byte("USER amun\r\nPASS test\r\nPASV\r\n"))
+			resp, _ := io.ReadAll(io.LimitReader(conn, 512))
+			conn.Close()
+			s := string(resp)
+			if strings.Contains(s, "230") && strings.Contains(s, "500 Unknown Command") {
+				r.HoneypotType = TypeAmun
+				r.Confidence = 88
+				r.Evidence = "Amun FTP: any credentials accepted (230) + PASV → 500 Unknown Command (ftpd_modul.py no PASV)"
+				r.IsHoneypot = true
+				return r
+			}
+		}
+	}
+
+	// IMAP: Lotus Domino banner (imap_modul.py hardcoded).
+	if port == 143 {
+		banner := rawTCPRead(addr)
+		if strings.Contains(banner, "Lotus Domino") {
+			r.HoneypotType = TypeAmun
+			r.Confidence = 95
+			r.Evidence = `Amun IMAP: "Lotus Domino 6.5.4 7.0.2 IMAP4" hardcoded banner (imap_modul.py)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// POP3: wrong greeting code — Amun uses 220, real POP3 requires +OK (RFC 1939).
+	if port == 110 {
+		banner := rawTCPRead(addr)
+		if strings.HasPrefix(strings.TrimSpace(banner), "220 mailserver") {
+			r.HoneypotType = TypeAmun
+			r.Confidence = 90
+			r.Evidence = `Amun POP3: "220 mailserver" greeting (wrong code; RFC 1939 requires +OK; slmail_modul.py hardcoded)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// VNC: RFB banner missing trailing \n (realvnc_modul.py:28 — newline omitted in source).
+	if port == 5900 {
+		banner := rawTCPRead(addr)
+		banner = strings.TrimRight(banner, "\r")
+		if banner == "RFB 003.008" {
+			r.HoneypotType = TypeAmun
+			r.Confidence = 92
+			r.Evidence = `Amun VNC: "RFB 003.008" without trailing \n (realvnc_modul.py:28 — missing newline in source)`
+			r.IsHoneypot = true
+		}
+		return r
 	}
 
 	return r

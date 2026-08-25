@@ -8,14 +8,17 @@ Honeypot detector and AI scanner.
 
 ## Detects
 
-- Cowrie
-- Kippo
-- Honeyd
-- Dionaea
-- Glastopf
-- OpenCanary
-- Canarytokens
-- Portspoof
+| Honeypot | Description |
+|----------|-------------|
+| Cowrie | SSH/Telnet honeypot for logging brute-force attacks and shell interaction |
+| Kippo | SSH honeypot for capturing brute-force and session logs |
+| Honeyd | Highly configurable — can emulate multiple services and operating systems |
+| Dionaea | Designed to capture malware targeting SMB, SIP, MQTT, and other protocols |
+| Glastopf | Web application honeypot for detecting web attacks |
+| OpenCanary | Multi-protocol commercial honeypot for easy network deployment |
+| Canarytokens | Canary token infrastructure for detecting access to tripwired resources |
+| Amun | Malware collection honeypot emulating Windows vulnerability exploits |
+| Portspoof | Port noise generator — responds to everything to waste scanner time |
 
 Also identifies 339 AI/ML platforms including:
 
