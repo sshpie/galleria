@@ -2,6 +2,19 @@
 
 Honeypot detector and AI scanner.
 
+## Detects
+
+| Honeypot | Protocols | How |
+|----------|-----------|-----|
+| **Cowrie** | SSH | Default banner, KEXINIT null padding, blowfish-cbc cipher list, silent drop on malformed packet |
+| **Kippo** | SSH | 2008-vintage banner with modern KEX algorithms, ASCII "Protocol mismatch" on malformed packet |
+| **Honeyd** | HTTP, TCP | Open-no-service (TCP accepts, returns nothing), Python SimpleHTTPServer header, ancient IIS/Apache banners |
+| **Dionaea** | SIP, MQTT, FTP, Memcache | Hardcoded `nonce="foobar123"`, CONNACK 0x00 with wrong creds, static FTP banner, any credentials accepted |
+| **Glastopf** | HTTP | HTTP/1.0 downgrade + `Server: Apache/2.0.48 ` trailing space, hardcoded SQLi/LFI responses |
+| **Portspoof** | HTTP, TCP | Catch-all floor detection (junk ports, canary ports, identical cross-port responses, timing) |
+
+Also identifies 339 AI/ML platforms (Ollama, Qdrant, ChromaDB, Milvus, MLflow, and others) on hosts that pass fingerprinting.
+
 ## Install
 
 ```bash
@@ -15,7 +28,6 @@ Or grab a release binary from [releases](https://github.com/sshpie/galleria/rele
 ```bash
 galleria <ip> --ports <port-list> [flags]
 
-# Common patterns
 galleria 85.9.205.64 --ports 80,443,8080,11434,6333,9200
 galleria 85.9.205.64 --ports "$(cat ports.txt | tr '\n' ',')"
 galleria 47.123.220.240 --ports 22,23,80,443,5060,1883 --fingerprint
@@ -72,7 +84,6 @@ JSONL to stdout (or `--out`). Progress to stderr. Last stdout line is always a `
 
 galleria ships a built-in MCP server. Any LLM with Claude Code can say "scan 47.123.220.240 with galleria" and it runs natively.
 
-**Setup:**
 ```bash
 claude mcp add galleria -- galleria mcp
 ```
@@ -82,19 +93,18 @@ Or add to `~/.claude/mcp.json`:
 {"mcpServers": {"galleria": {"command": "galleria", "args": ["mcp"]}}}
 ```
 
-**Tool:** `scan` — accepts `ip` (required), `ports`, `fingerprint` (bool), `concurrency`. Returns per-port JSONL + summary record.
+Tool `scan` accepts: `ip` (required), `ports`, `fingerprint` (bool), `concurrency`. Returns per-port JSONL + summary record.
 
-**From the shell:**
 ```bash
-# Let an LLM analyze the output
 galleria 47.123.220.240 --ports "$(cat ports.txt | tr '\n' ',')" --fingerprint | \
   claude "Is this a real AI deployment or a honeypot?"
 
-# Parse summary only
 galleria 47.123.220.240 --ports 22,80,443 --fingerprint | grep '"type":"summary"' | jq .
 ```
 
-## Honeypot fingerprinting (`--fingerprint`)
+## Fingerprint signals
+
+All signals are derived from static source analysis of each honeypot project. Every `evidence` field in output names the specific source file and line number.
 
 ### Floor detection (always active)
 
@@ -109,11 +119,7 @@ Six stages run in parallel before per-port probing. First positive wins.
 | Timing | Response latency stddev < 15ms across ≥5 ports |
 | Malformed verb | `XYZZY-GALLERIA / HTTP/1.1` → 200 (real HTTP returns 400/405/501) |
 
-### Named honeypot identification
-
-All signals are derived from static source analysis of each honeypot project. The `honeypot_type` and `evidence` fields in output report the name and which signals fired.
-
-#### Cowrie (ports 22/2222/2200) — [cowrie/cowrie](https://github.com/cowrie/cowrie)
+### Cowrie (ports 22/2222/2200) — [cowrie/cowrie](https://github.com/cowrie/cowrie)
 
 | Signal | Probe | Source |
 |--------|-------|--------|
@@ -124,7 +130,7 @@ All signals are derived from static source analysis of each honeypot project. Th
 
 Confidence: 85–95% multi-signal; S6 silent drop alone = 90%.
 
-#### Kippo (ports 22/2222/2200) — [desaster/kippo](https://github.com/desaster/kippo)
+### Kippo (ports 22/2222/2200) — [desaster/kippo](https://github.com/desaster/kippo)
 
 | Signal | Probe | Source |
 |--------|-------|--------|
@@ -135,7 +141,7 @@ Confidence: 85–95% multi-signal; S6 silent drop alone = 90%.
 
 K_C4 is definitive — zero false positives. Confidence: 80–95% (K_C4 alone = 95%).
 
-#### Honeyd (HTTP ports) — [DataSoft/Honeyd](https://github.com/DataSoft/Honeyd)
+### Honeyd (HTTP ports) — [DataSoft/Honeyd](https://github.com/DataSoft/Honeyd)
 
 | Signal | Probe | Source |
 |--------|-------|--------|
@@ -148,7 +154,7 @@ K_C4 is definitive — zero false positives. Confidence: 80–95% (K_C4 alone = 
 
 Confidence: 62–78% (H21 = 72%; multi-signal combinations higher).
 
-#### Dionaea (ports 21/1883/5060/5061/8883/11211) — [DinoTools/DionaeaFR](https://github.com/DinoTools/DionaeaFR)
+### Dionaea (ports 21/1883/5060/5061/8883/11211) — [DinoTools/DionaeaFR](https://github.com/DinoTools/DionaeaFR)
 
 | Protocol | Signal | Probe | Source |
 |----------|--------|-------|--------|
@@ -161,7 +167,7 @@ Confidence: 62–78% (H21 = 72%; multi-signal combinations higher).
 
 SIP nonce = 99% confidence (globally unique, hardcoded). Other signals: 88–95%.
 
-#### Glastopf (HTTP ports) — [mushorg/glastopf](https://github.com/mushorg/glastopf)
+### Glastopf (HTTP ports) — [mushorg/glastopf](https://github.com/mushorg/glastopf)
 
 Definitive single-packet test: `HEAD / HTTP/1.1` → response `HTTP/1.0 ... Server: Apache/2.0.48 ` (trailing space).
 
@@ -174,20 +180,3 @@ Definitive single-packet test: `HEAD / HTTP/1.1` → response `HTTP/1.0 ... Serv
 | G4 Frozen CSRF | Two `/phpmyadmin/` requests → identical token (default arg frozen at import) | `phpmyadmin.py:31` |
 
 G1 combined = 99%. G2 and G3 = 98% each, independent.
-
-#### Summary table
-
-| `honeypot_type` | Protocols | Confidence |
-|-----------------|-----------|-----------|
-| `cowrie` | SSH | 85–95% |
-| `kippo` | SSH | 80–95% |
-| `honeyd` | HTTP, TCP | 62–78% |
-| `dionaea` | SIP, MQTT, Memcache, FTP | 88–99% |
-| `glastopf` | HTTP | 85–99% |
-| `opencanary` | HTTP | 65–80% |
-| `portspoof` | HTTP, SMTP, FTP | 75–85% |
-| `generic-python` | HTTP | 85–90% |
-
-## Corpus
-
-339 AI/ML platform fingerprints embedded at compile time via `go:embed`. Source: [sshpie/tome](https://github.com/sshpie/tome). Includes Ollama, Qdrant, ChromaDB, Milvus, Weaviate, MLflow, Hugging Face inference, Kokoro TTS, and ~330 others. No runtime dependencies.
