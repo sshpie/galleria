@@ -37,6 +37,7 @@ const (
 	TypeExpressHoneypot  HoneypotType = "EXPRESS_HONEYPOT"    // Node.js/Express LFI/RFI decoy honeypot
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
+	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -209,7 +210,17 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ab: SAP Cloud Active Defense control panel — unauthenticated /statistics and /user/1.
+	// Test 6ab: FCaptcha CAPTCHA server — challenge endpoint shape and widget JS.
+	fcfp := FCaptcha(ip, port)
+	if fcfp.IsHoneypot {
+		r.HoneypotType = fcfp.HoneypotType
+		r.Confidence = fcfp.Confidence
+		r.Evidence = fcfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ab2: SAP Cloud Active Defense control panel — unauthenticated /statistics and /user/1.
 	cadfp := CloudActiveDefense(ip, port)
 	if cadfp.IsHoneypot {
 		r.HoneypotType = cadfp.HoneypotType
@@ -1649,6 +1660,55 @@ func Amun(ip string, port int) *Result {
 			r.IsHoneypot = true
 		}
 		return r
+	}
+
+	return r
+}
+
+// FCaptcha runs behavioral fingerprinting for WebDecoy/FCaptcha CAPTCHA server.
+//
+// FCaptcha is a Go/Node.js/Python CAPTCHA server with PoW, JA3/JA4 TLS fingerprinting,
+// and behavioral signal analysis. It runs as a standalone service (default port 3000).
+// The challenge endpoint shape and widget JS are unique identifiers.
+//
+// Signals:
+//
+//	HTTP  — GET /api/pow/challenge → {"challengeId","minAgeMs","difficulty"} shape — 99%
+//	HTTP  — GET /fcaptcha.js → 200 + "FCaptcha" in body — 95%
+//	HTTP  — GET /health → {"status":"ok"} + Access-Control-Allow-Origin: * — 82%
+func FCaptcha(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// F1: PoW challenge endpoint — FCaptcha-specific response shape.
+	chalResp := rawHTTP(addr, "GET /api/pow/challenge?siteKey=test HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(chalResp, "challengeId") && strings.Contains(chalResp, "minAgeMs") {
+		r.HoneypotType = TypeFCaptcha
+		r.Confidence = 99
+		r.Evidence = `FCaptcha F1: /api/pow/challenge returns {"challengeId","minAgeMs","difficulty"} — unique FCaptcha PoW challenge shape`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// F2: Widget JS — /fcaptcha.js returns the FCaptcha client library.
+	jsResp := rawHTTP(addr, "GET /fcaptcha.js HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if (strings.HasPrefix(jsResp, "HTTP/1.1 200") || strings.HasPrefix(jsResp, "HTTP/1.0 200")) &&
+		strings.Contains(jsResp, "FCaptcha") {
+		r.HoneypotType = TypeFCaptcha
+		r.Confidence = 95
+		r.Evidence = `FCaptcha F2: GET /fcaptcha.js returns 200 with "FCaptcha" in body (client widget JS)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// F3: Health endpoint + CORS wildcard (FCaptcha sets Access-Control-Allow-Origin: * on all responses).
+	healthResp := rawHTTP(addr, "GET /health HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if (strings.Contains(healthResp, `"status":"ok"`) || strings.Contains(healthResp, `"status": "ok"`)) &&
+		strings.Contains(healthResp, "Access-Control-Allow-Origin: *") {
+		r.HoneypotType = TypeFCaptcha
+		r.Confidence = 82
+		r.Evidence = `FCaptcha F3: GET /health → {"status":"ok"} + Access-Control-Allow-Origin: * (all origins)`
+		r.IsHoneypot = true
 	}
 
 	return r

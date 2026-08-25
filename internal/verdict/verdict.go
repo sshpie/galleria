@@ -156,6 +156,18 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
+	// FCaptcha CAPTCHA server (default port 3000, but can run on any HTTP port).
+	if port == 3000 {
+		fp := fingerprint.FCaptcha(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
 	// Modbus TCP (502): Conpot FC17 stub detection.
 	if port == 502 {
 		fp := fingerprint.Conpot(ip, port)
