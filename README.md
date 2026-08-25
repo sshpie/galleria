@@ -11,7 +11,7 @@ Honeypot detector and AI scanner.
 - Glastopf
 - Portspoof
 
-Also identifies 339 real AI/ML platforms (Ollama, Qdrant, ChromaDB, Milvus, MLflow, and others).
+Also identifies 339 AI/ML platforms (Ollama, Qdrant, ChromaDB, Milvus, MLflow, and others).
 
 ## Install
 
