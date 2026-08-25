@@ -9,17 +9,17 @@ Port Verification Blue Team Asset
 
 | Honeypot | Description |
 |----------|-------------|
-| Cowrie | SSH/Telnet honeypot for logging brute-force attacks and shell interaction |
-| Kippo | SSH honeypot for capturing brute-force and session logs |
-| Honeyd | Highly configurable — can emulate multiple services and operating systems |
-| Dionaea | Designed to capture malware targeting SMB, SIP, MQTT, and other protocols |
-| Glastopf | Web application honeypot for detecting web attacks |
-| OpenCanary | Multi-protocol commercial honeypot for easy network deployment |
-| Canarytokens | Canary token infrastructure for detecting access to tripwired resources |
-| Amun | Malware collection honeypot emulating Windows vulnerability exploits |
-| Conpot | Industrial control system honeypot emulating factory and utility protocols |
-| Krawl | Web honeypot that serves fake login pages and captures credentials |
-| Portspoof | Port noise generator — responds to everything to waste scanner time |
+| Cowrie | Fake SSH server, logs attackers |
+| Kippo | SSH trap, captures brute-force |
+| Honeyd | Emulates networks and services |
+| Dionaea | Catches malware via fake services |
+| Glastopf | Fake web app, traps scanners |
+| OpenCanary | Multi-protocol network trap |
+| Canarytokens | Tripwire tokens, detects access |
+| Amun | Fake Windows exploit targets |
+| Conpot | Fake industrial control systems |
+| Krawl | Fake login pages, captures creds |
+| Portspoof | Makes every port look open |
 
 Also identifies 339 AI/ML platforms including:
 
