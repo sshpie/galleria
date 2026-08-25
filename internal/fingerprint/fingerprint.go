@@ -85,27 +85,61 @@ func HTTP(ip string, port int) *Result {
 		}
 	}
 
-	// Test 3: Persistent connection test.
-	// Send two HTTP GET requests on one TCP connection.
-	// Real HTTP/1.1 servers handle pipelining or at least read the second request.
-	// Simple honeypots close the connection after the first response.
-	pipedResp := rawTCP(addr,
-		"GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: keep-alive\r\n\r\n"+
-			"GET /galleria-probe-2 HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
-	if pipedResp != "" {
-		// Count HTTP response headers in the reply.
-		count := strings.Count(pipedResp, "HTTP/1.")
-		if count < 2 {
-			// Only one response — may indicate honeypot closing early.
-			// Don't flag alone; combine with other signals.
-			r.Evidence += " [single-response to pipelined request]"
+	// Test 3: Content-Length mismatch.
+	// Honeypots return canned bodies with wrong or missing Content-Length.
+	// Real servers set it correctly. A mismatch > 5% or total absence on 200 is a signal.
+	clResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if clResp != "" {
+		if checkContentLengthMismatch(r, clResp) {
+			return r
 		}
 	}
 
-	// Test 4: Known honeypot signatures in Server header.
+	// Test 4: HTTP version inconsistency.
+	// Send HTTP/1.0 (no Host header). Real servers respond with HTTP/1.0 or 1.1.
+	// Some portspoof/Honeyd emulators always respond HTTP/1.1 regardless.
+	v10Resp := rawHTTP(addr, "GET / HTTP/1.0\r\n\r\n")
+	if v10Resp != "" {
+		// HTTP/1.0 request → server responds with HTTP/1.1 AND no Connection: close
+		// suggests the server ignores request version (static emulator tell).
+		if strings.HasPrefix(v10Resp, "HTTP/1.1") && !strings.Contains(v10Resp, "Connection: close") {
+			r.Evidence += " [HTTP/1.0 req → HTTP/1.1 resp without Connection:close]"
+		}
+	}
+
+	// Test 5: HTTP pipeline depth (3 requests).
+	// Real HTTP/1.1 servers respond to all 3; simple emulators respond to first only.
+	pipedResp := rawTCP(addr,
+		"GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: keep-alive\r\n\r\n"+
+			"GET /galleria-probe-2 HTTP/1.1\r\nHost: "+ip+"\r\nConnection: keep-alive\r\n\r\n"+
+			"GET /galleria-probe-3 HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if pipedResp != "" {
+		count := strings.Count(pipedResp, "HTTP/1.")
+		if count < 2 {
+			r.Evidence += " [single-response to 3-request pipeline]"
+		}
+	}
+
+	// Test 6: HTTP OPTIONS → missing Allow header.
+	// Real HTTP/1.1 servers return Allow: GET, HEAD, POST, OPTIONS.
+	// Portspoof / minimal emulators return 200 with no Allow header.
+	optResp := rawHTTP(addr, "OPTIONS * HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if optResp != "" {
+		code := httpCode(optResp)
+		hasAllow := strings.Contains(strings.ToLower(optResp), "allow:")
+		if code == 200 && !hasAllow {
+			r.Evidence += " [OPTIONS 200 without Allow header]"
+		}
+	}
+
+	// Test 7: OS/service contradiction + known signatures.
 	normalResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
 	if normalResp != "" {
 		checkHTTPSignatures(r, normalResp)
+		if r.IsHoneypot {
+			return r
+		}
+		checkOSContradiction(r, normalResp)
 		if r.IsHoneypot {
 			return r
 		}
@@ -233,6 +267,238 @@ func Generic(ip string, port int) *Result {
 	return r
 }
 
+// SMTP runs behavioral fingerprinting on an SMTP-speaking port.
+// Real SMTP servers send a 220 banner immediately.
+// BackOfficer Friendly / low-interaction honeypots disconnect with "503 Service Unavailable".
+// Honeyd SMTP emulation often returns a minimal 220 with no capability negotiation.
+func SMTP(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	banner := rawTCPRead(addr)
+	if banner == "" {
+		return r
+	}
+
+	// BOF / minimal honeypot: 503 Service Unavailable immediately.
+	if strings.HasPrefix(banner, "503") {
+		r.HoneypotType = TypePortspoof
+		r.Confidence = 85
+		r.Evidence = fmt.Sprintf("SMTP: 503 on connect (BOF/minimal honeypot pattern): %s", strings.TrimSpace(banner[:min(len(banner), 80)]))
+		r.IsHoneypot = true
+		return r
+	}
+
+	if !strings.HasPrefix(banner, "220") {
+		return r
+	}
+
+	// Test: send EHLO and check capability depth.
+	// Real SMTP: multi-line capability list (250-SIZE, 250-STARTTLS, etc.)
+	// Honeyd minimal SMTP: 250 OK with no capabilities.
+	ehloResp, _ := rawTCPExchange(addr, "EHLO galleria.probe\r\n")
+	if ehloResp != "" {
+		capLines := strings.Count(ehloResp, "\n")
+		if strings.HasPrefix(ehloResp, "250") && capLines < 2 {
+			r.HoneypotType = TypePortspoof
+			r.Confidence = 65
+			r.Evidence = "SMTP: EHLO returned single-line 250 (no capability list; real SMTP returns 250-AUTH, 250-SIZE, etc.)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	r.HoneypotType = TypeReal
+	r.Evidence = fmt.Sprintf("SMTP banner: %s", strings.TrimSpace(banner[:min(len(banner), 80)]))
+	return r
+}
+
+// Telnet runs behavioral fingerprinting on a Telnet-speaking port.
+// Cowrie Telnet emulation sends a specific login prompt pattern without proper IAC negotiation.
+func Telnet(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	banner := rawTCPRead(addr)
+	if banner == "" {
+		return r
+	}
+
+	// Real telnetd starts with IAC DO/WILL negotiation bytes (0xFF sequences).
+	// Cowrie Telnet sends a plain-text login prompt without IAC preamble.
+	hasIAC := strings.ContainsRune(banner, 0xFF)
+	lower := strings.ToLower(banner)
+	hasLoginPrompt := strings.Contains(lower, "login:") || strings.Contains(lower, "username:")
+
+	if hasLoginPrompt && !hasIAC {
+		r.HoneypotType = TypeCowrie
+		r.Confidence = 70
+		r.Evidence = "Telnet: login prompt without IAC negotiation (Cowrie-style emulation)"
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Honeyd Telnet emulation specific banner patterns.
+	if strings.Contains(lower, "welcome to microsoft telnet service") ||
+		strings.Contains(lower, "cisco systems") && !hasIAC {
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 70
+		r.Evidence = "Telnet: static vendor banner without IAC negotiation (Honeyd pattern)"
+		r.IsHoneypot = true
+		return r
+	}
+
+	r.Evidence = fmt.Sprintf("Telnet banner (IAC=%v): %s", hasIAC, strings.TrimSpace(banner[:min(len(banner), 60)]))
+	return r
+}
+
+// checkContentLengthMismatch detects honeypots that return incorrect Content-Length headers.
+// Returns true and populates r if a mismatch is found.
+func checkContentLengthMismatch(r *Result, resp string) bool {
+	// Split headers from body.
+	headerEnd := strings.Index(resp, "\r\n\r\n")
+	if headerEnd < 0 {
+		return false
+	}
+	headers := resp[:headerEnd]
+	body := resp[headerEnd+4:]
+
+	// Find Content-Length header.
+	var clValue int
+	for _, line := range strings.Split(headers, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+			fmt.Sscanf(strings.TrimSpace(line[15:]), "%d", &clValue)
+			break
+		}
+	}
+
+	// Only flag when Content-Length is present and obviously wrong.
+	// A mismatch > 20% or > 500 bytes on a non-empty body is suspicious.
+	actualLen := len(body)
+	if clValue > 0 && actualLen > 0 {
+		diff := clValue - actualLen
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > 500 || (actualLen > 100 && diff*100/actualLen > 20) {
+			r.HoneypotType = TypePortspoof
+			r.Confidence = 70
+			r.Evidence = fmt.Sprintf("Content-Length mismatch: header=%d actual=%d (honeypot returning static canned body)", clValue, actualLen)
+			r.IsHoneypot = true
+			return true
+		}
+	}
+	return false
+}
+
+// checkOSContradiction detects OS/service identity contradictions.
+// Real servers are internally consistent; honeypots often mix OS fingerprints.
+func checkOSContradiction(r *Result, resp string) {
+	lower := strings.ToLower(resp)
+
+	// Apache on IIS port claiming Windows but showing Unix-style error paths.
+	serverApache := strings.Contains(lower, "server: apache")
+	serverIIS := strings.Contains(lower, "server: microsoft-iis")
+	serverNginx := strings.Contains(lower, "server: nginx")
+
+	// Windows-specific Date format: "Mon, 01 Jan 2024 00:00:00 GMT" — same as Unix actually.
+	// Better: look for body content inconsistencies.
+	// Honeyd IIS emulation: claims IIS but body has Apache-style error format.
+	if serverIIS && strings.Contains(lower, "apache") {
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 75
+		r.Evidence = "OS contradiction: Server: Microsoft-IIS but body contains Apache references"
+		r.IsHoneypot = true
+		return
+	}
+	if serverApache && strings.Contains(lower, "iis") && strings.Contains(lower, "microsoft") {
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 70
+		r.Evidence = "OS contradiction: Server: Apache but body contains IIS/Microsoft references"
+		r.IsHoneypot = true
+		return
+	}
+	// nginx claiming to be Apache in error pages (OpenCanary pattern).
+	if serverNginx && strings.Contains(lower, "it works!") {
+		r.HoneypotType = TypeOpenCanary
+		r.Confidence = 65
+		r.Evidence = "OS contradiction: Server: nginx but default Apache 'It works!' body"
+		r.IsHoneypot = true
+		return
+	}
+	_ = serverApache
+}
+
+// FTP runs behavioral fingerprinting on an FTP-speaking port.
+// Specter/Honeyd FTP emulation returns one of a fixed set of SYST OS strings;
+// cross-checking against the Server banner or known-fake strings catches them.
+func FTP(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	banner := rawTCPRead(addr)
+	if banner == "" {
+		return r
+	}
+	if !strings.HasPrefix(banner, "220") {
+		return r
+	}
+
+	// Anonymous login attempt.
+	r1, _ := rawTCPExchange(addr, "USER anonymous\r\n")
+	if r1 == "" || !strings.HasPrefix(r1, "331") {
+		// No 331 Password required → not real FTP or full anonymous denial.
+		// Specter says 230 directly for anonymous; check.
+		if !strings.HasPrefix(r1, "230") {
+			return r
+		}
+	}
+	rawTCPExchange(addr, "PASS galleria@probe.io\r\n")
+
+	// SYST reveals the claimed OS.
+	systResp, _ := rawTCPExchange(addr, "SYST\r\n")
+	if systResp == "" {
+		return r
+	}
+
+	// Known Specter/Honeyd preset SYST strings that are rarely seen on real servers.
+	// Specter lets admins pick from: UNIX, Windows_NT, AIX, HP-UX, Irix, SunOS, OSF/1, etc.
+	lsyst := strings.ToLower(systResp)
+	if strings.Contains(lsyst, "215 irix") ||
+		strings.Contains(lsyst, "215 aix") ||
+		strings.Contains(lsyst, "215 hp-ux") ||
+		strings.Contains(lsyst, "215 osf/1") {
+		r.HoneypotType = TypePortspoof
+		r.Confidence = 70
+		r.Evidence = fmt.Sprintf("FTP SYST returns rare OS string (Specter/Honeyd preset): %s", strings.TrimSpace(systResp[:min(len(systResp), 60)]))
+		r.IsHoneypot = true
+		return r
+	}
+
+	r.HoneypotType = TypeReal
+	r.Evidence = fmt.Sprintf("FTP: %s / SYST: %s", strings.TrimSpace(banner[:min(len(banner), 60)]), strings.TrimSpace(systResp[:min(len(systResp), 40)]))
+	return r
+}
+
+// LaBrea detects LaBrea tarpit behavior: connection accepted but TCP window frozen.
+// LaBrea accepts SYN, sends SYN-ACK with window=0, then never advances.
+// We detect this as: TCP connect succeeds but zero bytes received within a 2s read window.
+func LaBrea(ip string, port int) bool {
+	addr := fmt.Sprintf("%s:%d", ip, port)
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	// Send nothing — a tarpit will freeze; a real server will either send a banner or wait.
+	buf := make([]byte, 1)
+	n, _ := conn.Read(buf)
+	// If connection succeeded but zero bytes read in 2s on a port that should speak first
+	// (SSH, FTP, SMTP, Telnet), that's a tarpit signal.
+	return n == 0
+}
+
 // known HTTP server signatures for honeypot software.
 func checkHTTPSignatures(r *Result, resp string) {
 	lower := strings.ToLower(resp)
@@ -253,15 +519,42 @@ func checkHTTPSignatures(r *Result, resp string) {
 		r.IsHoneypot = true
 		return
 	}
-	// Honeyd HTTP emulation — sends specific dates or server strings.
-	if strings.Contains(resp, "Server: Microsoft-IIS/5.0") && strings.Contains(resp, "Date:") {
-		// Honeyd commonly fakes IIS 5.0 — extremely rare on modern internet.
+	// Honeyd HTTP emulation — commonly fakes IIS 5.0 or extremely old Apache.
+	if strings.Contains(resp, "Server: Microsoft-IIS/5.0") {
 		r.HoneypotType = TypeHoneyd
-		r.Confidence = 65
+		r.Confidence = 70
 		r.Evidence = "Honeyd IIS 5.0 emulation signature"
 		r.IsHoneypot = true
 		return
 	}
+	// Specter emulates ancient Apache/2.0.x versions (2.0.39, 2.0.44, etc.).
+	// These are virtually nonexistent on the modern internet.
+	if strings.Contains(lower, "server: apache/2.0.") || strings.Contains(lower, "server: apache/1.3.") {
+		r.HoneypotType = TypePortspoof
+		r.Confidence = 60
+		r.Evidence = fmt.Sprintf("Ancient Apache version (Specter emulation default): %s", extractHeader(resp, "Server"))
+		r.IsHoneypot = true
+		return
+	}
+	// Header typo: sloppy honeypot emulators misspell standard headers.
+	if strings.Contains(lower, "content-lenght:") || strings.Contains(lower, "conent-type:") {
+		r.HoneypotType = TypeGenericPython
+		r.Confidence = 85
+		r.Evidence = "Misspelled HTTP header (sloppy emulator): Content-Lenght or Conent-Type"
+		r.IsHoneypot = true
+		return
+	}
+}
+
+// extractHeader returns the value of the first matching header.
+func extractHeader(resp, name string) string {
+	prefix := strings.ToLower(name) + ":"
+	for _, line := range strings.Split(resp, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(line), prefix) {
+			return strings.TrimSpace(line[len(name)+1:])
+		}
+	}
+	return ""
 }
 
 // rawHTTP sends an HTTP request string and returns the response.

@@ -57,6 +57,65 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
+	// FTP: SYST contradiction catches Specter/Honeyd emulating rare OS strings.
+	if port == 21 {
+		fp := fingerprint.FTP(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+		if fp.HoneypotType == fingerprint.TypeReal {
+			v.State = "REAL"
+			v.Platform = "ftp"
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// LaBrea tarpit: first-speaker ports that accept TCP but send nothing.
+	if port == 22 || port == 23 || port == 21 || port == 25 || port == 110 {
+		if fingerprint.LaBrea(ip, port) {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fingerprint.TypePortspoof)
+			v.Confidence = 75
+			v.Evidence = "LaBrea tarpit: TCP connect accepted but zero bytes received in 2s"
+			return v
+		}
+	}
+
+	// SMTP ports: BOF/minimal honeypots disconnect with 503; real SMTP sends 220 + capabilities.
+	if port == 25 || port == 465 || port == 587 || port == 2525 {
+		fp := fingerprint.SMTP(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+		if fp.HoneypotType == fingerprint.TypeReal {
+			v.State = "REAL"
+			v.Platform = "smtp"
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// Telnet: Cowrie sends login prompt without IAC negotiation.
+	if port == 23 {
+		fp := fingerprint.Telnet(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
 	// SSH ports: behavioral fingerprinting catches Cowrie and Honeyd.
 	if port == 22 || port == 2222 || port == 2200 {
 		fp := fingerprint.SSH(ip, port)
