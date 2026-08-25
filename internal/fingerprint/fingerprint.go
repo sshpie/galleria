@@ -45,12 +45,59 @@ type Result struct {
 }
 
 // HTTP runs behavioral fingerprinting on an HTTP-speaking port.
-// It sends language-injection probes, HTTP verb confusion, and
-// persistent-connection tests.
+// Honeyd signals (honeyd.c / webserver/server.py source analysis):
+//   H21 — open-no-service: TCP accepts, we send HTTP, zero bytes returned (honeyd.c:1440-1443)
+//   C3/H9 — Python SimpleHTTPServer / BaseHTTP in Server header (webserver/server.py)
+//   C3/H9 — directory listing enabled (<title>Directory listing for) (webserver/server.py:69-76)
+//   C8  — fork latency: time-to-first-byte 5-30ms vs <1ms TCP connect (honeyd.c:1502)
 func HTTP(ip string, port int) *Result {
 	r := &Result{Port: port, HoneypotType: TypeUnknown}
 
 	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Test 0 (Honeyd H21): TCP accept-but-no-service detection.
+	// Honeyd can mark a port "action open" with no service script assigned.
+	// The 3-way handshake completes normally, but the server never sends data.
+	// We distinguish from LaBrea (which blocks pre-send) by sending first.
+	// Real services always send a banner or HTTP response.
+	// Source: honeyd.c:1440-1443 — eternal silent accept, 300s idle timeout.
+	connected, firstBody := rawHTTPWithState(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if !connected {
+		return r // filtered or not TCP-open at all
+	}
+
+	// Test 0b (Honeyd C8): fork-latency signal.
+	// Honeyd forks a service script after 3-way handshake; fork+exec takes 5-30ms.
+	// Real servers: first byte typically <2ms after connect.
+	// This signal is supplementary — noisy over WAN, useful on LAN.
+	// We don't use it as a standalone discriminator, just boost confidence if already flagged.
+	connectStart := time.Now()
+	if conn0b, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
+		connectDur := time.Since(connectStart)
+		conn0b.SetDeadline(time.Now().Add(3 * time.Second))
+		conn0b.Write([]byte("GET / HTTP/1.1\r\nHost: " + ip + "\r\nConnection: close\r\n\r\n"))
+		fbuf := make([]byte, 4)
+		readStart := time.Now()
+		conn0b.Read(fbuf) //nolint
+		ttfb := time.Since(readStart)
+		conn0b.Close()
+		// Honeyd fork pattern: connect fast (<3ms), TTFB 5-30ms.
+		// Only flag when the ratio is significant and both measurements make sense.
+		if connectDur < 3*time.Millisecond && ttfb >= 5*time.Millisecond && ttfb <= 35*time.Millisecond {
+			r.Evidence += fmt.Sprintf(" [C8:fork-latency connect=%dµs ttfb=%dms]",
+				connectDur.Microseconds(), ttfb.Milliseconds())
+		}
+	}
+
+	if firstBody == "" {
+		// Port is TCP-open, we sent a request, and got nothing back.
+		// Honeyd H21 — open port with no service. 5-minute silent accept.
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 72
+		r.Evidence = "Honeyd H21: TCP connect succeeded, HTTP request sent, 0 bytes received (open-no-service; honeyd.c:1440)"
+		r.IsHoneypot = true
+		return r
+	}
 
 	// Test 1: HTTP verb confusion.
 	// Real servers: 400 Bad Request or 405 Method Not Allowed.
@@ -766,7 +813,7 @@ func LaBrea(ip string, port int) bool {
 	return n == 0
 }
 
-// known HTTP server signatures for honeypot software.
+// checkHTTPSignatures detects honeypot software from HTTP response headers and body.
 func checkHTTPSignatures(r *Result, resp string) {
 	lower := strings.ToLower(resp)
 
@@ -778,6 +825,7 @@ func checkHTTPSignatures(r *Result, resp string) {
 		r.IsHoneypot = true
 		return
 	}
+
 	// OpenCanary typically exposes itself via specific server headers.
 	if strings.Contains(lower, "opencanary") || strings.Contains(lower, "server: apache/2.0.52") {
 		r.HoneypotType = TypeOpenCanary
@@ -786,23 +834,49 @@ func checkHTTPSignatures(r *Result, resp string) {
 		r.IsHoneypot = true
 		return
 	}
-	// Honeyd HTTP emulation — commonly fakes IIS 5.0 or extremely old Apache.
-	if strings.Contains(resp, "Server: Microsoft-IIS/5.0") {
+
+	// Honeyd webserver — Python SimpleHTTPServer (C3/H9, webserver/server.py).
+	// The management webserver inherits from BaseHTTPServer/SimpleHTTPServer.
+	// Server header format: "BaseHTTP/0.3 Python/2.x.x"
+	if strings.Contains(lower, "basehttp/") ||
+		(strings.Contains(lower, "server: simplehttp") ||
+			(strings.Contains(lower, "server:") && strings.Contains(lower, "python/2."))) {
 		r.HoneypotType = TypeHoneyd
-		r.Confidence = 70
-		r.Evidence = "Honeyd IIS 5.0 emulation signature"
+		r.Confidence = 75
+		r.Evidence = fmt.Sprintf("Honeyd management webserver (C3/H9): Python SimpleHTTPServer/BaseHTTP in Server header (webserver/server.py)")
 		r.IsHoneypot = true
 		return
 	}
-	// Specter emulates ancient Apache/2.0.x versions (2.0.39, 2.0.44, etc.).
+	// Python SimpleHTTPServer directory listing (H9 — enabled by default, webserver/server.py:69-76).
+	if strings.Contains(lower, "<title>directory listing for") {
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 78
+		r.Evidence = "Honeyd H9: Python SimpleHTTPServer directory listing (webserver/server.py:69-76 — no index.html suppression)"
+		r.IsHoneypot = true
+		return
+	}
+
+	// Honeyd HTTP emulation — commonly fakes IIS 5.0 or extremely old Apache.
+	// Microsoft-IIS/5.0 was current 2000-2003; virtually non-existent today.
+	if strings.Contains(resp, "Server: Microsoft-IIS/5.0") ||
+		strings.Contains(resp, "Server: Microsoft-IIS/4.0") {
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 72
+		r.Evidence = fmt.Sprintf("Honeyd IIS emulation: %s (IIS 4.0/5.0 is 2000-2003 vintage, virtually non-existent today)", extractHeader(resp, "Server"))
+		r.IsHoneypot = true
+		return
+	}
+
+	// Specter / Honeyd emulates ancient Apache versions (2.0.39, 2.0.44, 1.3.x).
 	// These are virtually nonexistent on the modern internet.
 	if strings.Contains(lower, "server: apache/2.0.") || strings.Contains(lower, "server: apache/1.3.") {
-		r.HoneypotType = TypePortspoof
-		r.Confidence = 60
-		r.Evidence = fmt.Sprintf("Ancient Apache version (Specter emulation default): %s", extractHeader(resp, "Server"))
+		r.HoneypotType = TypeHoneyd
+		r.Confidence = 62
+		r.Evidence = fmt.Sprintf("Ancient Apache (Specter/Honeyd emulation): %s", extractHeader(resp, "Server"))
 		r.IsHoneypot = true
 		return
 	}
+
 	// Header typo: sloppy honeypot emulators misspell standard headers.
 	if strings.Contains(lower, "content-lenght:") || strings.Contains(lower, "conent-type:") {
 		r.HoneypotType = TypeGenericPython
@@ -849,6 +923,22 @@ func SSHAuthRandom(ip string, port int) *Result {
 	// signals are already present.
 	_ = addr
 	return r
+}
+
+// rawHTTPWithState dials, sends req, reads up to 8192 bytes, and reports whether
+// the TCP connection was successfully established (connected=true even if body="").
+// This distinguishes filtered/closed ports (connected=false) from Honeyd H21
+// open-no-service ports (connected=true, body="").
+func rawHTTPWithState(addr, req string) (connected bool, body string) {
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return false, ""
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.Write([]byte(req))
+	b, _ := io.ReadAll(io.LimitReader(conn, 8192))
+	return true, string(b)
 }
 
 // rawHTTP sends an HTTP request string and returns the response.

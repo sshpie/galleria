@@ -203,6 +203,21 @@ Signals derived from static analysis of [desaster/kippo](https://github.com/desa
 
 K_C4 is a definitive Kippo discriminator — zero false positives. K_M4 (ancient banner + modern KEX) confirms the Twisted fingerprint without triggering auth.
 
+### Honeyd fingerprinting (`--fingerprint`, HTTP ports)
+
+Signals derived from static analysis of [DataSoft/Honeyd](https://github.com/DataSoft/Honeyd) source code.
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **H21** Open-no-service | TCP connects fully, HTTP request sent, zero bytes returned (vs LaBrea: blocks before send) | `honeyd.c:1440-1443` |
+| **C3/H9** SimpleHTTPServer | `Server: BaseHTTP/0.3 Python/2.x` in response header | `webserver/server.py` |
+| **C3/H9** Directory listing | `<title>Directory listing for` in response body | `webserver/server.py:69-76` |
+| **C8** Fork latency | TCP connect <3ms but time-to-first-byte 5-35ms (fork+exec overhead) — supplementary signal | `honeyd.c:1502` |
+| **HTTP IIS emulation** | `Server: Microsoft-IIS/4.0` or `/5.0` (2000-2003 vintage) | Honeyd personality layer |
+| **HTTP Apache emulation** | `Server: Apache/1.3.x` or `Apache/2.0.x` (Specter/Honeyd presets) | Honeyd personality layer |
+
+Note: TCP window = 16000 (C6) and TSecr = 0 (C7) require raw socket access and are not implemented in the current probe suite — they require CAP_NET_RAW or equivalent.
+
 ### Telnet fingerprinting (`--fingerprint`, port 23)
 
 | Signal | Method |
@@ -239,7 +254,7 @@ galleria matches behavioral signals against source-code-derived signatures to na
 |------|--------------|-----------|
 | `cowrie` | H1 banner (6.0p1), H2 KEXINIT null padding, H3 cipher list (blowfish-cbc), S6 silent drop on malformed packet | 85–95% (multi-signal) |
 | `kippo` | K_H1 banner (5.1p1), K_H2 null padding, K_M4 modern kex on 2008 banner, K_C4 ASCII "Protocol mismatch." on malformed packet | 80–95% (K_C4 alone = 95%) |
-| `honeyd` | Static vendor banners without IAC (Telnet), IIS 5.0 HTTP emulation, SSH-1.99 banner, OS contradiction (IIS header + Apache body) | 70–75% |
+| `honeyd` | H21 silent-accept, SimpleHTTPServer/BaseHTTP header, directory listing, fork latency, IIS 4.0/5.0 HTTP emulation, Apache 1.3/2.0 emulation, SSH-1.99 banner, static Telnet vendor banners, OS contradiction | 62–78% (multi-signal) |
 | `opencanary` | `opencanary` string in HTTP response, nginx serving Apache "It works!" body | 65–80% |
 | `dionaea` | `dionaea` / `dionaea.capture` in TCP response | 95% |
 | `glastopf` | `glastopf` string in HTTP response | 95% |
