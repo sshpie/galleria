@@ -27,10 +27,12 @@ type Record struct {
 
 // FloorSummary captures the noise-floor characterization for the host.
 type FloorSummary struct {
-	Active   bool   `json:"active"`
-	BodySize int    `json:"body_size"`
-	HTTPCode int    `json:"http_code"`
-	Issuer   string `json:"issuer,omitempty"`
+	Active         bool    `json:"active"`
+	BodySize       int     `json:"body_size"`
+	HTTPCode       int     `json:"http_code"`
+	Issuer         string  `json:"issuer,omitempty"`
+	HowDetected    string  `json:"how_detected,omitempty"`
+	TimingStddevMs float64 `json:"timing_stddev_ms,omitempty"`
 }
 
 // Writer outputs JSONL records to a file (or stdout if path is "-").
@@ -73,10 +75,12 @@ func (w *Writer) Write(ip string, v *verdict.Verdict, sig *floor.Signature) erro
 	}
 	if sig != nil {
 		r.Floor = &FloorSummary{
-			Active:   sig.Active,
-			BodySize: sig.BodySize,
-			HTTPCode: sig.HTTPCode,
-			Issuer:   sig.Issuer,
+			Active:         sig.Active,
+			BodySize:       sig.BodySize,
+			HTTPCode:       sig.HTTPCode,
+			Issuer:         sig.Issuer,
+			HowDetected:    sig.HowDetected,
+			TimingStddevMs: sig.TimingStddevMs,
 		}
 	}
 	b, err := json.Marshal(r)
