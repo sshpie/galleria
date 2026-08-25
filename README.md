@@ -11,7 +11,15 @@ Honeypot detector and AI scanner.
 - Glastopf
 - Portspoof
 
-Also identifies 339 AI/ML platforms (Ollama, Qdrant, ChromaDB, Milvus, MLflow, and others).
+Also identifies 339 AI/ML platforms including:
+
+- **LLM servers** — Ollama, vLLM, LM Studio, LlamaCpp, TGI, LocalAI, LiteLLM, OpenLLM, SGLang, LMDeploy
+- **Vector databases** — Qdrant, ChromaDB, Milvus, Weaviate, LanceDB, Pinecone, Marqo, Vald, Vespa, SemaDB
+- **AI gateways / proxies** — LiteLLM, Portkey, Helicone, Kong AI Gateway, Javelin, Bifrost
+- **MLOps / experiment tracking** — MLflow, Weights & Biases, Aim, Determined AI, Kubeflow, NVFlare
+- **Agent frameworks** — LangFlow, LangGraph, AutoGen Studio, CrewAI Studio, Flowise, Dify, AnythingLLM
+- **Voice / TTS / ASR** — Whisper, Kokoro TTS, Coqui TTS, Piper, Bark, F5-TTS, XTTS, Vosk
+- **Data / storage** — Kafka, Redis, MinIO, Elasticsearch, ClickHouse, MongoDB, Weaviate, Cassandra
 
 ## Install
 
