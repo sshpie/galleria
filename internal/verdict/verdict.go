@@ -144,6 +144,54 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
+	// Modbus TCP (502): Conpot FC17 stub detection.
+	if port == 502 {
+		fp := fingerprint.Conpot(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// Guardian AST fuel monitor (10001): Conpot hardcodes "STATOIL STATION".
+	if port == 10001 {
+		fp := fingerprint.Conpot(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// SNMP UDP (161): Conpot hardcodes sysLocation = "Venus".
+	if port == 161 {
+		fp := fingerprint.Conpot(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// S7comm ISO-on-TCP (102): Conpot COTP 0x62 stripping behavioral probe.
+	if port == 102 {
+		fp := fingerprint.Conpot(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
 	// IMAP: Amun hardcodes "Lotus Domino 6.5.4 7.0.2 IMAP4" banner.
 	if port == 143 {
 		fp := fingerprint.Amun(ip, port)
@@ -182,6 +230,14 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 
 	// FTP: Amun banner check runs first; fallthrough to Honeyd/Specter SYST check.
 	if port == 21 {
+		cfp := fingerprint.Conpot(ip, port)
+		if cfp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(cfp.HoneypotType)
+			v.Confidence = cfp.Confidence
+			v.Evidence = cfp.Evidence
+			return v
+		}
 		afp := fingerprint.Amun(ip, port)
 		if afp.IsHoneypot {
 			v.State = "HONEYPOT"

@@ -18,6 +18,7 @@ Honeypot Fingerprinter | Port Sifter | AI/LLM Port Verifier
 | OpenCanary | Multi-protocol commercial honeypot for easy network deployment |
 | Canarytokens | Canary token infrastructure for detecting access to tripwired resources |
 | Amun | Malware collection honeypot emulating Windows vulnerability exploits |
+| Conpot | Industrial control system honeypot emulating factory and utility protocols |
 | Portspoof | Port noise generator — responds to everything to waste scanner time |
 
 Also identifies 339 AI/ML platforms including:

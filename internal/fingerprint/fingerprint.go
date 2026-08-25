@@ -32,6 +32,7 @@ const (
 	TypeOpenCanary    HoneypotType = "OPENCANARY"     // multi-protocol Python honeypot
 	TypeCanarytokens  HoneypotType = "CANARYTOKENS"   // Thinkst canary token infrastructure
 	TypeAmun          HoneypotType = "AMUN"            // Amun worm honeypot
+	TypeConpot        HoneypotType = "CONPOT"          // ICS/SCADA multi-protocol honeypot
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -1601,6 +1602,131 @@ func Amun(ip string, port int) *Result {
 			r.HoneypotType = TypeAmun
 			r.Confidence = 92
 			r.Evidence = `Amun VNC: "RFB 003.008" without trailing \n (realvnc_modul.py:28 — missing newline in source)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	return r
+}
+
+// Conpot runs behavioral fingerprinting for the Conpot ICS/SCADA honeypot.
+//
+// Conpot (mushorg/conpot) emulates industrial protocols: S7comm, Modbus, IEC104, BACnet,
+// SNMP, FTP, TFTP, Guardian AST, Kamstrup, and IPMI. Each module hardcodes static
+// identifiers that are uniquely detectable without authentication.
+//
+// Signals:
+//
+//	Modbus (502)  — FC17 REPORT SLAVE ID returns 4-byte stub (real devices return ≥10 bytes) — 90%
+//	Guardian AST (10001) — "STATOIL STATION" hardcoded station name in inventory response — 99%
+//	SNMP (161 UDP) — sysLocation = "Venus" hardcoded in MIB table (L4) — 99%
+//	S7comm (102)  — COTP CR with 0x62 probe byte: Conpot strips it (H10) and responds CC — 85%
+//	FTP (21)      — nobody:nobody accepted (230) — hardcoded at ftp_server.py:265 index 13 — 75%
+func Conpot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Modbus TCP (502): FC17 REPORT SLAVE ID.
+	// Real Modbus devices return device-specific data (serial, model, firmware) — typically 10+ bytes.
+	// Conpot returns a hardcoded 4-byte stub (L6 — static response in modbus module).
+	if port == 502 {
+		req := []byte{0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x01, 0x11}
+		resp := rawTCPBytes(addr, req)
+		if len(resp) >= 8 && resp[7] == 0x11 {
+			mbapLen := int(resp[4])<<8 | int(resp[5])
+			if mbapLen <= 6 {
+				r.HoneypotType = TypeConpot
+				r.Confidence = 90
+				r.Evidence = "Conpot Modbus: FC17 REPORT SLAVE ID stub ≤6-byte PDU (L6 — real devices return device-specific data)"
+				r.IsHoneypot = true
+			}
+		}
+		return r
+	}
+
+	// Guardian AST fuel monitor (10001): hardcoded station name.
+	// \x01I20100\n = SOH + IN-TANK-INVENTORY command + newline.
+	// Conpot always returns "STATOIL STATION" regardless of actual tank config (C5/L3).
+	if port == 10001 {
+		resp, _ := rawTCPExchange(addr, "\x01I20100\n")
+		if strings.Contains(resp, "STATOIL STATION") {
+			r.HoneypotType = TypeConpot
+			r.Confidence = 99
+			r.Evidence = `Conpot Guardian AST: "STATOIL STATION" hardcoded in tank inventory response (guardian_ast_server.py C5/L3)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// SNMP (161 UDP): sysLocation = "Venus" hardcoded in Conpot's MIB table (L4).
+	// SNMP v1 GET for sysLocation OID 1.3.6.1.2.1.1.6.0, community "public".
+	if port == 161 {
+		pkt := string([]byte{
+			0x30, 0x29, 0x02, 0x01, 0x00,
+			0x04, 0x06, 0x70, 0x75, 0x62, 0x6c, 0x69, 0x63,
+			0xa0, 0x1c, 0x02, 0x04, 0x00, 0x00, 0x00, 0x01,
+			0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
+			0x30, 0x0e, 0x30, 0x0c,
+			0x06, 0x08, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x01, 0x06, 0x00,
+			0x05, 0x00,
+		})
+		resp := rawUDP(addr, pkt)
+		if strings.Contains(resp, "Venus") {
+			r.HoneypotType = TypeConpot
+			r.Confidence = 99
+			r.Evidence = `Conpot SNMP: sysLocation = "Venus" hardcoded in MIB table (L4 — Shodan dork sysLocation:Venus uniquely identifies Conpot)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// S7comm ISO-on-TCP (102): COTP 0x62 stripping behavioral fingerprint (H10).
+	// Conpot's cleanse_byte_string() strips ALL 0x62 bytes from the TPKT payload before COTP parsing.
+	// Modified COTP CR inserts 0x62 between TPDU-size and SRC-TSAP params.
+	// Conpot: strips 0x62 → sees standard CR → responds CC (0xd0).
+	// Real PLC: parses 0x62 as unknown param code, reads next byte 0xc1=193 as length → parse error.
+	if port == 102 {
+		modified := []byte{
+			0x03, 0x00, 0x00, 0x17, // TPKT length=23
+			0x12,                   // COTP LI=18
+			0xe0,                   // PDU type CR
+			0x00, 0x00,             // DST-REF
+			0x00, 0x01,             // SRC-REF
+			0x00,                   // class 0
+			0xc0, 0x01, 0x0a,       // TPDU-size param (code=0xc0, len=1, val=1024)
+			0x62,                   // probe byte — Conpot strips; real PLC parses as unknown param code
+			0xc1, 0x02, 0x01, 0x00, // SRC-TSAP param
+			0xc2, 0x02, 0x01, 0x02, // DST-TSAP param
+		}
+		resp := rawTCPBytes(addr, modified)
+		if len(resp) >= 6 && resp[5] == 0xd0 {
+			r.HoneypotType = TypeConpot
+			r.Confidence = 85
+			r.Evidence = "Conpot S7comm: COTP CR with 0x62 probe byte accepted (H10 — cleanse_byte_string() strips 0x62 before COTP parsing; real PLCs reject)"
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// FTP (21): hardcoded nobody:nobody credential (ftp_server.py:265 user_db[13]).
+	// Credential exists unconditionally in every Conpot FTP deployment (H6).
+	if port == 21 {
+		conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+		if err != nil {
+			return r
+		}
+		conn.SetDeadline(time.Now().Add(probeTimeout))
+		io.ReadAll(io.LimitReader(conn, 256))
+		conn.Write([]byte("USER nobody\r\n"))
+		io.ReadAll(io.LimitReader(conn, 64))
+		conn.Write([]byte("PASS nobody\r\n"))
+		resp, _ := io.ReadAll(io.LimitReader(conn, 64))
+		conn.Close()
+		if strings.HasPrefix(strings.TrimSpace(string(resp)), "230") {
+			r.HoneypotType = TypeConpot
+			r.Confidence = 75
+			r.Evidence = "Conpot FTP: nobody:nobody accepted (230) — hardcoded at ftp_server.py:265 user_db[13]"
 			r.IsHoneypot = true
 		}
 		return r
