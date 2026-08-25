@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
+	"github.com/sshpie/galleria/internal/bloom"
 	"github.com/sshpie/galleria/internal/floor"
 	"github.com/sshpie/galleria/internal/output"
 	"github.com/sshpie/galleria/internal/verdict"
@@ -68,8 +69,12 @@ func run(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "[galleria] characterizing noise floor...\n")
 	sig := floor.Characterize(ip, ports)
 	if sig.Active {
-		fmt.Fprintf(os.Stderr, "[galleria] floor detected: code=%d size=%d issuer=%s\n",
+		fmt.Fprintf(os.Stderr, "[galleria] floor detected: code=%d size=%d issuer=%q\n",
 			sig.HTTPCode, sig.BodySize, sig.Issuer)
+		bloom.Add(sig.Issuer, sig.BodySize, sig.HTTPCode)
+	} else if bloom.Seen(sig.Issuer, sig.BodySize, sig.HTTPCode) {
+		fmt.Fprintf(os.Stderr, "[galleria] floor matched bloom filter (cached portspoof signature)\n")
+		sig.Active = true
 	} else {
 		fmt.Fprintf(os.Stderr, "[galleria] no portspoof floor detected\n")
 	}

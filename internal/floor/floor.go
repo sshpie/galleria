@@ -1,11 +1,13 @@
 package floor
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
-	"crypto/tls"
 )
 
 // decoyPath is a route no real service serves. A real service 404s; a
@@ -24,74 +26,108 @@ type Signature struct {
 	Issuer    string // TLS issuer common to all ports (if any)
 }
 
-// Characterize probes the host to establish its noise floor.
+// Characterize probes the host to establish its noise floor using three parallel stages.
 // Returns a Signature. If Active is false, the host is not a portspoof.
 //
-// Detection order (most reliable first):
-//  1. Junk ports (7,13,19,37,79) - if host SYN-ACKs a port that should never exist, it's portspoof
-//  2. Decoy path probe - portspoof returns 200 on any path; real services 404
-//  3. Cross-port sampling - if ≥3 provided ports return byte-identical responses, it's portspoof
+// Stages run concurrently; first positive result wins:
+//  1. Junk ports (7,13,19,37,79) — SYN-ACK on a port that shouldn't exist = portspoof
+//  2. Decoy path probe — catch-all returns 200 on any path; real services 404
+//  3. Cross-port sampling — ≥3 identical responses (including all-zero TLS) = portspoof
 func Characterize(ip string, knownPorts []int) *Signature {
-	sig := &Signature{}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
 
-	// Step 1: probe junk ports not in the known set.
-	for _, jp := range junkPorts {
-		if inList(jp, knownPorts) {
-			continue
-		}
-		r := probeHTTP(ip, jp, "/")
-		if r != nil {
-			sig.Active = true
-			sig.BodySize = r.bodySize
-			sig.HTTPCode = r.code
-			sig.Issuer = r.issuer
-			return sig
-		}
-	}
+	type result struct{ sig *Signature }
+	ch := make(chan result, 3)
 
-	// Step 2: decoy path probe on web ports.
-	// A real service returns 404; a catch-all returns its canned 200.
-	for _, port := range []int{80, 443, 8080, 8443} {
-		if !inList(port, knownPorts) {
-			continue
-		}
-		r := probeHTTP(ip, port, decoyPath)
-		if r != nil && r.code == 200 {
-			sig.Active = true
-			sig.BodySize = r.bodySize
-			sig.HTTPCode = r.code
-			sig.Issuer = r.issuer
-			return sig
-		}
-	}
-
-	// Step 3: cross-port sampling.
-	// Sample up to 5 ports from the known list, probe GET /,
-	// compare byte sizes. If ≥3 are identical, it's a catch-all.
-	sample := samplePorts(knownPorts, 5)
-	if len(sample) >= 3 {
-		sizes := make([]int, 0, len(sample))
-		codes := make([]int, 0, len(sample))
-		var lastR *probeResponse
-		for _, port := range sample {
-			r := probeHTTP(ip, port, "/")
-			if r == nil {
+	// Stage 1: junk port probes (parallel).
+	go func() {
+		for _, jp := range junkPorts {
+			if inList(jp, knownPorts) {
 				continue
 			}
-			sizes = append(sizes, r.bodySize)
-			codes = append(codes, r.code)
-			lastR = r
+			if ctx.Err() != nil {
+				return
+			}
+			r := probeHTTPCtx(ctx, ip, jp, "/")
+			if r != nil {
+				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer}}
+				return
+			}
 		}
-		if len(sizes) >= 3 && allSame(sizes) && allSame(codes) && sizes[0] > 0 {
-			sig.Active = true
-			sig.BodySize = lastR.bodySize
-			sig.HTTPCode = lastR.code
-			sig.Issuer = lastR.issuer
-			return sig
-		}
-	}
+		ch <- result{nil}
+	}()
 
-	return sig
+	// Stage 2: decoy path on web ports.
+	go func() {
+		for _, port := range []int{80, 443, 8080, 8443} {
+			if !inList(port, knownPorts) {
+				continue
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			r := probeHTTPCtx(ctx, ip, port, decoyPath)
+			if r != nil && r.code == 200 {
+				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer}}
+				return
+			}
+		}
+		ch <- result{nil}
+	}()
+
+	// Stage 3: cross-port sampling.
+	// Identical response (any size, including 0 via TLS) across ≥3 ports = catch-all.
+	go func() {
+		sample := samplePorts(knownPorts, 7)
+		if len(sample) < 3 {
+			ch <- result{nil}
+			return
+		}
+		type portResult struct{ r *probeResponse }
+		results := make([]portResult, len(sample))
+		var wg sync.WaitGroup
+		for i, port := range sample {
+			i, port := i, port
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if ctx.Err() != nil {
+					return
+				}
+				results[i] = portResult{probeHTTPCtx(ctx, ip, port, "/")}
+			}()
+		}
+		wg.Wait()
+
+		var sizes, codes []int
+		var lastR *probeResponse
+		for _, pr := range results {
+			if pr.r == nil {
+				continue
+			}
+			sizes = append(sizes, pr.r.bodySize)
+			codes = append(codes, pr.r.code)
+			lastR = pr.r
+		}
+		// Accept all-zero TLS responses as floor signal (portspoof TLS-only mode).
+		if len(sizes) >= 3 && allSame(sizes) && allSame(codes) {
+			ch <- result{&Signature{Active: true, BodySize: lastR.bodySize, HTTPCode: lastR.code, Issuer: lastR.issuer}}
+			return
+		}
+		ch <- result{nil}
+	}()
+
+	// Collect: first positive wins; need all three negatives to declare no floor.
+	negatives := 0
+	for negatives < 3 {
+		r := <-ch
+		if r.sig != nil {
+			return r.sig
+		}
+		negatives++
+	}
+	return &Signature{}
 }
 
 // IsFloor returns true if the given response matches the noise floor signature.
@@ -107,28 +143,35 @@ type probeResponse struct {
 	code     int
 	bodySize int
 	issuer   string
+	tlsConn  bool // true if TLS handshake succeeded (even if body empty)
 }
 
-func probeHTTP(ip string, port int, path string) *probeResponse {
+func probeHTTPCtx(ctx context.Context, ip string, port int, path string) *probeResponse {
 	addr := fmt.Sprintf("%s:%d", ip, port)
-	timeout := 5 * time.Second
+	timeout := 3 * time.Second // fast timeout for floor detection
+
+	dialer := &net.Dialer{Timeout: timeout}
 
 	// Try TLS.
 	cfg := &tls.Config{InsecureSkipVerify: true}
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, cfg)
+	conn, err := tls.DialWithDialer(dialer, "tcp", addr, cfg)
 	if err == nil {
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(timeout))
+		deadline := time.Now().Add(timeout)
+		conn.SetDeadline(deadline)
 		req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", path, ip)
 		conn.Write([]byte(req))
 		body, _ := io.ReadAll(io.LimitReader(conn, 32768))
-
-		r := &probeResponse{bodySize: len(body), code: parseCode(body)}
+		r := &probeResponse{bodySize: len(body), code: parseCode(body), tlsConn: true}
 		certs := conn.ConnectionState().PeerCertificates
 		if len(certs) > 0 {
 			r.issuer = certs[0].Issuer.CommonName
 		}
-		return r
+		return r // always return on TLS success, even with 0-byte body
+	}
+
+	if ctx.Err() != nil {
+		return nil
 	}
 
 	// Fall back to plain TCP.
@@ -142,7 +185,7 @@ func probeHTTP(ip string, port int, path string) *probeResponse {
 	pconn.Write([]byte(req))
 	body, _ := io.ReadAll(io.LimitReader(pconn, 32768))
 	if len(body) == 0 {
-		return nil
+		return nil // plain TCP with no response = truly closed/filtered
 	}
 	return &probeResponse{bodySize: len(body), code: parseCode(body)}
 }
