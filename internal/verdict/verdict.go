@@ -144,6 +144,18 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
+	// SAP Cloud Active Defense clone app (2000), Keycloak (8080), control panel API (3000).
+	if port == 2000 || port == 8080 || port == 3000 {
+		fp := fingerprint.CloudActiveDefense(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
 	// Modbus TCP (502): Conpot FC17 stub detection.
 	if port == 502 {
 		fp := fingerprint.Conpot(ip, port)

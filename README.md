@@ -21,6 +21,7 @@ Port Verification Blue Team Asset
 | Krawl | Fake login pages, captures creds |
 | express-honeypot | Fake PHP LFI/RFI targets |
 | EoHoneypotBundle | Hidden form fields catch bots |
+| SAP Cloud Active Defense | Kubernetes-based deception platform |
 | Portspoof | Makes every port look open |
 
 Also identifies 339 AI/ML platforms including:

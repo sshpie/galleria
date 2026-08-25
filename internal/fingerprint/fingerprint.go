@@ -35,7 +35,8 @@ const (
 	TypeConpot        HoneypotType = "CONPOT"          // ICS/SCADA multi-protocol honeypot
 	TypeKrawl             HoneypotType = "KRAWL"               // FastAPI web honeypot with AI-generated deception pages
 	TypeExpressHoneypot  HoneypotType = "EXPRESS_HONEYPOT"    // Node.js/Express LFI/RFI decoy honeypot
-	TypeEoHoneypotBundle HoneypotType = "EO_HONEYPOT_BUNDLE"  // Symfony form honeypot protection bundle
+	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
+	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -208,7 +209,17 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ab: EoHoneypotBundle — hardcoded tabindex/aria-hidden/CSS on form fields.
+	// Test 6ab: SAP Cloud Active Defense control panel — unauthenticated /statistics and /user/1.
+	cadfp := CloudActiveDefense(ip, port)
+	if cadfp.IsHoneypot {
+		r.HoneypotType = cadfp.HoneypotType
+		r.Confidence = cadfp.Confidence
+		r.Evidence = cadfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ab2: EoHoneypotBundle — hardcoded tabindex/aria-hidden/CSS on form fields.
 	eofp := EoHoneypotBundleCheck(ip, port)
 	if eofp.IsHoneypot {
 		r.HoneypotType = eofp.HoneypotType
@@ -1635,6 +1646,83 @@ func Amun(ip string, port int) *Result {
 			r.HoneypotType = TypeAmun
 			r.Confidence = 92
 			r.Evidence = `Amun VNC: "RFB 003.008" without trailing \n (realvnc_modul.py:28 — missing newline in source)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	return r
+}
+
+// CloudActiveDefense runs behavioral fingerprinting for SAP/cloud-active-defense.
+//
+// SAP Cloud Active Defense is a Kubernetes deception platform (Envoy WASM + Node.js
+// control panel + Keycloak). The "clone" decoy app (port 2000) self-identifies with
+// the word "CLONE" in its HTML. Multiple hardcoded credentials exist in every deployment.
+//
+// Signals:
+//
+//	Port 2000 — GET / → class="letter" spans spelling "CLONE" (clone/myapp.js H11) — 99%
+//	Port 2000 — Cookie: SESSION=c32272b9-99d8-4687-b57e-a606952ae870 bypasses login (C5) — 99%
+//	Port 8080 — POST /realms/cad/...token test:test → access_token in response (C6) — 99%
+//	Port 80   — GET /statistics returns JSON without auth (C4) — 88%
+//	Port 80   — GET /user/1 returns user data without auth (C3) — 85%
+func CloudActiveDefense(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Clone app (port 2000): hardcoded "CLONE" label and letter spans (clone/myapp.js H11).
+	if port == 2000 {
+		resp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		if strings.Contains(resp, `class="letter"`) || strings.Contains(resp, `class="label"`) {
+			r.HoneypotType = TypeCloudActiveDefense
+			r.Confidence = 99
+			r.Evidence = `CAD clone app: "CLONE" label/letter spans on homepage (clone/myapp.js H11 — self-identifying)`
+			r.IsHoneypot = true
+			return r
+		}
+		// Static session UUID — same value in every deployment (C5).
+		resp2 := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nCookie: SESSION=c32272b9-99d8-4687-b57e-a606952ae870\r\nConnection: close\r\n\r\n")
+		if strings.Contains(resp2, "200") && !strings.Contains(resp2, "login") && !strings.Contains(resp2, "Login") {
+			r.HoneypotType = TypeCloudActiveDefense
+			r.Confidence = 95
+			r.Evidence = "CAD clone app: static SESSION UUID c32272b9-99d8-4687-b57e-a606952ae870 bypasses login (clone/myapp.js C5)"
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// Keycloak (port 8080): test:test ROPC grant succeeds on every deployment (C6).
+	// realm-import.json seeds username=test, password=test with directAccessGrantsEnabled=true.
+	if port == 8080 {
+		body := "grant_type=password&username=test&password=test&client_id=cad"
+		resp := rawHTTP(addr, "POST /realms/cad/protocol/openid-connect/token HTTP/1.1\r\nHost: "+ip+"\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: "+fmt.Sprintf("%d", len(body))+"\r\nConnection: close\r\n\r\n"+body)
+		if strings.Contains(resp, "access_token") {
+			r.HoneypotType = TypeCloudActiveDefense
+			r.Confidence = 99
+			r.Evidence = `CAD Keycloak: test:test ROPC grant returns access_token (realm-import.json C6 — seeded in every deployment)`
+			r.IsHoneypot = true
+		}
+		return r
+	}
+
+	// Control panel (port 80/443): unauthenticated management endpoints.
+	if port == 80 || port == 443 || port == 3000 {
+		// C4: /statistics mounted with no auth middleware (server.js:36).
+		statsResp := rawHTTP(addr, "GET /statistics HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		if strings.Contains(statsResp, "application/json") && (strings.HasPrefix(statsResp, "HTTP/1.1 200") || strings.HasPrefix(statsResp, "HTTP/1.0 200")) {
+			r.HoneypotType = TypeCloudActiveDefense
+			r.Confidence = 88
+			r.Evidence = "CAD control panel: GET /statistics returns JSON without auth (server.js:36 C4 — no middleware on /statistics router)"
+			r.IsHoneypot = true
+			return r
+		}
+		// C3: /user router mounted with no auth (server.js:39).
+		userResp := rawHTTP(addr, "GET /user/1 HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		if strings.Contains(userResp, "application/json") && (strings.HasPrefix(userResp, "HTTP/1.1 200") || strings.HasPrefix(userResp, "HTTP/1.0 200")) {
+			r.HoneypotType = TypeCloudActiveDefense
+			r.Confidence = 85
+			r.Evidence = "CAD control panel: GET /user/1 returns JSON without auth (server.js:39 C3 — /user router has no middleware)"
 			r.IsHoneypot = true
 		}
 		return r
