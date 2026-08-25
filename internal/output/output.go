@@ -91,12 +91,40 @@ func (w *Writer) Write(ip string, v *verdict.Verdict, sig *floor.Signature) erro
 	return err
 }
 
-// PrintSummary prints a human-readable summary to stderr.
-func PrintSummary(ip string, verdicts []*verdict.Verdict, sig *floor.Signature) {
+// SummaryRecord is the final structured record written to stdout after all per-port records.
+// type = "summary" distinguishes it from per-port records (type field absent on those).
+// LLM agents should parse this record to get aggregate verdict counts.
+type SummaryRecord struct {
+	Type        string            `json:"type"`       // always "summary"
+	Timestamp   string            `json:"ts"`
+	IP          string            `json:"ip"`
+	FloorActive bool              `json:"floor_active"`
+	FloorHow    string            `json:"floor_how,omitempty"`
+	Real        int               `json:"real"`
+	Unknown     int               `json:"unknown"`
+	Honeypot    int               `json:"honeypot"`
+	Floor       int               `json:"floor"`
+	HoneypotIDs []HoneypotDetail  `json:"honeypot_ids,omitempty"` // named honeypots found
+}
+
+// HoneypotDetail captures name + confidence for one identified honeypot port.
+type HoneypotDetail struct {
+	Port         int    `json:"port"`
+	HoneypotType string `json:"honeypot_type"`
+	Confidence   int    `json:"confidence"`
+	Evidence     string `json:"evidence,omitempty"`
+}
+
+// PrintSummary prints a human-readable summary to stderr and a structured
+// SummaryRecord JSON line to the output writer (stdout or file).
+// The SummaryRecord is always the last line written — LLM agents can tail it.
+func PrintSummary(w *Writer, ip string, verdicts []*verdict.Verdict, sig *floor.Signature) {
 	real := 0
 	unknown := 0
 	floorCount := 0
 	honeypot := 0
+	var hpDetails []HoneypotDetail
+
 	for _, v := range verdicts {
 		switch v.State {
 		case "REAL":
@@ -107,11 +135,17 @@ func PrintSummary(ip string, verdicts []*verdict.Verdict, sig *floor.Signature) 
 			floorCount++
 		case "HONEYPOT":
 			honeypot++
+			hpDetails = append(hpDetails, HoneypotDetail{
+				Port:         v.Port,
+				HoneypotType: v.HoneypotType,
+				Confidence:   v.Confidence,
+				Evidence:     v.Evidence,
+			})
 		}
 	}
+
 	fmt.Fprintf(os.Stderr, "[galleria] %s  floor=%v  REAL=%d  UNKNOWN=%d  HONEYPOT=%d  FLOOR=%d\n",
 		ip, sig.Active, real, unknown, honeypot, floorCount)
-
 	for _, v := range verdicts {
 		if v.State == "REAL" || v.State == "UNKNOWN" || v.State == "HONEYPOT" {
 			tag := ""
@@ -128,5 +162,23 @@ func PrintSummary(ip string, verdicts []*verdict.Verdict, sig *floor.Signature) 
 			}
 			fmt.Fprintf(os.Stderr, "  :%d  %s%s%s%s\n", v.Port, v.State, tag, auth, hp)
 		}
+	}
+
+	// Structured summary record to stdout — always last line.
+	sr := SummaryRecord{
+		Type:        "summary",
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		IP:          ip,
+		FloorActive: sig.Active,
+		FloorHow:    sig.HowDetected,
+		Real:        real,
+		Unknown:     unknown,
+		Honeypot:    honeypot,
+		Floor:       floorCount,
+		HoneypotIDs: hpDetails,
+	}
+	b, err := json.Marshal(sr)
+	if err == nil {
+		fmt.Fprintf(w.w, "%s\n", b)
 	}
 }

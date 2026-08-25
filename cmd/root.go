@@ -178,7 +178,7 @@ func run(cmd *cobra.Command, args []string) error {
 		probePorts(tierPorts, tierName)
 	}
 
-	output.PrintSummary(ip, allVerdicts, sig)
+	output.PrintSummary(w, ip, allVerdicts, sig)
 	return nil
 }
 

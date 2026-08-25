@@ -48,14 +48,21 @@ galleria 192.0.2.1 --ports "$(cat big-ports.txt | tr '\n' ',')" -c 80
 
 ## Output
 
-JSONL to stdout (or `--out` file). Summary to stderr.
+JSONL to stdout (or `--out` file). Progress to stderr. The last stdout line is always a structured `summary` record — LLM agents should parse this for aggregate verdicts.
 
+**Per-port record** (state = REAL / UNKNOWN / HONEYPOT — FLOOR ports are counted but not emitted):
 ```json
 {"ts":"2026-08-25T22:00:00Z","ip":"192.0.2.1","port":11434,"state":"REAL","platform":"ollama","auth_off":true,"evidence":"{\"models\":[...]}","floor":{"active":true,"body_size":259,"http_code":200,"how_detected":"junk-port"}}
 ```
 
+**Honeypot record** (with named type and confidence):
 ```json
-{"ts":"2026-08-25T22:01:00Z","ip":"47.123.220.240","port":22,"state":"HONEYPOT","honeypot_type":"cowrie","confidence":90,"evidence":"H1:banner=SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2; H2:null-padding; H3:cipher=blowfish-cbc"}
+{"ts":"2026-08-25T22:01:00Z","ip":"47.123.220.240","port":22,"state":"HONEYPOT","honeypot_type":"kippo","confidence":95,"evidence":"SSH K_H1: Kippo default banner (kippo.cfg.dist:139) + K_C4:protocol-mismatch-ascii"}
+```
+
+**Summary record** (always last line, `type = "summary"`, useful for LLM agents):
+```json
+{"type":"summary","ts":"2026-08-25T22:01:05Z","ip":"47.123.220.240","floor_active":true,"floor_how":"junk-port","real":0,"unknown":0,"honeypot":3,"floor":412,"honeypot_ids":[{"port":22,"honeypot_type":"kippo","confidence":95,"evidence":"..."},{"port":23,"honeypot_type":"cowrie","confidence":90,"evidence":"..."}]}
 ```
 
 **States:**
@@ -67,7 +74,53 @@ JSONL to stdout (or `--out` file). Summary to stderr.
 | `FLOOR` | Response matches catch-all signature; portspoof |
 | `HONEYPOT` | Behavioral fingerprinting identified deceptive infrastructure |
 
-Only `REAL`, `UNKNOWN`, and `HONEYPOT` records are written. `FLOOR` results are counted in the summary.
+## JSON Schema (for LLM tool use)
+
+galleria is designed to be called by LLM agents and AI pipelines. Every field is machine-readable and self-describing.
+
+**Per-port record fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ts` | string (RFC3339) | Probe timestamp |
+| `ip` | string | Target IP |
+| `port` | int | Port number |
+| `state` | string | `REAL` / `UNKNOWN` / `HONEYPOT` |
+| `platform` | string | Matched corpus platform (e.g. `ollama`, `qdrant`) |
+| `auth_off` | bool | True if no authentication observed on a REAL service |
+| `evidence` | string | Human + LLM readable explanation of the verdict |
+| `issuer` | string | TLS issuer common name, if any |
+| `honeypot_type` | string | Named honeypot software (`cowrie`, `kippo`, `honeyd`, etc.) |
+| `confidence` | int | 0–100 confidence in honeypot identification |
+| `floor.active` | bool | True if portspoof floor was detected |
+| `floor.how_detected` | string | Which floor-detection stage fired |
+| `floor.body_size` | int | Catch-all response body size in bytes |
+| `floor.http_code` | int | Catch-all HTTP status code |
+
+**Summary record fields (`type = "summary"`):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Always `"summary"` — use to identify the final record |
+| `ip` | string | Target IP |
+| `floor_active` | bool | Whether portspoof floor was detected |
+| `floor_how` | string | Floor detection method (`junk-port`, `canary`, `decoy-path`, `cross-port`, `timing`, `malformed-verb`) |
+| `real` | int | Count of REAL ports |
+| `unknown` | int | Count of UNKNOWN ports |
+| `honeypot` | int | Count of HONEYPOT ports |
+| `floor` | int | Count of FLOOR (portspoof) ports |
+| `honeypot_ids` | array | Named honeypots: `[{port, honeypot_type, confidence, evidence}]` |
+
+**LLM usage pattern:**
+```bash
+# Pipe all output and ask an LLM to analyze
+galleria 47.123.220.240 --ports "$(cat ports.txt | tr '\n' ',')" --fingerprint | \
+  claude "Is this host a real AI/ML deployment or a honeypot? What software is running?"
+
+# Parse summary record only
+galleria 47.123.220.240 --ports 22,23,80,443 --fingerprint | \
+  grep '"type":"summary"' | jq .
+```
 
 ## Honeypot Fingerprinter
 
@@ -97,9 +150,22 @@ Signals derived from static analysis of [cowrie/cowrie](https://github.com/cowri
 | **H1** Banner | Default version string `SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2` | `factory.py:44` |
 | **H2** Null padding | KEXINIT packet: padding bytes all zero (real OpenSSH randomizes) | `transport.py:229` |
 | **H3** Cipher list | Includes `blowfish-cbc` / `cast128-cbc` (removed in real OpenSSH 6.7) | `factory.py:144-154` |
-| **S6** Vetterl probe | Send malformed packet `0xDEADBEEF` — real SSH sends `SSH_MSG_DISCONNECT`; Cowrie drops silently | Vetterl 2018 |
+| **S6** Vetterl probe | Send malformed packet `0xDEADBEEF` — Cowrie drops silently; Kippo sends ASCII; real SSH sends binary `SSH_MSG_DISCONNECT` | Vetterl 2018 |
 
 Each matched signal raises confidence. H2+H3 together reach 90%. S6 adds a further boost.
+
+### Kippo SSH fingerprinting (`--fingerprint`, port 22/2222/2200)
+
+Signals derived from static analysis of [desaster/kippo](https://github.com/desaster/kippo) source code (Cowrie's predecessor). Runs on the same persistent connection as Cowrie probes — the Vetterl probe is a three-way discriminator.
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **K_H1** Banner | Default `SSH-2.0-OpenSSH_5.1p1 Debian-5` (2008 release) | `kippo.cfg.dist:139` / `ssh.py:116` |
+| **K_H2** Null padding | KEXINIT null padding bytes (same Twisted SSHServerTransport bug as Cowrie) | `kippo/core/ssh.py` (Twisted) |
+| **K_M4** Kex mismatch | KEXINIT advertises `curve25519-sha256`, `ecdh-sha2-nistp256` (added 2013+) on a 2008-vintage banner | `ssh.py:128-131` |
+| **K_C4** Vetterl probe | Malformed packet → raw ASCII `"Protocol mismatch.\n"` (not binary `SSH_MSG_DISCONNECT`) | `ssh.py:203-219` |
+
+K_C4 is a definitive Kippo discriminator — zero false positives. K_M4 (ancient banner + modern KEX) confirms the Twisted fingerprint without triggering auth.
 
 ### Telnet fingerprinting (`--fingerprint`, port 23)
 
@@ -129,17 +195,20 @@ TCP connect accepted but zero bytes received within 2 seconds on a first-speaker
 | Content-Length mismatch | Declared `Content-Length` differs from actual body by >50 bytes |
 | OS contradiction | `Windows` in banner + `Apache` in header, or `Linux` + `IIS` |
 
-### Honeypot types
+### Named honeypot identification
 
-| Type | Description |
-|------|-------------|
-| `cowrie` | Cowrie SSH/Telnet medium-interaction honeypot |
-| `opencanary` | OpenCanary network deception framework |
-| `honeyd` | Honeyd virtual honeypot daemon |
-| `dionaea` | Dionaea malware-capture honeypot |
-| `glastopf` | Glastopf web application honeypot |
-| `portspoof` | Generic portspoof catch-all (floor-detected) |
-| `generic-python` | Python-based DIY honeypot |
+galleria matches behavioral signals against source-code-derived signatures to name the specific honeypot software. The output `honeypot_type` field and `evidence` string report both the name and which signals fired.
+
+| Type | Identified by | Confidence |
+|------|--------------|-----------|
+| `cowrie` | H1 banner (6.0p1), H2 KEXINIT null padding, H3 cipher list (blowfish-cbc), S6 silent drop on malformed packet | 85–95% (multi-signal) |
+| `kippo` | K_H1 banner (5.1p1), K_H2 null padding, K_M4 modern kex on 2008 banner, K_C4 ASCII "Protocol mismatch." on malformed packet | 80–95% (K_C4 alone = 95%) |
+| `honeyd` | Static vendor banners without IAC (Telnet), IIS 5.0 HTTP emulation, SSH-1.99 banner, OS contradiction (IIS header + Apache body) | 70–75% |
+| `opencanary` | `opencanary` string in HTTP response, nginx serving Apache "It works!" body | 65–80% |
+| `dionaea` | `dionaea` / `dionaea.capture` in TCP response | 95% |
+| `glastopf` | `glastopf` string in HTTP response | 95% |
+| `portspoof` | Floor detection (junk-port / canary / decoy-path / cross-port / timing / malformed-verb), SMTP 503, FTP rare SYST OS | 75–85% |
+| `generic-python` | Python traceback / SyntaxError / NameError from C/Java syntax probes, misspelled HTTP headers | 85–90% |
 
 ## Corpus
 

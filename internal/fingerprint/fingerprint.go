@@ -23,14 +23,15 @@ const probeTimeout = 4 * time.Second
 type HoneypotType string
 
 const (
-	TypeUnknown   HoneypotType = "UNKNOWN"
-	TypeReal      HoneypotType = "REAL"
-	TypePortspoof HoneypotType = "PORTSPOOF"
-	TypeCowrie    HoneypotType = "COWRIE"       // SSH/Telnet honeypot
-	TypeOpenCanary HoneypotType = "OPENCANARY"  // multi-protocol Python honeypot
-	TypeHoneyd    HoneypotType = "HONEYD"       // virtual honeypot daemon
-	TypeDionaea   HoneypotType = "DIONAEA"      // malware-catching honeypot
-	TypeGlastopf  HoneypotType = "GLASTOPF"    // web application honeypot
+	TypeUnknown       HoneypotType = "UNKNOWN"
+	TypeReal          HoneypotType = "REAL"
+	TypePortspoof     HoneypotType = "PORTSPOOF"
+	TypeCowrie        HoneypotType = "COWRIE"         // Cowrie SSH/Telnet honeypot
+	TypeKippo         HoneypotType = "KIPPO"          // Kippo SSH honeypot (Cowrie predecessor)
+	TypeOpenCanary    HoneypotType = "OPENCANARY"     // multi-protocol Python honeypot
+	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
+	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
+	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
 	TypeGenericPython HoneypotType = "GENERIC_PYTHON" // Python honeypot (unidentified)
 )
 
@@ -150,15 +151,22 @@ func HTTP(ip string, port int) *Result {
 }
 
 // SSH runs deep behavioral fingerprinting on an SSH-speaking port.
-// Goes beyond banner matching to protocol-level Cowrie identification:
+// Identifies Cowrie, Kippo, and Honeyd via pre-auth protocol probes.
 //
-//   H1 — version string (default SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2)
+// Cowrie signals (factory.py / transport.py source analysis):
+//   H1 — default banner SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
 //   H2 — KEXINIT padding: Cowrie uses null bytes; real OpenSSH uses random bytes
-//   H3 — cipher list: blowfish-cbc/cast128-cbc removed from OpenSSH 6.7 (2014)
-//   S6 — Vetterl probe: malformed packet → Cowrie silently drops; real SSH disconnects
-//   S5 — Telnet NEW-ENVIRON (handled in Telnet())
+//   H3 — cipher list includes blowfish-cbc/cast128-cbc (removed OpenSSH 6.7)
+//   S6 — Vetterl probe: malformed packet → Cowrie silently drops
 //
-// All probes run pre-auth, pre-credential — no login attempt required.
+// Kippo signals (ssh.py / kippo.cfg.dist source analysis):
+//   K_H1 — default banner SSH-2.0-OpenSSH_5.1p1 Debian-5 (2008 release, kippo.cfg.dist:139)
+//   K_H2 — KEXINIT null padding (same Twisted bug; kippo/core/ssh.py inherits Twisted)
+//   K_M4 — KEXINIT kex_algorithms includes curve25519/ECDH despite 2008 banner (Twisted KEXINIT)
+//   K_C4 — Vetterl probe: malformed packet → raw ASCII "Protocol mismatch.\n" (kippo/core/ssh.py:203)
+//          Unlike Cowrie (silent drop) and real SSH (binary SSH_MSG_DISCONNECT)
+//
+// All probes run pre-auth, pre-credential.
 func SSH(ip string, port int) *Result {
 	r := &Result{Port: port, HoneypotType: TypeUnknown}
 	addr := fmt.Sprintf("%s:%d", ip, port)
@@ -170,7 +178,7 @@ func SSH(ip string, port int) *Result {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(probeTimeout))
 
-	// --- H1: Banner check ---
+	// --- H1 / K_H1: Banner check ---
 	bannerBuf := make([]byte, 512)
 	n, err := conn.Read(bannerBuf)
 	if err != nil || n < 4 {
@@ -182,15 +190,23 @@ func SSH(ip string, port int) *Result {
 	}
 	lbanner := strings.ToLower(banner)
 
+	// Kippo default banner: SSH-2.0-OpenSSH_5.1p1 Debian-5 (kippo.cfg.dist:139 / ssh.py:116).
+	// This is distinct from Cowrie's default (6.0p1).
+	if strings.Contains(lbanner, "ssh-2.0-openssh_5.1p1") {
+		r.HoneypotType = TypeKippo
+		r.Confidence = 80
+		r.Evidence = fmt.Sprintf("SSH K_H1: Kippo default banner (kippo.cfg.dist:139): %s", strings.TrimSpace(banner[:min(len(banner), 80)]))
+		r.IsHoneypot = true
+		// Continue — K_M4 (KEXINIT mismatch) and K_C4 (Vetterl) will boost confidence.
+	}
+
 	// Cowrie known default banners (factory.py:44 fallback).
-	if strings.Contains(lbanner, "ssh-2.0-openssh_6.0p1") ||
-		strings.Contains(lbanner, "ssh-2.0-openssh_5.1p1") ||
-		strings.Contains(lbanner, "ssh-2.0-openssh_5.3") {
+	if !r.IsHoneypot && (strings.Contains(lbanner, "ssh-2.0-openssh_6.0p1") ||
+		strings.Contains(lbanner, "ssh-2.0-openssh_5.3")) {
 		r.HoneypotType = TypeCowrie
 		r.Confidence = 85
-		r.Evidence = fmt.Sprintf("SSH H1: Cowrie default version string: %s", strings.TrimSpace(banner[:min(len(banner), 80)]))
+		r.Evidence = fmt.Sprintf("SSH H1: Cowrie default banner (factory.py:44): %s", strings.TrimSpace(banner[:min(len(banner), 80)]))
 		r.IsHoneypot = true
-		// Don't return — keep probing for more confidence from KEXINIT.
 	}
 	// Honeyd emulation.
 	if strings.Contains(lbanner, "ssh-1.99-openssl") {
@@ -204,54 +220,99 @@ func SSH(ip string, port int) *Result {
 	// Advance handshake: send our banner so server sends KEXINIT.
 	conn.Write([]byte("SSH-2.0-OpenSSH_9.3p1 Ubuntu-3ubuntu3.6\r\n"))
 
-	// --- H2 + H3: Parse server KEXINIT packet ---
+	// --- H2 + H3 (Cowrie) / K_H2 + K_M4 (Kippo): Parse server KEXINIT packet ---
 	payload, padding, kexErr := readSSHPacket(conn)
 	if kexErr == nil && len(payload) > 0 && payload[0] == 20 { // SSH2_MSG_KEXINIT
-		// H2: null padding — Cowrie transport.py:229 uses b"\0"*lenPad for KEXINIT.
+		// H2 / K_H2: null padding — Twisted SSHServerTransport uses b"\0"*lenPad for KEXINIT.
+		// Both Cowrie and Kippo inherit this from Twisted; real OpenSSH uses random bytes.
 		if allZeroBytes(padding) && len(padding) > 0 {
-			r.HoneypotType = TypeCowrie
-			r.Confidence = 95
-			r.Evidence = "SSH H2: KEXINIT padding is all null bytes (Cowrie transport.py:229; real OpenSSH uses random)"
-			r.IsHoneypot = true
+			if r.HoneypotType == TypeKippo {
+				r.Confidence = 90
+				r.Evidence += " + K_H2:null-padding"
+			} else {
+				r.HoneypotType = TypeCowrie
+				r.Confidence = 95
+				r.Evidence = "SSH H2: KEXINIT padding all null (Twisted/Cowrie transport.py:229; real OpenSSH uses random)"
+				r.IsHoneypot = true
+			}
 		}
 
-		// H3: legacy cipher list — blowfish-cbc and cast128-cbc removed in OpenSSH 6.7 (2014).
+		// H3: Cowrie cipher list — blowfish-cbc / cast128-cbc removed in OpenSSH 6.7 (2014).
 		if ciphers, err := sshKEXINITCiphers(payload); err == nil {
 			for _, c := range ciphers {
 				if c == "blowfish-cbc" || c == "cast128-cbc" {
-					r.HoneypotType = TypeCowrie
+					if r.HoneypotType != TypeKippo {
+						r.HoneypotType = TypeCowrie
+						r.IsHoneypot = true
+					}
 					r.Confidence = max2(r.Confidence, 95)
-					r.Evidence = fmt.Sprintf("SSH H3: KEXINIT cipher list includes %q (removed from OpenSSH 6.7+; Cowrie factory.py:144)", c)
-					r.IsHoneypot = true
+					r.Evidence = fmt.Sprintf("SSH H3: cipher list includes %q (removed OpenSSH 6.7+; Cowrie factory.py:144)", c)
+					break
+				}
+			}
+		}
+
+		// K_M4: Kippo banner/capability mismatch — OpenSSH 5.1p1 is from 2008.
+		// Twisted's KEXINIT advertises curve25519-sha256, ecdh-sha2-nistp256, hmac-sha2-256 —
+		// all added between 2013-2014. Real 5.1p1 cannot offer these.
+		// (kippo/core/ssh.py:116,128-131; Twisted SSHServerTransport KEXINIT)
+		if r.HoneypotType == TypeKippo {
+			modernKex := sshKEXINITKexAlgos(payload)
+			for _, k := range modernKex {
+				if strings.HasPrefix(k, "curve25519") ||
+					strings.HasPrefix(k, "ecdh-sha2-nistp") ||
+					strings.HasPrefix(k, "diffie-hellman-group14-sha256") {
+					r.Confidence = max2(r.Confidence, 92)
+					r.Evidence += fmt.Sprintf(" + K_M4:modern-kex(%s)-vs-2008-banner", k)
 					break
 				}
 			}
 		}
 	}
 
-	// --- S6: Vetterl probe — malformed packet length ---
-	// Real OpenSSH: sends SSH_MSG_DISCONNECT (type byte 1) — required by RFC 4253.
-	// Cowrie: silently drops the connection (no disconnect sent).
+	// --- S6 / K_C4: Vetterl probe — malformed SSH packet length ---
+	// Three-way discriminator (kippo/core/ssh.py:203-219 vs Cowrie vs real OpenSSH):
+	//   Real OpenSSH   → binary SSH_MSG_DISCONNECT packet (type byte = 0x01 at offset [5])
+	//   Cowrie         → silent drop (TCP close, zero bytes received)
+	//   Kippo          → raw ASCII "Protocol mismatch.\n" (not SSH_MSG_DISCONNECT)
 	conn.Write([]byte{0xDE, 0xAD, 0xBE, 0xEF}) // impossible packet length
 	conn.SetDeadline(time.Now().Add(2 * time.Second))
-	resp := make([]byte, 64)
-	nr, _ := conn.Read(resp)
+	vetterlBuf := make([]byte, 64)
+	nr, _ := conn.Read(vetterlBuf)
+	vetterlResp := string(vetterlBuf[:nr])
 
 	if nr == 0 {
 		// Silent drop — Cowrie S6 behavior.
-		r.HoneypotType = TypeCowrie
-		r.Confidence = max2(r.Confidence, 88)
-		if r.Evidence == "" {
-			r.Evidence = "SSH S6: malformed packet → silent drop (Cowrie); real OpenSSH sends SSH_MSG_DISCONNECT"
+		if r.HoneypotType == TypeKippo {
+			// Kippo should say "Protocol mismatch" not silent-drop. May be a fork with Cowrie behavior.
+			r.Confidence = max2(r.Confidence, 85)
+			r.Evidence += " + S6:silent-drop(Cowrie-fork?)"
 		} else {
-			r.Evidence += " + S6:silent-drop"
+			r.HoneypotType = TypeCowrie
+			r.Confidence = max2(r.Confidence, 88)
+			if r.Evidence == "" {
+				r.Evidence = "SSH S6: malformed packet → silent drop (Cowrie); real OpenSSH sends SSH_MSG_DISCONNECT"
+			} else {
+				r.Evidence += " + S6:silent-drop"
+			}
+			r.IsHoneypot = true
+		}
+	} else if strings.Contains(vetterlResp, "Protocol mismatch") {
+		// Kippo K_C4: raw ASCII disconnect (kippo/core/ssh.py:203-219).
+		// This is the definitive Kippo signal — zero false positives on real SSH.
+		r.HoneypotType = TypeKippo
+		r.Confidence = max2(r.Confidence, 95)
+		if r.Evidence == "" {
+			r.Evidence = "SSH K_C4: malformed packet → raw ASCII 'Protocol mismatch.' (kippo/core/ssh.py:203); real SSH sends SSH_MSG_DISCONNECT binary"
+		} else {
+			r.Evidence += " + K_C4:protocol-mismatch-ascii"
 		}
 		r.IsHoneypot = true
-	} else if nr >= 6 && resp[5] == 1 {
+	} else if nr >= 6 && vetterlBuf[5] == 1 {
 		// SSH_MSG_DISCONNECT received — real OpenSSH behavior.
 		if !r.IsHoneypot {
 			r.HoneypotType = TypeReal
-			r.Evidence = fmt.Sprintf("SSH: %s (responds with SSH_MSG_DISCONNECT to malformed packet)", strings.TrimSpace(banner[:min(len(banner), 60)]))
+			r.Evidence = fmt.Sprintf("SSH: %s (SSH_MSG_DISCONNECT on malformed packet)", strings.TrimSpace(banner[:min(len(banner), 60)]))
 		}
 	}
 
@@ -310,6 +371,19 @@ func sshKEXINITCiphers(payload []byte) ([]string, error) {
 	// encryption_algorithms_client_to_server is the 3rd name-list.
 	ciphers, _, err := sshNameList(payload, offset)
 	return ciphers, err
+}
+
+// sshKEXINITKexAlgos extracts the kex_algorithms name-list from a KEXINIT payload.
+// Used for K_M4: detecting Twisted's modern kex advertised on an old-banner Kippo instance.
+func sshKEXINITKexAlgos(payload []byte) []string {
+	if len(payload) < 17 {
+		return nil
+	}
+	algos, _, err := sshNameList(payload, 17) // first name-list after type+cookie
+	if err != nil {
+		return nil
+	}
+	return algos
 }
 
 // sshNameList decodes a name-list at offset: uint32 len + bytes.
