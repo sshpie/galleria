@@ -9,6 +9,7 @@
 package fingerprint
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ const (
 	TypeCowrie        HoneypotType = "COWRIE"         // Cowrie SSH/Telnet honeypot
 	TypeKippo         HoneypotType = "KIPPO"          // Kippo SSH honeypot (Cowrie predecessor)
 	TypeOpenCanary    HoneypotType = "OPENCANARY"     // multi-protocol Python honeypot
+	TypeCanarytokens  HoneypotType = "CANARYTOKENS"   // Thinkst canary token infrastructure
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -179,6 +181,16 @@ func HTTP(ip string, port int) *Result {
 		if code == 200 && !hasAllow {
 			r.Evidence += " [OPTIONS 200 without Allow header]"
 		}
+	}
+
+	// Test 6a: Canarytokens self-hosted management server detection.
+	ctfp := Canarytokens(ip, port)
+	if ctfp.IsHoneypot {
+		r.HoneypotType = ctfp.HoneypotType
+		r.Confidence = ctfp.Confidence
+		r.Evidence = ctfp.Evidence
+		r.IsHoneypot = true
+		return r
 	}
 
 	// Test 6b: Glastopf dedicated probe suite.
@@ -368,8 +380,32 @@ func SSH(ip string, port int) *Result {
 		}
 		r.IsHoneypot = true
 	} else if nr >= 6 && vetterlBuf[5] == 1 {
-		// SSH_MSG_DISCONNECT received — real OpenSSH behavior.
-		if !r.IsHoneypot {
+		// SSH_MSG_DISCONNECT received — real SSH behavior (OpenSSH or paramiko).
+		if r.HoneypotType == TypeKippo {
+			// Banner said 5.1p1 (Kippo default) but Vetterl got real disconnect.
+			// OpenCanary uses paramiko (a real SSH library), not Twisted — so it sends
+			// proper binary SSH_MSG_DISCONNECT, not Kippo's ASCII "Protocol mismatch".
+			// Discriminator: OpenCanary KEXINIT lacks ssh-ed25519 / ecdsa-sha2-* in
+			// server_host_key_algorithms (opencanary ssh.py — no elliptic curve host keys).
+			hostKeyAlgos := sshKEXINITHostKeyAlgos(payload)
+			hasModernKey := false
+			for _, k := range hostKeyAlgos {
+				if strings.HasPrefix(k, "ssh-ed25519") || strings.HasPrefix(k, "ecdsa-sha2") {
+					hasModernKey = true
+					break
+				}
+			}
+			if !hasModernKey && len(hostKeyAlgos) > 0 {
+				r.HoneypotType = TypeOpenCanary
+				r.Confidence = 88
+				r.Evidence = "SSH OpenCanary: 5.1p1 banner + SSH_MSG_DISCONNECT (paramiko) + no ssh-ed25519/ecdsa in host-key-algorithms (opencanary ssh.py)"
+				r.IsHoneypot = true
+			} else {
+				r.HoneypotType = TypeReal
+				r.IsHoneypot = false
+				r.Evidence = fmt.Sprintf("SSH: %s (real SSH behavior)", strings.TrimSpace(banner[:min(len(banner), 60)]))
+			}
+		} else if !r.IsHoneypot {
 			r.HoneypotType = TypeReal
 			r.Evidence = fmt.Sprintf("SSH: %s (SSH_MSG_DISCONNECT on malformed packet)", strings.TrimSpace(banner[:min(len(banner), 60)]))
 		}
@@ -439,6 +475,24 @@ func sshKEXINITKexAlgos(payload []byte) []string {
 		return nil
 	}
 	algos, _, err := sshNameList(payload, 17) // first name-list after type+cookie
+	if err != nil {
+		return nil
+	}
+	return algos
+}
+
+// sshKEXINITHostKeyAlgos extracts server_host_key_algorithms (2nd name-list in KEXINIT).
+func sshKEXINITHostKeyAlgos(payload []byte) []string {
+	if len(payload) < 17 {
+		return nil
+	}
+	// Skip kex_algorithms (1st name-list).
+	_, next, err := sshNameList(payload, 17)
+	if err != nil {
+		return nil
+	}
+	// server_host_key_algorithms (2nd name-list).
+	algos, _, err := sshNameList(payload, next)
 	if err != nil {
 		return nil
 	}
@@ -1317,6 +1371,159 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// OpenCanary runs protocol-specific fingerprinting for thinkst/opencanary.
+//
+// OpenCanary is a multi-protocol honeypot written in Python (Twisted). It hardcodes
+// identifiers across every emulated protocol — all detectable in a single round-trip.
+//
+// Signals:
+//
+//	TLS  — cert issuer O=Synology Inc. CA (hardcoded in opencanary TLS config) — 95%
+//	Redis — AUTH wrong → "-ERR invalid password" (real Redis 6+: WRONGPASS) — 72%
+//	MySQL — capability bytes 0xff 0xf7 0x08 0x02 in handcrafted greeting — 90%
+//	MSSQL — "thinkst.com" substring in NTLM challenge blob (opencanary/modules/mssql.py M3) — 95%
+//	SSH   — detected in SSH(); 5.1p1 banner + paramiko disconnect + no ed25519 in host-key-algos
+func OpenCanary(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	switch port {
+	case 6379, 6380:
+		// Redis: OpenCanary returns "-ERR invalid password" (redis.py).
+		// Real Redis 6+ returns "WRONGPASS invalid username-password pair...".
+		resp := rawTCP(addr, "AUTH galleria_impossible_x7q2\r\n")
+		if strings.Contains(resp, "-ERR invalid password") {
+			r.HoneypotType = TypeOpenCanary
+			r.Confidence = 72
+			r.Evidence = `Redis OpenCanary: "-ERR invalid password" on bad AUTH (opencanary redis.py — real Redis 6+ returns WRONGPASS)`
+			r.IsHoneypot = true
+		}
+
+	case 3306:
+		// MySQL: OpenCanary sends a hardcoded greeting with fixed capability bytes.
+		// Byte sequence 0xff 0xf7 0x08 0x02 appears at a fixed offset (opencanary mysql.py).
+		greeting := rawTCPRead(addr)
+		if len(greeting) > 20 && strings.Contains(greeting, "\xff\xf7\x08\x02") {
+			r.HoneypotType = TypeOpenCanary
+			r.Confidence = 90
+			r.Evidence = "MySQL OpenCanary: hardcoded capability bytes 0xff 0xf7 0x08 0x02 in greeting (opencanary mysql.py — static packet)"
+			r.IsHoneypot = true
+		}
+
+	case 1433:
+		// MSSQL: NTLM challenge blob contains "thinkst.com" (opencanary mssql.py M3).
+		// The challenge is returned during the auth negotiation phase.
+		// Send a minimal TDS PRELOGIN packet to get the NTLM challenge.
+		prelogin := []byte{
+			0x12, 0x01, 0x00, 0x2F, 0x00, 0x00, 0x01, 0x00, // TDS header: PRELOGIN, len=47
+			0x00, 0x00, 0x1A, 0x00, 0x06, // VERSION token
+			0x01, 0x00, 0x20, 0x00, 0x01, // ENCRYPTION token
+			0x02, 0x00, 0x21, 0x00, 0x01, // INSTOPT token
+			0x03, 0x00, 0x22, 0x00, 0x04, // THREADID token
+			0x04, 0x00, 0x26, 0x00, 0x01, // MARS token
+			0xFF,                           // TERMINATOR
+			0x0C, 0x00, 0x10, 0x04, 0x00, 0x00, // VERSION value
+			0x00,                           // ENCRYPTION=NOT_SUPPORTED
+			0x00,                           // INSTOPT
+			0x00, 0x00, 0x00, 0x00,         // THREADID
+			0x00,                           // MARS=OFF
+		}
+		resp := rawTCPBytes(addr, prelogin)
+		if strings.Contains(string(resp), "thinkst.com") {
+			r.HoneypotType = TypeOpenCanary
+			r.Confidence = 95
+			r.Evidence = "MSSQL OpenCanary: 'thinkst.com' in NTLM challenge blob (opencanary mssql.py M3 — win2k12-domainsrv.corp.thinkst.com hardcoded)"
+			r.IsHoneypot = true
+		}
+
+	default:
+		// TLS: cert issuer contains "Synology" — OpenCanary TLS config hardcodes this.
+		org := tlsCertOrg(addr)
+		if strings.Contains(org, "Synology") {
+			r.HoneypotType = TypeOpenCanary
+			r.Confidence = 95
+			r.Evidence = fmt.Sprintf("TLS OpenCanary: cert issuer O=%s (opencanary hardcoded Synology cert)", org)
+			r.IsHoneypot = true
+		}
+	}
+
+	return r
+}
+
+// Canarytokens fingerprints a self-hosted Thinkst Canarytokens management server.
+//
+// Signals:
+//
+//	G_CT1 — GET /commitsha → unauthenticated git hash response (frontend/app.py:933) — 90%
+//	G_CT2 — "canarytokens" string in HTTP response body — 92%
+func Canarytokens(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// G_CT1: /commitsha endpoint — unauthenticated, returns deployment git hash.
+	// Source: frontend/app.py:933 — intentionally exposed version disclosure.
+	csResp := rawHTTP(addr, "GET /commitsha HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if csResp != "" {
+		body := ""
+		if idx := strings.Index(csResp, "\r\n\r\n"); idx >= 0 {
+			body = strings.TrimSpace(csResp[idx+4:])
+		}
+		if isGitHash(body) || strings.Contains(csResp, "commitHash") {
+			r.HoneypotType = TypeCanarytokens
+			r.Confidence = 90
+			r.Evidence = "Canarytokens G_CT1: /commitsha endpoint exposed (frontend/app.py:933 — unauthenticated git hash)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	// G_CT2: "canarytokens" in response body.
+	homeResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(strings.ToLower(homeResp), "canarytokens") {
+		r.HoneypotType = TypeCanarytokens
+		r.Confidence = 92
+		r.Evidence = "Canarytokens G_CT2: 'canarytokens' in HTTP response body"
+		r.IsHoneypot = true
+	}
+
+	return r
+}
+
+// tlsCertOrg dials TLS (skipping verification) and returns the issuer Organization field.
+func tlsCertOrg(addr string) string {
+	cfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	conn, err := tls.DialWithDialer(
+		&net.Dialer{Timeout: 3 * time.Second}, "tcp", addr, cfg,
+	)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	certs := conn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return ""
+	}
+	org := certs[0].Issuer.Organization
+	if len(org) > 0 {
+		return org[0]
+	}
+	return certs[0].Issuer.CommonName
+}
+
+// isGitHash returns true if s is a 40- or 64-character lowercase hex string (SHA-1/SHA-256).
+func isGitHash(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // rawUDP sends a UDP payload to addr and reads up to 2048 bytes with a 3s timeout.

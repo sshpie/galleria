@@ -13,6 +13,8 @@ Honeypot detector and AI scanner.
 - Honeyd
 - Dionaea
 - Glastopf
+- OpenCanary
+- Canarytokens
 - Portspoof
 
 Also identifies 339 AI/ML platforms including:

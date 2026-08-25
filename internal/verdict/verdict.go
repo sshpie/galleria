@@ -35,6 +35,15 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 			v.AuthOff = auth == "OPEN"
 			v.Evidence = "Redis PING→+PONG"
 			if doFingerprint {
+				// OpenCanary Redis: wrong auth error string.
+				ocfp := fingerprint.OpenCanary(ip, port)
+				if ocfp.IsHoneypot {
+					v.State = "HONEYPOT"
+					v.HoneypotType = string(ocfp.HoneypotType)
+					v.Confidence = ocfp.Confidence
+					v.Evidence = ocfp.Evidence
+					return v
+				}
 				// Multi-step Redis depth test: INVALIDCMD after PING.
 				fp := fingerprint.Redis(ip, port)
 				if fp.IsHoneypot {
@@ -106,6 +115,30 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		if fp.HoneypotType == fingerprint.TypeReal {
 			v.State = "REAL"
 			v.Platform = "mqtt"
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// MySQL: OpenCanary hardcodes capability bytes 0xff 0xf7 0x08 0x02 in greeting.
+	if port == 3306 {
+		fp := fingerprint.OpenCanary(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// MSSQL: OpenCanary embeds "thinkst.com" in hardcoded NTLM challenge blob.
+	if port == 1433 {
+		fp := fingerprint.OpenCanary(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
 			v.Evidence = fp.Evidence
 			return v
 		}
