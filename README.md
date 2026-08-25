@@ -1,10 +1,6 @@
 # galleria
 
-Go binary that does two things: finds real AI/ML services hidden inside honeypot port noise, and identifies the specific honeypot software by name.
-
-When a honeypot runs portspoof across hundreds of ports, every port looks open and scanners are useless. galleria characterizes the catch-all noise floor first, then probes each port with protocol-native requests and an embedded corpus of 339 AI/ML platform fingerprints to find what's actually running.
-
-When `--fingerprint` is set, it goes further: behavioral probes derived from static source analysis of Cowrie, Kippo, Honeyd, Dionaea, and Glastopf fingerprint the deceptive infrastructure by name. Not just "this is a honeypot" — `honeypot_type: "kippo"`, `confidence: 95`, with the specific source-code artifact that gave it away.
+Honeypot detector and AI scanner.
 
 ## Install
 
