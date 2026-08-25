@@ -233,6 +233,38 @@ Minimal honeypots disconnect with `503` immediately. Real SMTP servers send `220
 
 Sends `SYST` after banner. Real FTP reports OS type (`UNIX Type: L8`). Honeyd and Specter emulators often return implausible or contradictory OS strings that don't match the banner.
 
+### Dionaea fingerprinting (`--fingerprint`, ports 21/1883/8883/5060/5061/11211)
+
+Signals derived from static analysis of [DinoTools/DionaeaFR](https://github.com/DinoTools/DionaeaFR) and the Dionaea source tree. Each probe is a single protocol exchange — no auth required.
+
+#### SIP (ports 5060/5061)
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **H21** Hardcoded nonce | REGISTER → `WWW-Authenticate: Digest nonce="foobar123"` — never rotates, globally unique | `sip/__init__.py:813,829` |
+| **C9** No-auth INVITE | INVITE accepted without 401 challenge; auth handler has a `# TODO` comment | `sip/__init__.py:297-299` |
+
+SIP H21 is a definitive 99%-confidence discriminator — no real SIP server uses a hardcoded nonce.
+
+#### MQTT (port 1883/8883)
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **M20** CONNACK 0x00 | Send CONNECT with deliberately wrong credentials; Dionaea returns CONNACK return code 0x00 (accepted). Real brokers return 0x04 (bad user/pass) or 0x05 (not authorized) | `mqtt/mqtt.py:140-141` |
+
+#### Memcache (port 11211)
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **Emulation gap** | Pipeline SET then GET in one connection: SET returns `STORED`, GET returns `END` (no VALUE) — values are not retained in Dionaea's Memcache emulation | `memcached.py` (emulated protocol) |
+
+#### FTP (port 21)
+
+| Signal | Method | Source |
+|--------|--------|--------|
+| **L13** Static banner | `"Welcome to the ftp service"` — hardcoded, never customized | `ftp.py` banner string |
+| **L13** Any-creds-accepted | USER + any PASS → 231+230 (logged in) regardless of credentials | `ftp.py:284-299` |
+
 ### LaBrea tarpit detection (`--fingerprint`, ports 21/22/23/25/110)
 
 TCP connect accepted but zero bytes received within 2 seconds on a first-speaker port = LaBrea tarpit. Logged as `portspoof` type at 75% confidence.
@@ -255,8 +287,8 @@ galleria matches behavioral signals against source-code-derived signatures to na
 | `cowrie` | H1 banner (6.0p1), H2 KEXINIT null padding, H3 cipher list (blowfish-cbc), S6 silent drop on malformed packet | 85–95% (multi-signal) |
 | `kippo` | K_H1 banner (5.1p1), K_H2 null padding, K_M4 modern kex on 2008 banner, K_C4 ASCII "Protocol mismatch." on malformed packet | 80–95% (K_C4 alone = 95%) |
 | `honeyd` | H21 silent-accept, SimpleHTTPServer/BaseHTTP header, directory listing, fork latency, IIS 4.0/5.0 HTTP emulation, Apache 1.3/2.0 emulation, SSH-1.99 banner, static Telnet vendor banners, OS contradiction | 62–78% (multi-signal) |
+| `dionaea` | SIP nonce="foobar123" (hardcoded; 99%), FTP static banner / any-creds-accepted, MQTT CONNACK 0x00 with wrong creds, Memcache SET→STORED / GET→END (values not retained) | 88–99% per signal |
 | `opencanary` | `opencanary` string in HTTP response, nginx serving Apache "It works!" body | 65–80% |
-| `dionaea` | `dionaea` / `dionaea.capture` in TCP response | 95% |
 | `glastopf` | `glastopf` string in HTTP response | 95% |
 | `portspoof` | Floor detection (junk-port / canary / decoy-path / cross-port / timing / malformed-verb), SMTP 503, FTP rare SYST OS | 75–85% |
 | `generic-python` | Python traceback / SyntaxError / NameError from C/Java syntax probes, misspelled HTTP headers | 85–90% |

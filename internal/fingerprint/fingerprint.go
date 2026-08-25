@@ -758,6 +758,16 @@ func FTP(ip string, port int) *Result {
 		return r
 	}
 
+	// Dionaea L13: hardcoded static banner (ftp.py — "Welcome to the ftp service").
+	// Dionaea never customizes the greeting; this string is baked in.
+	if strings.Contains(banner, "Welcome to the ftp service") {
+		r.HoneypotType = TypeDionaea
+		r.Confidence = 92
+		r.Evidence = `FTP L13: static banner "Welcome to the ftp service" (dionaea ftp.py — hardcoded)`
+		r.IsHoneypot = true
+		return r
+	}
+
 	// Anonymous login attempt.
 	r1, _ := rawTCPExchange(addr, "USER anonymous\r\n")
 	if r1 == "" || !strings.HasPrefix(r1, "331") {
@@ -767,7 +777,19 @@ func FTP(ip string, port int) *Result {
 			return r
 		}
 	}
-	rawTCPExchange(addr, "PASS galleria@probe.io\r\n")
+	passResp, _ := rawTCPExchange(addr, "PASS galleria@probe.io\r\n")
+
+	// Dionaea L13: any credentials → 231 (acknowledge) → 230 (logged in).
+	// Real FTP rejects anonymous with a password check; Dionaea always accepts.
+	// Source: dionaea ftp.py:284-299 — hardcoded 231+230 regardless of creds.
+	if strings.HasPrefix(passResp, "231") {
+		// Followed by 230 — both are Dionaea FTP auth bypass.
+		r.HoneypotType = TypeDionaea
+		r.Confidence = 88
+		r.Evidence = "FTP L13: any-credentials accepted (PASS → 231+230); dionaea ftp.py:284-299 hardcodes acceptance"
+		r.IsHoneypot = true
+		return r
+	}
 
 	// SYST reveals the claimed OS.
 	systResp, _ := rawTCPExchange(addr, "SYST\r\n")
@@ -898,6 +920,172 @@ func extractHeader(resp, name string) string {
 	return ""
 }
 
+// SIP runs fingerprinting against a SIP server (TCP and UDP, port 5060/5061).
+//
+// Dionaea signals (sip/__init__.py source analysis):
+//   H21 — hardcoded nonce="foobar123" in WWW-Authenticate (sip/__init__.py:813,829)
+//          Never rotates. Every dionaea instance globally produces this nonce.
+//   C9  — INVITE accepted without 401 challenge (sip/__init__.py:297-299 — auth TODO)
+func SIP(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	sipRegister := fmt.Sprintf(
+		"REGISTER sip:%s SIP/2.0\r\n"+
+			"Via: SIP/2.0/TCP galleria.probe:15060;rport;branch=z9hG4bKgal\r\n"+
+			"From: <sip:probe@galleria.probe>;tag=galleria01\r\n"+
+			"To: <sip:%s>\r\n"+
+			"Call-ID: galleria-probe@galleria.probe\r\n"+
+			"CSeq: 1 REGISTER\r\n"+
+			"Contact: <sip:probe@galleria.probe:15060>\r\n"+
+			"Max-Forwards: 70\r\n"+
+			"Content-Length: 0\r\n\r\n", ip, ip)
+
+	// Try TCP first; dionaea supports both TCP and UDP SIP.
+	resp := rawTCP(addr, sipRegister)
+	if resp == "" {
+		resp = rawUDP(addr, strings.Replace(sipRegister, "SIP/2.0/TCP", "SIP/2.0/UDP", 1))
+	}
+
+	if resp != "" {
+		lresp := strings.ToLower(resp)
+		// H21: hardcoded nonce — definitive Dionaea fingerprint.
+		if strings.Contains(resp, `nonce="foobar123"`) {
+			r.HoneypotType = TypeDionaea
+			r.Confidence = 99
+			r.Evidence = `SIP H21: WWW-Authenticate nonce="foobar123" (hardcoded; dionaea sip/__init__.py:813,829 — never rotates)`
+			r.IsHoneypot = true
+			return r
+		}
+		// 200 OK on REGISTER without auth — real SIP requires challenge first.
+		if strings.Contains(lresp, "sip/2.0 200") {
+			r.HoneypotType = TypeDionaea
+			r.Confidence = 78
+			r.Evidence = "SIP: REGISTER accepted without authentication challenge (dionaea pattern)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	// C9: INVITE accepted without 401 challenge.
+	sipInvite := fmt.Sprintf(
+		"INVITE sip:0000000000@%s SIP/2.0\r\n"+
+			"Via: SIP/2.0/TCP galleria.probe:15060;rport;branch=z9hG4bKgal2\r\n"+
+			"From: <sip:probe@galleria.probe>;tag=galleria02\r\n"+
+			"To: <sip:0000000000@%s>\r\n"+
+			"Call-ID: galleria-probe2@galleria.probe\r\n"+
+			"CSeq: 1 INVITE\r\n"+
+			"Contact: <sip:probe@galleria.probe:15060>\r\n"+
+			"Max-Forwards: 70\r\n"+
+			"Content-Type: application/sdp\r\n"+
+			"Content-Length: 130\r\n\r\n"+
+			"v=0\r\no=probe 0 0 IN IP4 galleria.probe\r\n"+
+			"s=galleria\r\nc=IN IP4 galleria.probe\r\nt=0 0\r\n"+
+			"m=audio 15000 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000\r\n",
+		ip, ip)
+
+	invResp := rawTCP(addr, sipInvite)
+	if invResp == "" {
+		invResp = rawUDP(addr, strings.Replace(sipInvite, "SIP/2.0/TCP", "SIP/2.0/UDP", 1))
+	}
+	if invResp != "" {
+		linv := strings.ToLower(invResp)
+		if strings.Contains(linv, "100 trying") ||
+			strings.Contains(linv, "180 ringing") ||
+			strings.Contains(linv, "200 ok") {
+			r.HoneypotType = TypeDionaea
+			r.Confidence = 88
+			r.Evidence = "SIP C9: INVITE accepted without 401 challenge (dionaea sip/__init__.py:297-299 — auth TODO comment)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	return r
+}
+
+// MQTT runs fingerprinting against an MQTT broker (port 1883/8883).
+//
+// Dionaea signal (mqtt/mqtt.py source analysis):
+//   M20 — CONNACK return code 0x00 (accepted) regardless of credentials
+//          (mqtt.py:140-141 — username/password logged then discarded, always CONNACK 0)
+//
+// Real brokers return 0x04 (bad user/pass) or 0x05 (not authorized) on invalid creds.
+func MQTT(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// MQTT CONNECT with deliberately wrong credentials.
+	// Remaining length = 6(protocol) + 1(level) + 1(flags) + 2(keepalive) +
+	//                    2(clientID=empty) + 6(username "test") + 11(password "galleria1") = 29
+	connectAuth := []byte{
+		0x10, 0x1d,                                                     // CONNECT, remaining=29
+		0x00, 0x04, 'M', 'Q', 'T', 'T',                                 // protocol name "MQTT"
+		0x04,                                                            // protocol level 3.1.1
+		0xC2,                                                            // flags: clean_session + username + password
+		0x00, 0x3C,                                                      // keepalive 60s
+		0x00, 0x00,                                                      // client ID length=0 (empty)
+		0x00, 0x04, 't', 'e', 's', 't',                                  // username "test"
+		0x00, 0x09, 'g', 'a', 'l', 'l', 'e', 'r', 'i', 'a', '1',       // password "galleria1"
+	}
+
+	resp := rawTCPBytes(addr, connectAuth)
+	if len(resp) < 4 {
+		return r
+	}
+
+	// CONNACK packet: 0x20 0x02 <session_present> <return_code>
+	if resp[0] != 0x20 || resp[1] < 0x02 {
+		return r
+	}
+	returnCode := resp[3]
+	switch returnCode {
+	case 0x00:
+		// Accepted with wrong credentials — definitive Dionaea M20 signal.
+		r.HoneypotType = TypeDionaea
+		r.Confidence = 88
+		r.Evidence = "MQTT M20: CONNACK 0x00 (accepted) with deliberately wrong credentials (dionaea mqtt/mqtt.py:140-141 — always returns 0)"
+		r.IsHoneypot = true
+	case 0x04, 0x05:
+		// Correct auth rejection — real MQTT broker.
+		r.HoneypotType = TypeReal
+		r.Evidence = fmt.Sprintf("MQTT: CONNACK 0x%02x (auth rejection — real broker behavior)", returnCode)
+	}
+	return r
+}
+
+// Memcache runs Dionaea-specific fingerprinting on a Memcached port.
+//
+// Dionaea signal: SET returns STORED but GET returns END (values not retained in emulation).
+// Real Memcached: GET returns VALUE <key> with the stored data.
+// Source: dionaea/modules/python/dionaea/memcached.py — emulated protocol, not real storage.
+func Memcache(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Send SET then GET in one connection (Memcache supports pipelining).
+	resp := rawTCP(addr, "set galleria_dp 0 60 5\r\nhello\r\nget galleria_dp\r\n")
+	if resp == "" {
+		return r
+	}
+
+	hasStored := strings.Contains(resp, "STORED")
+	hasValue := strings.Contains(resp, "VALUE")
+	hasEnd := strings.Contains(resp, "END")
+
+	if hasStored && hasEnd && !hasValue {
+		// Dionaea: SET accepted but GET returns END without the value.
+		r.HoneypotType = TypeDionaea
+		r.Confidence = 95
+		r.Evidence = "Memcache: SET→STORED then GET→END (no VALUE); Dionaea emulation does not retain stored values"
+		r.IsHoneypot = true
+	} else if hasStored && hasValue {
+		r.HoneypotType = TypeReal
+		r.Evidence = "Memcache: SET→STORED, GET→VALUE (real Memcached — values retained)"
+	}
+	return r
+}
+
 // SSHAuthRandom detects Cowrie's AuthRandom policy (M7 from security analysis).
 // AuthRandom rejects credentials 2-5 times from a new IP before accepting any login.
 // Real SSH: fails bad credentials immediately with no retry escalation.
@@ -1006,4 +1194,31 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// rawUDP sends a UDP payload to addr and reads up to 2048 bytes with a 3s timeout.
+func rawUDP(addr, payload string) string {
+	conn, err := net.DialTimeout("udp", addr, 3*time.Second)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.Write([]byte(payload))
+	buf := make([]byte, 2048)
+	n, _ := conn.Read(buf)
+	return string(buf[:n])
+}
+
+// rawTCPBytes sends a binary payload and returns the raw response bytes.
+func rawTCPBytes(addr string, payload []byte) []byte {
+	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	if err != nil {
+		return nil
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(probeTimeout))
+	conn.Write(payload)
+	buf, _ := io.ReadAll(io.LimitReader(conn, 512))
+	return buf
 }

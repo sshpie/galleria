@@ -48,11 +48,65 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 	if port == 11211 {
+		// Dionaea Memcache emulation: SET returns STORED but GET returns END (values not retained).
+		if doFingerprint {
+			fp := fingerprint.Memcache(ip, port)
+			if fp.IsHoneypot {
+				v.State = "HONEYPOT"
+				v.HoneypotType = string(fp.HoneypotType)
+				v.Confidence = fp.Confidence
+				v.Evidence = fp.Evidence
+				return v
+			}
+			if fp.HoneypotType == fingerprint.TypeReal {
+				v.State = "REAL"
+				v.Platform = "memcached"
+				v.AuthOff = true
+				v.Evidence = fp.Evidence
+				return v
+			}
+		}
 		if probe.Memcached(ip, port) {
 			v.State = "REAL"
 			v.Platform = "memcached"
 			v.AuthOff = true
 			v.Evidence = "Memcached stats→STAT"
+			return v
+		}
+	}
+
+	// SIP: Dionaea hardcodes nonce="foobar123" and accepts INVITE without challenge.
+	if port == 5060 || port == 5061 {
+		fp := fingerprint.SIP(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+		if fp.HoneypotType == fingerprint.TypeReal {
+			v.State = "REAL"
+			v.Platform = "sip"
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// MQTT: Dionaea always returns CONNACK 0x00 (accepted) regardless of credentials.
+	if port == 1883 || port == 8883 {
+		fp := fingerprint.MQTT(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+		if fp.HoneypotType == fingerprint.TypeReal {
+			v.State = "REAL"
+			v.Platform = "mqtt"
+			v.Evidence = fp.Evidence
 			return v
 		}
 	}
