@@ -12,15 +12,17 @@ import (
 
 // Record is a single JSONL line written to output.
 type Record struct {
-	Timestamp string            `json:"ts"`
-	IP        string            `json:"ip"`
-	Port      int               `json:"port"`
-	State     string            `json:"state"`
-	Platform  string            `json:"platform,omitempty"`
-	AuthOff   bool              `json:"auth_off,omitempty"`
-	Evidence  string            `json:"evidence,omitempty"`
-	Issuer    string            `json:"issuer,omitempty"`
-	Floor     *FloorSummary     `json:"floor,omitempty"`
+	Timestamp    string        `json:"ts"`
+	IP           string        `json:"ip"`
+	Port         int           `json:"port"`
+	State        string        `json:"state"`
+	Platform     string        `json:"platform,omitempty"`
+	AuthOff      bool          `json:"auth_off,omitempty"`
+	Evidence     string        `json:"evidence,omitempty"`
+	Issuer       string        `json:"issuer,omitempty"`
+	HoneypotType string        `json:"honeypot_type,omitempty"`
+	Confidence   int           `json:"confidence,omitempty"`
+	Floor        *FloorSummary `json:"floor,omitempty"`
 }
 
 // FloorSummary captures the noise-floor characterization for the host.
@@ -58,14 +60,16 @@ func (w *Writer) Close() {
 // Write emits a single record.
 func (w *Writer) Write(ip string, v *verdict.Verdict, sig *floor.Signature) error {
 	r := Record{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		IP:        ip,
-		Port:      v.Port,
-		State:     v.State,
-		Platform:  v.Platform,
-		AuthOff:   v.AuthOff,
-		Evidence:  v.Evidence,
-		Issuer:    v.Issuer,
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		IP:           ip,
+		Port:         v.Port,
+		State:        v.State,
+		Platform:     v.Platform,
+		AuthOff:      v.AuthOff,
+		Evidence:     v.Evidence,
+		Issuer:       v.Issuer,
+		HoneypotType: v.HoneypotType,
+		Confidence:   v.Confidence,
 	}
 	if sig != nil {
 		r.Floor = &FloorSummary{
@@ -87,7 +91,8 @@ func (w *Writer) Write(ip string, v *verdict.Verdict, sig *floor.Signature) erro
 func PrintSummary(ip string, verdicts []*verdict.Verdict, sig *floor.Signature) {
 	real := 0
 	unknown := 0
-	floor := 0
+	floorCount := 0
+	honeypot := 0
 	for _, v := range verdicts {
 		switch v.State {
 		case "REAL":
@@ -95,14 +100,16 @@ func PrintSummary(ip string, verdicts []*verdict.Verdict, sig *floor.Signature) 
 		case "UNKNOWN":
 			unknown++
 		case "FLOOR":
-			floor++
+			floorCount++
+		case "HONEYPOT":
+			honeypot++
 		}
 	}
-	fmt.Fprintf(os.Stderr, "[galleria] %s  floor=%v  REAL=%d  UNKNOWN=%d  FLOOR=%d\n",
-		ip, sig.Active, real, unknown, floor)
+	fmt.Fprintf(os.Stderr, "[galleria] %s  floor=%v  REAL=%d  UNKNOWN=%d  HONEYPOT=%d  FLOOR=%d\n",
+		ip, sig.Active, real, unknown, honeypot, floorCount)
 
 	for _, v := range verdicts {
-		if v.State == "REAL" || v.State == "UNKNOWN" {
+		if v.State == "REAL" || v.State == "UNKNOWN" || v.State == "HONEYPOT" {
 			tag := ""
 			if v.Platform != "" {
 				tag = " [" + v.Platform + "]"
@@ -111,7 +118,11 @@ func PrintSummary(ip string, verdicts []*verdict.Verdict, sig *floor.Signature) 
 			if v.AuthOff {
 				auth = " UNAUTH"
 			}
-			fmt.Fprintf(os.Stderr, "  :%d  %s%s%s\n", v.Port, v.State, tag, auth)
+			hp := ""
+			if v.HoneypotType != "" {
+				hp = fmt.Sprintf(" {%s/%d%%}", v.HoneypotType, v.Confidence)
+			}
+			fmt.Fprintf(os.Stderr, "  :%d  %s%s%s%s\n", v.Port, v.State, tag, auth, hp)
 		}
 	}
 }

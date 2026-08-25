@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -18,27 +19,36 @@ const decoyPath = "/galleria-decoy-9f3a2c"
 // SYN-ACKs AND returns an HTTP response here, it is a portspoof.
 var junkPorts = []int{7, 13, 19, 37, 79}
 
+// canaryPorts are high ports that should never be open on any real service.
+// Portspoof listens on all ports; a real host RSTs these.
+var canaryPorts = []int{64998, 64997, 64996}
+
 // Signature is the noise floor of a portspoof host.
 type Signature struct {
-	Active    bool   // host responds on junk port
-	BodySize  int    // byte size of catch-all response
-	HTTPCode  int    // HTTP code of catch-all
-	Issuer    string // TLS issuer common to all ports (if any)
+	Active         bool    // host responds on junk/canary port or cross-port identical
+	BodySize       int     // byte size of catch-all response
+	HTTPCode       int     // HTTP code of catch-all
+	Issuer         string  // TLS issuer common to all ports (if any)
+	TimingUniform  bool    // response latencies across ports have stddev < 15ms (portspoof signal)
+	TimingStddevMs float64 // measured latency stddev in milliseconds
+	HowDetected    string  // which stage triggered: "junk-port", "canary", "decoy-path", "cross-port", "timing", "malformed-verb"
 }
 
-// Characterize probes the host to establish its noise floor using three parallel stages.
+// Characterize probes the host to establish its noise floor using five parallel stages.
 // Returns a Signature. If Active is false, the host is not a portspoof.
 //
 // Stages run concurrently; first positive result wins:
 //  1. Junk ports (7,13,19,37,79) — SYN-ACK on a port that shouldn't exist = portspoof
-//  2. Decoy path probe — catch-all returns 200 on any path; real services 404
-//  3. Cross-port sampling — ≥3 identical responses (including all-zero TLS) = portspoof
+//  2. Canary ports (64998-64996) — high ports no real service uses; portspoof listens everywhere
+//  3. Decoy path probe — catch-all returns 200 on any path; real services 404
+//  4. Cross-port sampling + timing — ≥3 identical responses OR timing stddev <15ms = portspoof
+//  5. Malformed HTTP verb — portspoof returns 200; real HTTP returns 400/405/501
 func Characterize(ip string, knownPorts []int) *Signature {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 
 	type result struct{ sig *Signature }
-	ch := make(chan result, 3)
+	ch := make(chan result, 5)
 
 	// Stage 1: junk port probes (parallel).
 	go func() {
@@ -47,44 +57,63 @@ func Characterize(ip string, knownPorts []int) *Signature {
 				continue
 			}
 			if ctx.Err() != nil {
-				return
+				break
 			}
 			r := probeHTTPCtx(ctx, ip, jp, "/")
 			if r != nil {
-				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer}}
+				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer, HowDetected: "junk-port"}}
 				return
 			}
 		}
 		ch <- result{nil}
 	}()
 
-	// Stage 2: decoy path on web ports.
+	// Stage 2: high-port canary. Real hosts RST; portspoof listens everywhere.
+	go func() {
+		for _, cp := range canaryPorts {
+			if ctx.Err() != nil {
+				break
+			}
+			r := probeHTTPCtx(ctx, ip, cp, "/")
+			if r != nil {
+				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer, HowDetected: "canary"}}
+				return
+			}
+		}
+		ch <- result{nil}
+	}()
+
+	// Stage 3: decoy path on web ports.
 	go func() {
 		for _, port := range []int{80, 443, 8080, 8443} {
 			if !inList(port, knownPorts) {
 				continue
 			}
 			if ctx.Err() != nil {
-				return
+				break
 			}
 			r := probeHTTPCtx(ctx, ip, port, decoyPath)
 			if r != nil && r.code == 200 {
-				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer}}
+				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer, HowDetected: "decoy-path"}}
 				return
 			}
 		}
 		ch <- result{nil}
 	}()
 
-	// Stage 3: cross-port sampling.
-	// Identical response (any size, including 0 via TLS) across ≥3 ports = catch-all.
+	// Stage 4: cross-port sampling + timing uniformity.
+	// Identical response across ≥3 ports = catch-all.
+	// Timing stddev < 15ms across ≥5 ports = portspoof (all traffic hits one process).
 	go func() {
 		sample := samplePorts(knownPorts, 7)
 		if len(sample) < 3 {
 			ch <- result{nil}
 			return
 		}
-		type portResult struct{ r *probeResponse }
+		type portResult struct {
+			r       *probeResponse
+			latency time.Duration
+		}
 		results := make([]portResult, len(sample))
 		var wg sync.WaitGroup
 		for i, port := range sample {
@@ -95,12 +124,15 @@ func Characterize(ip string, knownPorts []int) *Signature {
 				if ctx.Err() != nil {
 					return
 				}
-				results[i] = portResult{probeHTTPCtx(ctx, ip, port, "/")}
+				t0 := time.Now()
+				r := probeHTTPCtx(ctx, ip, port, "/")
+				results[i] = portResult{r, time.Since(t0)}
 			}()
 		}
 		wg.Wait()
 
 		var sizes, codes []int
+		var latencies []float64
 		var lastR *probeResponse
 		for _, pr := range results {
 			if pr.r == nil {
@@ -108,19 +140,58 @@ func Characterize(ip string, knownPorts []int) *Signature {
 			}
 			sizes = append(sizes, pr.r.bodySize)
 			codes = append(codes, pr.r.code)
+			latencies = append(latencies, float64(pr.latency.Milliseconds()))
 			lastR = pr.r
 		}
-		// Accept all-zero TLS responses as floor signal (portspoof TLS-only mode).
+
 		if len(sizes) >= 3 && allSame(sizes) && allSame(codes) {
-			ch <- result{&Signature{Active: true, BodySize: lastR.bodySize, HTTPCode: lastR.code, Issuer: lastR.issuer}}
+			ch <- result{&Signature{Active: true, BodySize: lastR.bodySize, HTTPCode: lastR.code, Issuer: lastR.issuer, HowDetected: "cross-port"}}
 			return
+		}
+
+		// Timing uniformity: portspoof routes all ports through the same listener,
+		// producing near-identical latencies. Real multi-service hosts vary widely.
+		if len(latencies) >= 5 {
+			stddev := stddevFloat(latencies)
+			if stddev < 15.0 {
+				sig := &Signature{HowDetected: "timing", TimingUniform: true, TimingStddevMs: stddev}
+				if lastR != nil {
+					sig.Active = true
+					sig.BodySize = lastR.bodySize
+					sig.HTTPCode = lastR.code
+					sig.Issuer = lastR.issuer
+				}
+				ch <- result{sig}
+				return
+			}
 		}
 		ch <- result{nil}
 	}()
 
-	// Collect: first positive wins; need all three negatives to declare no floor.
+	// Stage 5: malformed HTTP verb on first available known port.
+	// Real HTTP servers return 400/405/501 for an unknown method.
+	// Portspoof returns 200 with its canned banner for any input.
+	go func() {
+		for _, port := range []int{80, 8080, 443, 8443} {
+			if !inList(port, knownPorts) {
+				continue
+			}
+			if ctx.Err() != nil {
+				break
+			}
+			r := probeRawHTTPCtx(ctx, ip, port, "XYZZY-GALLERIA / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+			if r != nil && r.code == 200 {
+				ch <- result{&Signature{Active: true, BodySize: r.bodySize, HTTPCode: r.code, Issuer: r.issuer, HowDetected: "malformed-verb"}}
+				return
+			}
+			break // only probe first port found
+		}
+		ch <- result{nil}
+	}()
+
+	// Collect: first positive wins; need all five negatives to declare no floor.
 	negatives := 0
-	for negatives < 3 {
+	for negatives < 5 {
 		r := <-ch
 		if r.sig != nil {
 			return r.sig
@@ -131,10 +202,16 @@ func Characterize(ip string, knownPorts []int) *Signature {
 }
 
 // IsFloor returns true if the given response matches the noise floor signature.
-// A match means: same byte size AND same HTTP code. Both must match.
+// A match means: same byte size AND same HTTP code.
+// Timing-only floor detections still match by size+code when available,
+// otherwise any response is considered floor (uniform timing = all ports are noise).
 func (s *Signature) IsFloor(bodySize, httpCode int) bool {
 	if !s.Active {
 		return false
+	}
+	if s.HowDetected == "timing" && s.BodySize == 0 && s.HTTPCode == 0 {
+		// Timing-only: no reference body — treat everything as floor.
+		return true
 	}
 	return bodySize == s.BodySize && httpCode == s.HTTPCode
 }
@@ -144,6 +221,46 @@ type probeResponse struct {
 	bodySize int
 	issuer   string
 	tlsConn  bool // true if TLS handshake succeeded (even if body empty)
+}
+
+// probeRawHTTPCtx sends a fully-formed raw HTTP request string (not a path) to the target port.
+// Used for malformed-verb detection where the verb itself is injected.
+func probeRawHTTPCtx(ctx context.Context, ip string, port int, rawRequest string) *probeResponse {
+	addr := fmt.Sprintf("%s:%d", ip, port)
+	timeout := 3 * time.Second
+
+	dialer := &net.Dialer{Timeout: timeout}
+
+	// Try TLS first.
+	cfg := &tls.Config{InsecureSkipVerify: true}
+	conn, err := tls.DialWithDialer(dialer, "tcp", addr, cfg)
+	if err == nil {
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(timeout))
+		conn.Write([]byte(rawRequest))
+		body, _ := io.ReadAll(io.LimitReader(conn, 32768))
+		r := &probeResponse{bodySize: len(body), code: parseCode(body), tlsConn: true}
+		certs := conn.ConnectionState().PeerCertificates
+		if len(certs) > 0 {
+			r.issuer = certs[0].Issuer.CommonName
+		}
+		return r
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	pconn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return nil
+	}
+	defer pconn.Close()
+	pconn.SetDeadline(time.Now().Add(timeout))
+	pconn.Write([]byte(rawRequest))
+	body, _ := io.ReadAll(io.LimitReader(pconn, 32768))
+	if len(body) == 0 {
+		return nil
+	}
+	return &probeResponse{bodySize: len(body), code: parseCode(body)}
 }
 
 func probeHTTPCtx(ctx context.Context, ip string, port int, path string) *probeResponse {
@@ -224,6 +341,24 @@ func samplePorts(list []int, n int) []int {
 	return out
 }
 
+func stddevFloat(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, v := range vals {
+		sum += v
+	}
+	mean := sum / float64(len(vals))
+	var variance float64
+	for _, v := range vals {
+		d := v - mean
+		variance += d * d
+	}
+	variance /= float64(len(vals))
+	return math.Sqrt(variance)
+}
+
 func allSame(vals []int) bool {
 	if len(vals) == 0 {
 		return false
@@ -236,3 +371,4 @@ func allSame(vals []int) bool {
 	}
 	return true
 }
+
