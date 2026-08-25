@@ -19,6 +19,7 @@ Port Verification Blue Team Asset
 | Amun | Fake Windows exploit targets |
 | Conpot | Fake industrial control systems |
 | Krawl | Fake login pages, captures creds |
+| express-honeypot | Fake PHP LFI/RFI targets |
 | Portspoof | Makes every port look open |
 
 Also identifies 339 AI/ML platforms including:

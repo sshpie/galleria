@@ -33,7 +33,8 @@ const (
 	TypeCanarytokens  HoneypotType = "CANARYTOKENS"   // Thinkst canary token infrastructure
 	TypeAmun          HoneypotType = "AMUN"            // Amun worm honeypot
 	TypeConpot        HoneypotType = "CONPOT"          // ICS/SCADA multi-protocol honeypot
-	TypeKrawl         HoneypotType = "KRAWL"           // FastAPI web honeypot with AI-generated deception pages
+	TypeKrawl             HoneypotType = "KRAWL"               // FastAPI web honeypot with AI-generated deception pages
+	TypeExpressHoneypot  HoneypotType = "EXPRESS_HONEYPOT"    // Node.js/Express LFI/RFI decoy honeypot
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -206,7 +207,17 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ab: Krawl FastAPI web honeypot — hardcoded strings + behavioral quirks.
+	// Test 6ab: express-honeypot — "bee" theme hardcoded throughout.
+	ehfp := ExpressHoneypot(ip, port)
+	if ehfp.IsHoneypot {
+		r.HoneypotType = ehfp.HoneypotType
+		r.Confidence = ehfp.Confidence
+		r.Evidence = ehfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ac: Krawl FastAPI web honeypot — hardcoded strings + behavioral quirks.
 	kfp := Krawl(ip, port)
 	if kfp.IsHoneypot {
 		r.HoneypotType = kfp.HoneypotType
@@ -1616,6 +1627,69 @@ func Amun(ip string, port int) *Result {
 			r.IsHoneypot = true
 		}
 		return r
+	}
+
+	return r
+}
+
+// ExpressHoneypot runs behavioral fingerprinting for christophe77/express-honeypot.
+//
+// express-honeypot is a Node.js/Express honeypot emulating LFI/RFI targets.
+// The "bee" theme is hardcoded throughout — lang="bee", title "Beeeeee 🐝",
+// the typo "Beekeper" (missing 'e'), and 310 PHP LFI URLs in sitemap.xml.
+//
+// Signals:
+//
+//	HTTP  — lang="bee" on every page (honey/views/index.html) — 99%
+//	HTTP  — "Beekeper Access" typo in homepage link (missing 'e') — 99%
+//	HTTP  — "bee learning" phrase in body — 95%
+//	HTTP  — robots.txt disallows "/hive/" (data store path) — 90%
+//	HTTP  — /beekeeper/darts returns unauthenticated JSON "datas" array — 92%
+func ExpressHoneypot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// E1: Homepage — three definitive string markers (honey/views/index.html hardcoded).
+	homeResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(homeResp, `lang="bee"`) {
+		r.HoneypotType = TypeExpressHoneypot
+		r.Confidence = 99
+		r.Evidence = `express-honeypot E1: lang="bee" on homepage (honey/views/index.html hardcoded)`
+		r.IsHoneypot = true
+		return r
+	}
+	if strings.Contains(homeResp, "Beekeper Access") {
+		r.HoneypotType = TypeExpressHoneypot
+		r.Confidence = 99
+		r.Evidence = `express-honeypot E1b: "Beekeper Access" typo in dashboard link (missing 'e' — hardcoded in index.html)`
+		r.IsHoneypot = true
+		return r
+	}
+	if strings.Contains(homeResp, "bee learning") {
+		r.HoneypotType = TypeExpressHoneypot
+		r.Confidence = 95
+		r.Evidence = `express-honeypot E1c: "bee learning" phrase in homepage body (hardcoded welcome text)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// E2: /beekeeper/darts — unauthenticated, returns full capture corpus as JSON "datas" array.
+	dartsResp := rawHTTP(addr, "GET /beekeeper/darts HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(dartsResp, `"datas"`) {
+		r.HoneypotType = TypeExpressHoneypot
+		r.Confidence = 92
+		r.Evidence = `express-honeypot E2: GET /beekeeper/darts returns unauthenticated JSON with "datas" array (beekeeper/router.js:39)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// E3: robots.txt discloses /hive/ data store path (seo/router.js:10).
+	robotsResp := rawHTTP(addr, "GET /robots.txt HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(robotsResp, "/hive/") {
+		r.HoneypotType = TypeExpressHoneypot
+		r.Confidence = 90
+		r.Evidence = `express-honeypot E3: robots.txt disallows "/hive/" — data store path disclosure (seo/router.js:10)`
+		r.IsHoneypot = true
 	}
 
 	return r
