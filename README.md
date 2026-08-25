@@ -4,14 +4,12 @@ Honeypot detector and AI scanner.
 
 ## Detects
 
-| Honeypot | Protocols |
-|----------|-----------|
-| **Cowrie** | SSH |
-| **Kippo** | SSH |
-| **Honeyd** | HTTP, TCP |
-| **Dionaea** | SIP, MQTT, FTP, Memcache |
-| **Glastopf** | HTTP |
-| **Portspoof** | HTTP, TCP |
+- Cowrie
+- Kippo
+- Honeyd
+- Dionaea
+- Glastopf
+- Portspoof
 
 Also identifies 339 real AI/ML platforms (Ollama, Qdrant, ChromaDB, Milvus, MLflow, and others).
 
