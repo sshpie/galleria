@@ -4,8 +4,7 @@
 [![Go](https://img.shields.io/badge/go-%3E%3D1.21-blue?logo=go)](https://go.dev)
 [![MCP](https://img.shields.io/badge/Claude%20Code-MCP%20server-blueviolet?logo=anthropic)](https://modelcontextprotocol.io)
 
-Honeypot Fingerprinter | Port Sifter | AI/LLM Port Verifier
-
+Port Verification Blue Team Asset
 ## Detects
 
 | Honeypot | Description |
