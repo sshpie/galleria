@@ -33,6 +33,7 @@ const (
 	TypeCanarytokens  HoneypotType = "CANARYTOKENS"   // Thinkst canary token infrastructure
 	TypeAmun          HoneypotType = "AMUN"            // Amun worm honeypot
 	TypeConpot        HoneypotType = "CONPOT"          // ICS/SCADA multi-protocol honeypot
+	TypeKrawl         HoneypotType = "KRAWL"           // FastAPI web honeypot with AI-generated deception pages
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -201,6 +202,16 @@ func HTTP(ip string, port int) *Result {
 		r.HoneypotType = afp.HoneypotType
 		r.Confidence = afp.Confidence
 		r.Evidence = afp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ab: Krawl FastAPI web honeypot — hardcoded strings + behavioral quirks.
+	kfp := Krawl(ip, port)
+	if kfp.IsHoneypot {
+		r.HoneypotType = kfp.HoneypotType
+		r.Confidence = kfp.Confidence
+		r.Evidence = kfp.Evidence
 		r.IsHoneypot = true
 		return r
 	}
@@ -1605,6 +1616,86 @@ func Amun(ip string, port int) *Result {
 			r.IsHoneypot = true
 		}
 		return r
+	}
+
+	return r
+}
+
+// Krawl runs behavioral fingerprinting for the Krawl FastAPI web honeypot.
+//
+// Krawl (BlessedRebuS/Krawl) is a Python/FastAPI honeypot that serves AI-generated
+// deception pages, captures credentials, and integrates with Cloudflare. Multiple
+// hardcoded strings and behavioral quirks make it trivially identifiable.
+//
+// Signals:
+//
+//	HTTP  — "Krawl me!" in catch-all page body (main_page.html hardcoded) — 99%
+//	HTTP  — /.env returns Content-Type: application/json + "fake-" prefix (real .env = text/plain) — 99%
+//	HTTP  — /users.json body is literal "null" (route registration collision) — 90%
+//	HTTP  — robots.txt disallows "/api/sql" (no real app disallows a SQL API in robots) — 92%
+//	HTTP  — HEAD to random non-existent path → 200 OK (handle_head() universal 200) — 85%
+func Krawl(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// K1: Catch-all page title/h1 — hardcoded in main_page.html.
+	homeResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(homeResp, "Krawl me!") {
+		r.HoneypotType = TypeKrawl
+		r.Confidence = 99
+		r.Evidence = `Krawl K1: "Krawl me!" in HTTP response (main_page.html hardcoded title and h1)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// K2: /.env returns application/json with "fake-" prefix credentials.
+	// Real .env files are text/plain; Krawl serves a JSON deception template.
+	envResp := rawHTTP(addr, "GET /.env HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(envResp, "application/json") && strings.Contains(envResp, "fake-") {
+		r.HoneypotType = TypeKrawl
+		r.Confidence = 99
+		r.Evidence = `Krawl K2: /.env returns application/json with "fake-" credentials (real .env files are text/plain)`
+		r.IsHoneypot = true
+		return r
+	}
+	if strings.Contains(envResp, "fake-") {
+		r.HoneypotType = TypeKrawl
+		r.Confidence = 95
+		r.Evidence = `Krawl K2b: /.env body contains "fake-" prefix on credential values (static deception template)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// K3: /users.json returns literal null body (route registration collision).
+	usersResp := rawHTTP(addr, "GET /users.json HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if idx := strings.Index(usersResp, "\r\n\r\n"); idx >= 0 {
+		if strings.TrimSpace(usersResp[idx+4:]) == "null" {
+			r.HoneypotType = TypeKrawl
+			r.Confidence = 90
+			r.Evidence = `Krawl K3: GET /users.json returns literal "null" body (route registration collision)`
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	// K4: robots.txt disallows /api/sql — no legitimate app disallows a SQL API in robots.txt.
+	robotsResp := rawHTTP(addr, "GET /robots.txt HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(robotsResp, "/api/sql") {
+		r.HoneypotType = TypeKrawl
+		r.Confidence = 92
+		r.Evidence = `Krawl K4: robots.txt disallows "/api/sql" — Krawl-specific trap path listing`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// K5: HEAD to random non-existent path → 200 OK.
+	// Krawl's handle_head() returns 200 universally regardless of path.
+	headResp := rawHTTP(addr, "HEAD /a3f9b2c1d8e7f4a5b6c3d2e1f0a9b8c7 HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.HasPrefix(headResp, "HTTP/1.1 200") || strings.HasPrefix(headResp, "HTTP/1.0 200") {
+		r.HoneypotType = TypeKrawl
+		r.Confidence = 85
+		r.Evidence = "Krawl K5: HEAD to random non-existent path returns 200 OK (handle_head() universal 200)"
+		r.IsHoneypot = true
 	}
 
 	return r

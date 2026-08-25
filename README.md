@@ -18,6 +18,7 @@ Port Verification Blue Team Asset
 | Canarytokens | Canary token infrastructure for detecting access to tripwired resources |
 | Amun | Malware collection honeypot emulating Windows vulnerability exploits |
 | Conpot | Industrial control system honeypot emulating factory and utility protocols |
+| Krawl | Web honeypot that serves fake login pages and captures credentials |
 | Portspoof | Port noise generator — responds to everything to waste scanner time |
 
 Also identifies 339 AI/ML platforms including:
