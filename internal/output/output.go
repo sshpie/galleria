@@ -3,12 +3,92 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
 	"github.com/sshpie/galleria/internal/floor"
 	"github.com/sshpie/galleria/internal/verdict"
 )
+
+// BufWriter wraps an io.Writer for MCP/programmatic use (no file handles).
+type BufWriter struct {
+	W io.Writer
+}
+
+func (b *BufWriter) WriteVerdict(ip string, v *verdict.Verdict, sig *floor.Signature) {
+	r := Record{
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		IP:           ip,
+		Port:         v.Port,
+		State:        v.State,
+		Platform:     v.Platform,
+		AuthOff:      v.AuthOff,
+		Evidence:     v.Evidence,
+		Issuer:       v.Issuer,
+		HoneypotType: v.HoneypotType,
+		Confidence:   v.Confidence,
+	}
+	if sig != nil {
+		r.Floor = &FloorSummary{
+			Active:         sig.Active,
+			BodySize:       sig.BodySize,
+			HTTPCode:       sig.HTTPCode,
+			Issuer:         sig.Issuer,
+			HowDetected:    sig.HowDetected,
+			TimingStddevMs: sig.TimingStddevMs,
+		}
+	}
+	data, err := json.Marshal(r)
+	if err == nil {
+		fmt.Fprintf(b.W, "%s\n", data)
+	}
+}
+
+func (b *BufWriter) WriteSummaryRecord(sr SummaryRecord) {
+	data, err := json.Marshal(sr)
+	if err == nil {
+		fmt.Fprintf(b.W, "%s\n", data)
+	}
+}
+
+// WriteSummary writes the structured summary record to a BufWriter (MCP path).
+func WriteSummary(bw *BufWriter, ip string, verdicts []*verdict.Verdict, sig *floor.Signature) {
+	real, unknown, floorCount, honeypot := 0, 0, 0, 0
+	var hpDetails []HoneypotDetail
+	for _, v := range verdicts {
+		switch v.State {
+		case "REAL":
+			real++
+		case "UNKNOWN":
+			unknown++
+		case "FLOOR":
+			floorCount++
+		case "HONEYPOT":
+			honeypot++
+			hpDetails = append(hpDetails, HoneypotDetail{
+				Port:         v.Port,
+				HoneypotType: v.HoneypotType,
+				Confidence:   v.Confidence,
+				Evidence:     v.Evidence,
+			})
+		}
+	}
+	sr := SummaryRecord{
+		Type:        "summary",
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		IP:          ip,
+		FloorActive: sig.Active,
+		FloorHow:    sig.HowDetected,
+		Real:        real,
+		Unknown:     unknown,
+		Honeypot:    honeypot,
+		Floor:       floorCount,
+		HoneypotIDs: hpDetails,
+	}
+	bw.WriteSummaryRecord(sr)
+}
+
 
 // Record is a single JSONL line written to output.
 type Record struct {

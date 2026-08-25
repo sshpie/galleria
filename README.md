@@ -12,6 +12,42 @@ When a honeypot runs portspoof across hundreds of ports, scanners see everything
 4. **Protocol-native verification** — binary protocols (Redis PING, Memcached stats) and typed AI services (Ollama, Qdrant, Chroma) bypass HTTP floor matching entirely
 5. **Honeypot fingerprinting** — when `--fingerprint` is set, behavioral probes run on every candidate to identify and classify deceptive infrastructure
 
+## LLM / Claude Code integration (MCP)
+
+galleria ships a built-in MCP server. Once configured, any LLM with Claude Code can just say **"use galleria to scan 47.123.220.240"** and it runs.
+
+**1. Install galleria:**
+```bash
+go install github.com/sshpie/galleria@latest
+```
+
+**2. Add to your Claude Code MCP config** (`~/.claude/mcp.json` or via `claude mcp add`):
+```json
+{
+  "mcpServers": {
+    "galleria": {
+      "command": "galleria",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Or via CLI:
+```bash
+claude mcp add galleria -- galleria mcp
+```
+
+**3. Use it:**
+```
+You: scan 47.123.220.240 with galleria, fingerprint mode
+Claude: [calls galleria.scan({ip: "47.123.220.240", fingerprint: true})]
+        → "port 22: HONEYPOT [kippo/95%] — K_C4: Protocol mismatch ASCII response"
+        → "port 11434: REAL [ollama] — UNAUTH"
+```
+
+The `scan` tool accepts: `ip` (required), `ports` (comma-separated, defaults to common AI/ML ports), `fingerprint` (bool), `concurrency` (int).
+
 ## Install
 
 ```bash
@@ -224,4 +260,8 @@ Platforms include: Ollama, Qdrant, ChromaDB, Milvus, Weaviate, Pinecone, MLflow,
   -c, --concurrency int    Max concurrent port probes (default: 40)
       --floor-only         Characterize noise floor only, then exit
       --fingerprint        Run behavioral honeypot fingerprinting on all candidates
+      --all-tiers          Probe all tiers even when floor is confirmed (exhaustive)
+
+Subcommands:
+  mcp                      Start MCP server (stdio) for LLM/Claude Code tool use
 ```
