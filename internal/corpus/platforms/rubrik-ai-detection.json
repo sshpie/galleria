@@ -1,0 +1,60 @@
+{
+  "platform": "rubrik-ai-detection",
+  "display_name": "Rubrik AI Detection (webhook tool-blocking + logging)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "Rubrik Inc (NYSE: RBRK)",
+  "apex": "rubrik.com",
+  "default_ports": [443],
+  "api_paths": [
+    "/v1/after_completion/openai/v1",
+    "/v1/litellm/batch"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "Bearer (RUBRIK_API_KEY); webhook base URL is operator-supplied (NO default)",
+  "auth_config_env": ["RUBRIK_API_KEY", "RUBRIK_WEBHOOK_URL"],
+  "default_creds": [],
+  "default_api_base": null,
+  "install_tell": "Rubrik guardrail hook is webhook-style: post-completion tool blocking at /v1/after_completion/openai/v1, batch logging at /v1/litellm/batch. Source proxies inbound headers (Authorization, Cookie, x-api-key) through to the webhook -- documented behavior. LiteLLM-side integration lives at litellm/integrations/rubrik.py, not under guardrail_hooks/rubrik/ (hook dir is just an initializer stub).",
+  "misconfig_patterns": [
+    "Inbound headers PROXIED to Rubrik webhook: Authorization, Cookie, x-api-key from the original client-to-LiteLLM call are forwarded. This is documented in the source. Operator-side awareness gap: customer tokens flow to Rubrik logging plane.",
+    "Webhook URL is operator-supplied; no default -- typo or DNS hijack on the operator's chosen RUBRIK_WEBHOOK_URL exfiltrates every agent call including proxied auth headers.",
+    "Anthropic /v1/messages requests get a separate logging request ID so endpoints share a trace -- correlation surface."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"rubrik.com\"",
+      "ssl.cert.subject.cn:\"*.rubrik.com\"",
+      "ssl.cert.subject.cn:\"aidr.rubrik.com\""
+    ],
+    "active_probe": {
+      "path": "/v1/after_completion/openai/v1",
+      "method": "POST",
+      "port": 443,
+      "notes": "Operator-supplied webhook; cert-pivot on rubrik.com is the discovery move"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"rubrik.com\"",
+    "strict": "ssl.cert.subject.cn:\"*.rubrik.com\"",
+    "version": "http.html:\"/v1/after_completion/openai/v1\""
+  },
+  "deployment_tells": [
+    "Rubrik AI Detection is part of Rubrik Security Cloud (RSC); webhook lives on customer-tenant subdomain of rubrik.com",
+    "Hook directory under guardrail_hooks/ only ships __init__.py; real implementation at litellm/integrations/rubrik.py (605 lines)",
+    "Webhook receives forwarded inbound headers -- explicit data-flow that operator must understand"
+  ],
+  "dmarc": "p=reject pct=100 adkim=r aspf=r rua=vali.email + everest.email + self (mailsecurity@rubrik.com)",
+  "mx_provider": "Google Workspace",
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.rubrik.com/.well-known/security.txt (verify)",
+    "psirt": "mailsecurity@rubrik.com (observed in DMARC RUA)",
+    "channel_observed": "vali.email + everest.email aggregation + self"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/rubrik/__init__.py",
+    "https://github.com/BerriAI/litellm/blob/main/litellm/integrations/rubrik.py",
+    "DNS dig 2026-06-07"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "platform": "kafka-schema-registry",
+  "display_name": "Confluent Schema Registry",
+  "category": "event_streaming",
+  "default_ports": [8081],
+  "api_paths": ["/subjects", "/config", "/schemas/ids/{id}", "/subjects/{subject}/versions"],
+  "auth_default": "none",
+  "auth_config_env": ["SCHEMA_REGISTRY_AUTHENTICATION_METHOD"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8081:8081 confluentinc/cp-schema-registry:latest — no auth block by default",
+  "misconfig_patterns": [
+    "GET /subjects unauthenticated returns full subject catalog",
+    "PUT /config unauthenticated changes global compatibility level"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.headers:\"vnd.schemaregistry\"",
+      "\"schemaregistry\""
+    ],
+    "active_probe": {
+      "path": "/subjects",
+      "method": "GET",
+      "response_markers": ["bare JSON array of subject-name strings", "Content-Type: application/vnd.schemaregistry.v1+json"],
+      "false_positive_check": "response must be a top-level JSON array (not object/HTML) with Content-Type vnd.schemaregistry — disambiguates from Flink Dashboard and Druid Coordinator which also use 8081"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"schemaregistry\"",
+    "strict": "http.headers:\"vnd.schemaregistry\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "port 8081 open, JSON-only responses, no HTML shell",
+    "collides with Flink Dashboard JobManager REST and Druid Coordinator on same port"
+  ],
+  "pivot_paths": [
+    "GET /subjects -> full schema catalog (data model, PII field names, business object shapes)",
+    "if write also unauth: POST new schema version -> downstream-consumer poisoning"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.confluent.io/platform/current/schema-registry/index.html",
+    "[CANDIDATE —  cat-event-streaming Stage -1, 2026-07-14]"
+  ]
+}

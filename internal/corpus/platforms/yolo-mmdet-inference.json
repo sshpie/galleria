@@ -1,0 +1,98 @@
+{
+  "platform": "yolo-mmdet-inference",
+  "display_name": "YOLOv8/MMDetection Inference Servers",
+  "category": "cv_inference_serving",
+  "default_ports": [
+    8000,
+    5000,
+    8001,
+    8501
+  ],
+  "api_paths": [
+    "/predict",
+    "/detect",
+    "/img_object_detection_to_json",
+    "/img_object_detection_to_img",
+    "/docs",
+    "/openapi.json",
+    "/v2/models",
+    "/v2/health/ready"
+  ],
+  "auth_default": "none-by-design",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "uvicorn main:app --host 0.0.0.0 --port 8000",
+  "misconfig_patterns": [
+    "No auth code path exists in the dominant community pattern (hand-rolled FastAPI/Flask wrapper) — the wrapper repos this class is cloned from ship zero auth by default",
+    "--host 0.0.0.0 binding is the standard tutorial/README recipe (Docker CMD/uvicorn examples), not an operator opt-in decision",
+    "No rate limiting on /predict or /detect — GPU inference compute theft via unbounded upload-and-infer loop",
+    "Uploaded images persisted to disk (input/ or uploads/ dir in most tutorial templates) and served back statically — past-inference image disclosure",
+    "Model file path and weights filename often echoed in /docs, error tracebacks, or startup banner — discloses which .pt/.onnx checkpoint (possibly proprietary/fine-tuned) is loaded",
+    "FastAPI default /docs and /openapi.json left enabled in production — full route + schema disclosure with zero effort",
+    "MMDeploy-Triton deployments inherit Triton's own unauth-by-default posture (no auth flag in default docker run) — /v2/models lists all loaded model repos, /v2/models/<name>/config exposes full model config"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"YOLOv8\" \"detect\"",
+      "http.title:\"FastAPI\" http.html:\"boxes\"",
+      "http.html:\"class_ids\"",
+      "http.html:\"confidences\"",
+      "http.html:\"detect_objects\"",
+      "http.html:\"ultralytics\"",
+      "http.html:\"/v2/health/ready\" \"mmdeploy\""
+    ],
+    "active_probe": {
+      "path": "/openapi.json",
+      "method": "GET",
+      "response_markers": [
+        "\"title\":\"FastAPI\"",
+        "/predict OR /detect path key present in \"paths\"",
+        "response schema properties containing \"boxes\"/\"confidences\"/\"class_ids\"/\"detect_objects\""
+      ],
+      "false_positive_check": "CONJUNCTIVE MATCH REQUIRED, not single-marker: generic \"FastAPI\" title alone matches thousands of unrelated APIs. Must confirm (a) a /predict or /detect path key in openapi.json AND (b) at least one CV-specific response-schema field name (boxes, confidences, class_ids, detect_objects, xyxy, class_id) in the same document. Even then this is a hand-rolled-pattern match, not a branded-product match — HIGH residual false-positive rate because /predict + FastAPI is also the default template for non-CV ML serving (tabular models, NLP classifiers, recommender endpoints). No single string in this class is as reliable as ComfyUI's http.title:\"ComfyUI\"."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"class_ids\" http.html:\"confidences\"",
+    "strict": "http.title:\"FastAPI\" http.html:\"/predict\" http.html:\"boxes\"",
+    "version": "http.html:\"ultralytics\" http.html:\"YOLOv8\""
+  },
+  "deployment_tells": [
+    "No canonical single-product signature exists — this class is a convergence of independent tutorial/template repos (Alex-Lekov/yolov8-fastapi, dankernel/YOLOv8-FastAPI, WelkinU/yolov5-fastapi-demo and dozens of forks/clones), not one codebase",
+    "Ultralytics itself ships no official self-hosted HTTP server — 'yolo predict' is CLI/library only; Ultralytics' own hosted inference is a cloud SaaS endpoint (Ultralytics Platform), out of scope for self-hosted unauth discovery",
+    "MMDetection/OpenMMLab ships no native REST server either — MMDeploy is an SDK/C++ inference library; HTTP exposure only happens when an operator bolts on Triton or TorchServe (via .mar archive) themselves, inheriting THAT platform's fingerprint rather than an MMDetection-specific one",
+    "Docker Compose is the dominant packaging pattern for the FastAPI/Flask wrapper class — docker-compose.yaml with uvicorn CMD and 0.0.0.0 bind is copy-pasted near-verbatim across forks",
+    "Response JSON field-name convergence across forks (boxes/xyxy/confidence/class_id/class_ids/detect_objects) traces back to Ultralytics' own Results object attribute names (.boxes.xyxy, .boxes.conf, .boxes.cls) — a genuine cross-repo fingerprintable signal even though the wrapper code differs"
+  ],
+  "pivot_paths": [
+    "GET /docs or /openapi.json → full route map + request/response schema (recon without a single detect call)",
+    "POST /predict or /detect → arbitrary image upload for unbounded GPU inference (compute theft)",
+    "GET /v2/models (Triton-backed MMDeploy) → loaded model repository names, versions, backend (TensorRT/ONNX/TorchScript)",
+    "GET /v2/models/<name>/config (Triton-backed) → full model config including input/output tensor shapes, dynamic batching settings",
+    "Static file serving of uploads/ or results/ dir (common in tutorial templates) → prior-submitter image disclosure",
+    "Startup banner / traceback path disclosure → local filesystem path to the .pt/.onnx checkpoint, sometimes revealing project/client name in the path string"
+  ],
+  "vulnerabilities": [
+    "No-auth-by-design in the dominant hand-rolled FastAPI/Flask wrapper pattern — there is no upstream CVE because no vendor ships auth for this pattern to begin with",
+    "GHSA-9pf3-7rrr-x5jh (InternLM/lmdeploy) — arbitrary code execution via insecure deserialization in torch.load(); relevant to the broader PyTorch-checkpoint-loading class this platform inherits, not MMDetection/MMDeploy itself",
+    "December 2024 Ultralytics PyPI supply-chain compromise (versions 8.3.41/8.3.42 trojanized with XMRig cryptominer via GitHub Actions branch-name injection) — supply-chain risk to the ultralytics package itself, not a runtime auth/RCE flaw in deployed inference servers; noted for operator patch-hygiene context only"
+  ],
+  "sources": [
+    "https://github.com/ultralytics/ultralytics",
+    "https://github.com/ultralytics/ultralytics/blob/main/docs/en/modes/predict.md",
+    "https://github.com/open-mmlab/mmdeploy",
+    "https://github.com/open-mmlab/mmdeploy/blob/main/docs/en/get_started.md",
+    "https://github.com/open-mmlab/mmdeploy/blob/main/docs/en/04-supported-codebases/mmdet.md",
+    "https://mmdetection.readthedocs.io/en/3.x/user_guides/deploy.html",
+    "https://mmocr.readthedocs.io/en/v0.6.2/model_serving.html",
+    "https://mmclassification.readthedocs.io/en/latest/tools/model_serving.html",
+    "https://github.com/Alex-Lekov/yolov8-fastapi",
+    "https://github.com/dankernel/YOLOv8-FastAPI",
+    "https://github.com/WelkinU/yolov5-fastapi-demo",
+    "https://github.com/orgs/ultralytics/discussions/13261",
+    "https://github.com/orgs/ultralytics/discussions/2547",
+    "https://github.com/InternLM/lmdeploy/security/advisories/GHSA-9pf3-7rrr-x5jh",
+    "https://www.hiddenlayer.com/research/ultralytics-python-package-compromise-deploys-cryptominer",
+    "https://thehackernews.com/2024/12/ultralytics-ai-library-compromised.html"
+  ]
+}

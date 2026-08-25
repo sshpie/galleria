@@ -1,0 +1,102 @@
+{
+  "platform": "privategpt",
+  "display_name": "PrivateGPT",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8001,
+    8080
+  ],
+  "api_paths": [
+    "/v1/ingest",
+    "/v1/ingest/file",
+    "/v1/ingest/list",
+    "/v1/chunks",
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v1/embeddings",
+    "/health",
+    "/ui",
+    "/docs"
+  ],
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "PGPT_PROFILES",
+    "PGPT_SETTINGS_FOLDER",
+    "server.auth.enabled (settings.yaml, default false)",
+    "server.auth.secret (settings.yaml example 'Basic c2VjcmV0OmtleQ==' = secret:key)"
+  ],
+  "default_creds": [
+    {
+      "user": "secret",
+      "pass": "key",
+      "context": "settings.yaml server.auth.secret base64-encodes secret:key as the EXAMPLE bearer token; inert because server.auth.enabled is false by default. Only live if an operator enables auth without changing the secret."
+    }
+  ],
+  "install_tell": "Classic (dominant population): git clone https://github.com/zylon-ai/private-gpt && poetry install --extras \"ui llms-ollama embeddings-ollama vector-stores-qdrant\" && PGPT_PROFILES=ollama make run  -> Gradio UI + API on http://localhost:8001 | 1.0 rewrite: uv tool install --python 3.11 --find-links https://wheels.privategpt.dev/packages/ \"private-gpt[core]\" && OPENAI_API_BASE=http://localhost:<port>/v1 private-gpt serve  -> http://localhost:8080/ui",
+  "misconfig_patterns": [
+    "settings.yaml server.auth.enabled=false -> every FastAPI route unauth (auth.py installs always-true authenticated())",
+    "Gradio UI mounted at / (classic :8001) or /ui (1.0 :8080) with no login when auth disabled",
+    "docker-compose / make run binds 0.0.0.0:8001 -> exposing the host puts the whole RAG API on the internet",
+    "Ingested corpus listable (/v1/ingest/list) and retrievable (/v1/chunks) without credentials",
+    "CVE-2024-5186 SSRF via ingest path parameter reaches cloud metadata on 0.5.0"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"PrivateGPT\"",
+      "http.html:\"gradio\" http.html:\"PrivateGPT\" port:8001",
+      "http.html:\"/v1/ingest\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": [
+        "{\"status\":\"ok\"}",
+        "Gradio config blob in HTML root with title containing 'PrivateGPT'",
+        "FastAPI {\"detail\":...} body on a malformed GET /v1/ingest/list"
+      ],
+      "false_positive_check": "GET /health -> {\"status\":\"ok\"} is generic and collides with any FastAPI app. Disambiguate PrivateGPT by requiring TWO vendor-unique signals together: (1) the Gradio root HTML whose <title>/config JSON contains 'PrivateGPT', AND (2) the vendor-unique routes /v1/chunks and /v1/ingest/list (a bare /v1/chat/completions is NOT unique — LocalAI, vLLM, LM Studio, Ollama all answer the OpenAI-compatible /v1). Never fingerprint on the substrings 'chat', 'GPT', or 'AI' alone (50%-rule false positives against thousands of unrelated chatbots and Open WebUI). Note two version eras: classic = :8001 + Gradio at /; 1.0 rewrite = :8080 + UI at /ui — title still 'PrivateGPT'."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"PrivateGPT\"",
+    "strict": "http.title:\"PrivateGPT\" http.html:\"gradio\" port:8001",
+    "version": "http.html:\"/v1/ingest\" http.html:\"PrivateGPT\""
+  },
+  "deployment_tells": [
+    "Port 8001 + Gradio UI at / = classic zylon-ai/private-gpt (dominant deployed population)",
+    "Port 8080 + UI at /ui + Anthropic-API framing = 1.0 rewrite",
+    "PGPT_PROFILES env (ollama|docker|local|mock) in docker-compose reveals inference backend; 'mock' profile UI echoes input",
+    "Default vector store Qdrant on :6333 colocated",
+    "settings-{profile}.yaml layering pattern"
+  ],
+  "pivot_paths": [
+    "GET / (Gradio) -> upload/query UI with no login when auth disabled",
+    "GET /v1/ingest/list -> enumerate ingested document filenames/doc_ids (reveals loaded data: contracts, PII, source)",
+    "POST /v1/chunks {text} -> retrieve verbatim chunks from ingested docs unauth (RAG corpus read)",
+    "POST /v1/chat/completions use_context=true -> exfiltrate document content via grounded answers",
+    "settings.yaml on host (if filesystem reachable) -> upstream OPENAI_API_KEY / provider creds"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-5186 (CVSS 8.3 HIGH, CWE-918 SSRF): the file-upload 'path' parameter in privategpt 0.5.0 lets an attacker drive arbitrary server-side requests, including the AWS metadata endpoint; reported via Huntr against imartinez/zylon-ai privategpt. Affected: 0.5.0.",
+    "Design exposure (not a CVE, primary-source confirmed): server.auth.enabled defaults to false, so any default internet-exposed deployment serves the full RAG API + Gradio UI with no authentication. Affects: all versions in default config."
+  ],
+  "auth_evidence": "Primary source: settings.yaml in zylon-ai/private-gpt ships `server.auth.enabled: false` (server block: `port: ${PORT:8080}`, `auth:\\n  enabled: false\\n  secret: \"Basic c2VjcmV0OmtleQ==\"`). The companion source private_gpt/server/utils/auth.py proves the consequence: `if not settings().server.auth.enabled:` it defines `def authenticated(): return True` — a dummy dependency that always authenticates every FastAPI route. The ingested-doc, /v1/chunks retrieval, and chat endpoints are therefore fully unauth in a stock deploy. The `secret:key` base64 token in settings.yaml is only the EXAMPLE token used IF an operator flips enabled to true; it is inert by default. The classic quickstart (`PGPT_PROFILES=ollama make run`) and docker-compose bind 0.0.0.0:8001 and serve the Gradio UI + API with no login. Auth code exists and is OFF unless `server.auth.enabled: true` is set -> configurable-default-off, not open-by-default.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG documents and PII: filenames/doc_ids via GET /v1/ingest/list, verbatim source text via POST /v1/chunks",
+    "Upstream LLM provider API key (OPENAI_API_KEY / Azure / provider creds) in settings.yaml or env",
+    "Conversation content via the unauth POST /v1/chat/completions and /v1/completions endpoints",
+    "Colocated vector store contents (default Qdrant :6333, or Chroma/PGVector) if separately exposed",
+    "Cloud IAM credentials via CVE-2024-5186 SSRF reaching 169.254.169.254 metadata (0.5.0)"
+  ],
+  "sources": [
+    "https://github.com/zylon-ai/private-gpt/blob/main/settings.yaml",
+    "https://github.com/zylon-ai/private-gpt/blob/main/private_gpt/server/utils/auth.py",
+    "https://github.com/zylon-ai/private-gpt/blob/main/README.md",
+    "https://docs.privategpt.dev/manual/user-interface/gradio-manual",
+    "https://cvefeed.io/vuln/detail/CVE-2024-5186",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-5186",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

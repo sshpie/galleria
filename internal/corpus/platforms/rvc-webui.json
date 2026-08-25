@@ -1,0 +1,93 @@
+{
+  "name": "RVC WebUI (Retrieval-based Voice Conversion)",
+  "slug": "rvc-webui",
+  "category": "voice-tts-conversational",
+  "description": "Retrieval-based-Voice-Conversion-WebUI (RVC-Project) — a Gradio-based voice-conversion / voice-cloning trainer and inference UI. Trains a speaker-timbre model from <=10 minutes of target voice data and converts any input speech into the target voice, preserving intonation. Entry point infer-web.py launches a Gradio Blocks app on port 7865. Tabs cover model inference, one-click training, ckpt processing, and UVR5 vocal separation. Gradio provides no authentication unless auth= is passed to launch(), which the upstream repo does not set.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "infer-web.py calls app.launch() with no auth= argument, so the Gradio WebUI on port 7865 is fully unauthenticated when server_name is set to 0.0.0.0 (common in Docker/cloud runs). Anyone reaching the port can run inference, upload training audio, kick off training jobs, and browse the file/model dropdowns. The repo also supports launching with --share, producing a public *.gradio.live tunnel that bypasses any host firewall entirely. No API key, no session, no login form. The only barrier in default deployments is network reachability.",
+  "default_ports": [
+    7865
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7865 http.html:\"gradio\"",
+      "rationale": "Default RVC Gradio port; broad Gradio marker. High recall, but shares 7865/gradio signal with other Gradio apps — always pair with a strict tier to confirm RVC"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"gradio\" http.html:\"Retrieval-based Voice Conversion\"",
+      "rationale": "Project name string rendered in the Gradio markdown header; disambiguates RVC from Applio/OpenVoice/other Gradio apps"
+    },
+    {
+      "tier": "strict",
+      "query": "port:7865 http.html:\"gradio\" http.html:\"Model Inference\" http.html:\"ckpt Processing\"",
+      "rationale": "RVC-specific tab labels (Model Inference, Train, ckpt Processing) rendered in the Gradio SPA body; near-unique to the RVC WebUI layout"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"gradio\" http.html:\"pitch guidance\" http.html:\"index rate\"",
+      "rationale": "RVC inference-specific parameter labels (pitch guidance / index rate / feature retrieval) appear in the Gradio config; distinguishes RVC from timbre-only clones"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"gradio\" http.html:\"RVC\" http.html:\"v2\" http.html:\"RMVPE\"",
+      "rationale": "v2 model + RMVPE pitch-extractor markers indicate a current-generation RVC build for version-targeted enumeration"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7865,
+    "http_path": "/config",
+    "title_contains": "Retrieval-based-Voice-Conversion",
+    "response_body_contains": [
+      "gradio",
+      "Model Inference",
+      "ckpt Processing",
+      "index rate",
+      "pitch guidance",
+      "RMVPE"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "GET /info",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "GET /file=",
+    "POST /component_server",
+    "GET /theme.css"
+  ],
+  "known_vulns": [
+    "Gradio WebUI launched without auth= — unauthenticated inference, training-audio upload, and job control on port 7865",
+    "--share mode publishes a public *.gradio.live tunnel that bypasses host/cloud firewalls entirely",
+    "Gradio CVE-2023-51449 — path traversal in the /file endpoint (Gradio <4.11.0) leaks arbitrary host files including /proc/self/environ",
+    "Gradio CVE-2024-1561 — arbitrary local file read via /component_server method invocation (Gradio 4.3-4.12); reads secrets and model files",
+    "Gradio CVE-2024-1728 — directory traversal / resource read in the file cache",
+    "Gradio SSRF CVE-2024-4325 and CVE-2024-47167 — /queue/join save_url_to_cache fetches attacker-controlled URLs (internal-network / cloud-metadata pivot)",
+    "Gradio /config discloses full component tree, app title, and analytics flags with no auth — schema map for automated exploitation",
+    "No rate limiting on inference/training — GPU compute exhaustion at operator cost; training jobs can be triggered by any visitor",
+    "Uploaded reference/training audio and trained .pth/.index models are readable/downloadable through the UI file components with no access control"
+  ],
+  "default_creds": [],
+  "risk_notes": "RVC exists to clone a voice from as little as 10 minutes of audio; an open 7865 UI is a self-service impersonation factory. (1) Non-consensual voice cloning / biometric-identity theft — any visitor can upload a target's audio, train a model, and generate arbitrary converted speech in that voice. (2) Fraud / vishing enablement — converted speech drives voice-phishing, deepfake extortion, and CEO-fraud audio. (3) Training-data & model exposure — reference/training audio and trained .pth timbre models are the labeled voice datasets; they are downloadable through the Gradio file components and via the Gradio file-read CVEs (CVE-2023-51449 / CVE-2024-1561), so an attacker exfiltrates ready-made clone models plus /proc/self/environ secrets (HF tokens, cloud keys). (4) Compute theft — unauth GPU inference and training run at operator cost, trivially automated against /api/predict and /queue/join. (5) SSRF pivot — Gradio /queue/join save_url_to_cache reaches internal services and cloud-metadata endpoints. (6) --share tunnels defeat perimeter controls and put the whole UI on the public internet under a throwaway gradio.live hostname. The Gradio fingerprint (http.html:\"gradio\", /config) is shared with Applio and OpenVoice; disambiguate on RVC-specific tab/parameter labels (Model Inference, ckpt Processing, index rate, RMVPE).",
+  "deployment_notes": "Python/conda or Docker on CUDA GPU hosts; the one-click Windows package (RVC-beta.7z) and Colab notebooks are the dominant install paths, so many exposed instances are hobbyist. Docker runs commonly bind server_name=0.0.0.0 and publish 7865. GPU-as-a-service (RunPod, Vast.ai, Kaggle, Colab-with-tunnel) deployments are frequent and often use --share, yielding public gradio.live URLs not visible to port scanners. HuggingFace Spaces host many RVC and RVC-derived demos, publicly indexed with no auth. The upstream default Gradio version has historically lagged, so exposed instances are commonly on Gradio 3.x/4.x branches vulnerable to the file-read and SSRF CVEs. Port 7865 is the convention but is configurable; other Gradio voice apps on 7860 can be RVC forks — confirm via /config component labels.",
+  "docker_images": [
+    "ghcr.io/rvc-project/retrieval-based-voice-conversion-webui",
+    "rvc-project/retrieval-based-voice-conversion-webui"
+  ],
+  "github_repos": [
+    "RVC-Project/Retrieval-based-Voice-Conversion-WebUI",
+    "fumiama/Retrieval-based-Voice-Conversion-WebUI"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

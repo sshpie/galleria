@@ -1,0 +1,122 @@
+{
+  "platform": "superset",
+  "display_name": "Apache Superset",
+  "category": "bi_dashboard",
+  "default_ports": [8088, 80, 443, 8080, 8090, 5000],
+  "api_paths": [
+    "/login/",
+    "/health",
+    "/api/v1/me/",
+    "/api/v1/database/",
+    "/api/v1/dataset/",
+    "/api/v1/chart/",
+    "/api/v1/dashboard/",
+    "/superset/welcome/",
+    "/swagger/v1",
+    "/static/appbuilder/",
+    "/static/assets/"
+  ],
+  "auth_default": "login-wall-default-on",
+  "auth_config_env": [
+    "SECRET_KEY",
+    "SUPERSET_SECRET_KEY",
+    "ADMIN_PASSWORD",
+    "SUPERSET_ADMIN_PASSWORD",
+    "AUTH_TYPE",
+    "WTF_CSRF_ENABLED",
+    "TALISMAN_ENABLED",
+    "PUBLIC_ROLE_LIKE"
+  ],
+  "default_creds": [
+    {
+      "user": "admin",
+      "pass": "admin",
+      "context": "Canonical docker-compose / Helm quickstart creates the bootstrap admin via ADMIN_PASSWORD / SUPERSET_ADMIN_PASSWORD defaulting to 'admin'. Operator opt-in to change; frequently shipped as-is on internet-reachable boxes."
+    },
+    {
+      "user": "(forged session, user_id=1)",
+      "pass": "(default SECRET_KEY)",
+      "context": "CVE-2023-27524: Superset <=2.0.1 ships default SECRET_KEY '\\2\\1thisismyscretkey\\1\\2\\\\e\\\\y\\\\y\\\\h'. Flask signs the session cookie with it; an attacker forges {\"_user_id\":1,\"user_id\":1} and walks past the login wall as admin. Newer builds refuse the default key on boot, but operators override and never rotate. Dump shows 847 hosts emitting Set-Cookie session payload {\"_user_id\":1,\"user_id\":1} (surface marker, forgeable on default-key cohort)."
+    }
+  ],
+  "install_tell": "git clone apache/superset && docker compose -f docker-compose-image-tag.yml up (gunicorn :8088 + Postgres metastore + Redis + Celery worker); production deploys reverse-proxy 8088 behind nginx on 80/443. Helm chart 'superset' on Apache repo. ADMIN_PASSWORD/admin and an unrotated SECRET_KEY are the recurring quickstart sins.",
+  "misconfig_patterns": [
+    "Default SECRET_KEY left unrotated (<=2.0.1 ships it; later builds boot-refuse but operators override) -> CVE-2023-27524 session forgery as user_id=1 admin",
+    "docker-compose / Helm ADMIN_PASSWORD=admin shipped as-is on internet-reachable hosts",
+    "PUBLIC_ROLE_LIKE=Gamma or a misconfigured anonymous role exposes /api/v1/database/ and /api/v1/dataset/ to unauth, leaking connection display names + SQLAlchemy URIs",
+    "SQLLab reachable post-auth against a sensitive backend = direct data-exfil primitive; on permissive DB drivers chains to OS command exec",
+    "TALISMAN_ENABLED / WTF_CSRF_ENABLED disabled for 'internal' deploys weakens the CSRF + frame-busting posture",
+    "Apache Superset: version header left exposed leaks exact build for CVE cohort selection"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"data-bootstrap\"",
+      "\"Apache Superset:\" \"Version:\"",
+      "http.favicon.hash:1582430156"
+    ],
+    "active_probe": {
+      "path": "/api/v1/database/",
+      "method": "GET",
+      "response_markers": [
+        "data-bootstrap=\"{\\\"common\\\": {\\\"conf\\\": {\\\"SUPERSET_WEBSERVER_TIMEOUT\\\"",
+        "response header block 'Apache Superset:' with 'Version:' and 'Name: superset'",
+        "/static/appbuilder/ asset path (FAB mount)",
+        "Set-Cookie session payload {\\\"_user_id\\\":1,\\\"user_id\\\":1} (CVE-2023-27524 surface marker)",
+        "GET /api/v1/database/ JSON 'result' array with 'database_name' / SQLAlchemy URI fields when RBAC misconfigured or session forged"
+      ],
+      "false_positive_check": "Title 'Superset' is FP-prone: brand squatters (Udio Superset, Red Digital - Superset, MSI Superset, Superset Solutions Inc) and html-hash-collision noise (cameras, gateways, Proxmox, anything-llm strings) all surface on title:\"Superset\". Confirm with the vendor-unique data-bootstrap blob (keys SUPERSET_WEBSERVER_TIMEOUT / SUPERSET_DASHBOARD_POSITION_DATA_LIMIT) OR the 'Apache Superset:' response-header version block, neither of which collides. AI-backend wiring (pgvector/qdrant/weaviate/milvus connection) is NOT passively observable: http.html:\"embedding\"/\"llm\" are FALSE POSITIVES (Superset's own dashboard UI copy + anything-llm hash-collision noise). AI-wiring confirmation requires a /api/v1/database/ 200-with-data read (RBAC-misconfig or forged session) reading connection display names + URIs -> verify-lane action, not a passive dork."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"data-bootstrap\"",
+    "strict": "\"Apache Superset:\" \"Version:\"",
+    "version": "\"Apache Superset:\" \"Version: 2.0.1\"",
+    "note": "basic data-bootstrap = ~80% coverage of real Superset in local dump (1594/2000), strips camera/gateway/Proxmox squatters. strict 'Apache Superset:' version header = 754/2000, zero squatter collision but reverse-proxied hosts strip it (~38% coverage). version dork selects CVE-2023-27524 default-SECRET_KEY cohort (<=2.0.1: 2.0.1=16, 2.0.0=3, plus all 1.x/0.x) but UNDER-counts: a newer-version host that overrode the default-key boot refusal is still vulnerable. favicon http.favicon.hash:1582430156 = 735/2000, Stage 1c pivot for header-stripped reverse-proxied hosts. NO passive AI-backend dork exists; embedding/llm html hits are FP."
+  },
+  "deployment_tells": [
+    "gunicorn Server header on :8088; production reverse-proxied to 80/443 (dump: 443=475, 80=217, 8088 rare behind proxy)",
+    "data-bootstrap HTML attribute embedding the Superset+FAB config blob on the unauth landing/login page",
+    "Apache Superset: multi-line response-header block with Node/NPM version ranges + Version + Name: superset",
+    "/static/appbuilder/ and /static/assets/ Flask-AppBuilder static mounts (1958/2000 dump records)",
+    "Set-Cookie: session=... Flask itsdangerous token; default-key cohort emits forgeable {\"_user_id\":1,\"user_id\":1}",
+    "X-Frame-Options: SAMEORIGIN (Talisman default), canonical favicon hash 1582430156",
+    "version distribution in dump skews 5.0.0 (128) / 4.1.x / 4.0.x, long tail down to 0.20.6"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/database/ -> connection display names + SQLAlchemy URIs; names containing pgvector/qdrant/weaviate/milvus/pinecone = AI-wired backend (read-only enumerate)",
+    "GET /api/v1/dataset/ -> dataset names; *_embedding / vector / _emb / llm_ / chunks = vector tables",
+    "GET /api/v1/chart/ -> chart types over vector tables (similarity/distance viz) confirm AI-analytics use",
+    "GET /api/v1/me/ -> confirm forged/anon session identity and role (CVE-2023-27524 verification anchor)",
+    "SQLLab (post-auth) over a sensitive backend -> read-only SELECT enumeration of vector/PII tables; do not run writes",
+    "GET /swagger/v1 -> full API surface map when openapi exposed",
+    "Forge session with default SECRET_KEY, replay against version-pinned <=2.0.1 host, confirm 200-with-data on /api/v1/me/ as user_id=1 (verify-lane)"
+  ],
+  "vulnerabilities": [
+    "CVE-2023-27524 (CVSS 8.9) — default SECRET_KEY -> Flask session forgery -> auth bypass as admin -> SQLLab -> RCE on permissive drivers; affects <=2.0.1 and default-key-override hosts",
+    "CVE-2023-27526 — SSRF / metadata-access class (related disclosure window)",
+    "CVE-2021-37798 — Mako-template SSTI in chart/SQLLab params -> RCE on older builds",
+    "CVE-2024-39887 — SQLLab /api/v1/sqllab/ SQL-injection-class on specific drivers",
+    "CVE-2023-37941 — pickle-based metastore RCE via crafted artifact import (authenticated)"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: Superset ships a Flask-AppBuilder login wall (AUTH_DB), so auth is ON by default. The exposure is the default SECRET_KEY '\\2\\1thisismyscretkey\\1\\2\\\\e\\\\y\\\\y\\\\h' present in superset/config.py through 2.0.1; Flask signs the session cookie with it, enabling forgery of {\"_user_id\":1,\"user_id\":1} = bootstrap admin (CVE-2023-27524). Later builds raise on the default key at boot but operators override and never rotate. LOCAL DUMP (2026, superset.json.gz, 2000 records / 1178 unique IPs): 1594 records carry the vendor-unique data-bootstrap FAB blob; 754 emit the 'Apache Superset:' Version header (5.0.0=128, 4.1.1=79, 4.1.2=74, ... 2.0.1=16, long tail to 0.20.6); 847 emit Set-Cookie session payload {\"_user_id\":1,\"user_id\":1} (forgeable on default-key cohort, opaque on rotated hosts); 735 carry canonical favicon hash 1582430156; 353 are anything-llm html-hash-collision noise (NOT AI-backend evidence). Auth-on-default but default-SECRET_KEY-forgeable => login-wall-default-on with a known signing-key bypass on the <=2.0.1 / override cohort.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Database connection display names + SQLAlchemy URIs (incl. AI/ML backends: pgvector Postgres, Qdrant/Weaviate/Milvus result tables) via /api/v1/database/",
+    "Dataset definitions over vector/embedding tables via /api/v1/dataset/ (corpus schema, PII column names)",
+    "Dashboard + chart contents = the operator's actual BI over AI/ML data (the business intelligence itself)",
+    "SQLLab query history and saved queries (leaked credentials, internal SQL, schema)",
+    "Cached query result rows (Redis/metastore) = sampled data-at-rest from the backend",
+    "User accounts + roles via FAB security API; forged-admin session = full read of all of the above"
+  ],
+  "sources": [
+    "https://github.com/apache/superset",
+    "https://github.com/apache/superset/blob/master/superset/config.py",
+    "https://superset.apache.org/docs/installation/docker-compose/",
+    "https://nvd.nist.gov/vuln/detail/CVE-2023-27524",
+    "https://github.com/horizon3ai/CVE-2023-27524",
+    "https://github.com/advisories?query=Apache+Superset",
+    "CONFIRMED:  Cat-16 BI/Dashboard Stage -1 OSINT 2026-06-28; local Shodan dump superset.json.gz (2000 records / 1178 unique IPs) — data-bootstrap=1594, Apache Superset version header=754, session{_user_id:1}=847, favicon 1582430156=735, anything-llm hash-collision noise=353; version distribution captured. Platform fingerprint CONFIRMED in dump.",
+    "[CANDIDATE — per-host AI-backend wiring (pgvector/qdrant/weaviate/milvus connection) NOT passively confirmable; requires /api/v1/database/ 200-with-data verify-lane read. Status CANDIDATE for the AI-wiring scope filter, CONFIRMED for the platform fingerprint.]",
+    "data/platform-intel/cat16-bi-dashboards-superset-osint-2026-06-28.md"
+  ]
+}

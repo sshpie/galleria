@@ -1,0 +1,67 @@
+{
+  "platform": "javelin",
+  "display_name": "Javelin (Javelin Sentinel / getjavelin)",
+  "category": "ai-guardrail-saas",
+  "default_ports": [443],
+  "api_paths": ["/{api_version}/guardrail/{guardrail_name}/apply"],
+  "auth_default": "on",
+  "auth_config_env": ["JAVELIN_API_BASE", "JAVELIN_API_KEY"],
+  "default_creds": [],
+  "install_tell": "LiteLLM default api_base is https://api-dev.javelin.live (which does NOT resolve from open internet -- VPC-internal). Production apex is getjavelin.io / javelin.live. api.javelin.live 301-redirects to api.highflame.app (Cloudflare-fronted; possibly a tenant alias or a recent product rename). Product self-positions as enterprise LLM firewall.",
+  "misconfig_patterns": [
+    "Default api_base in source points at api-dev.javelin.live (internal-only); operators copying the example will fail to connect and may swap in api.javelin.live without checking auth path",
+    "Cloudflare 525 (origin SSL handshake fail) on getjavelin.io suggests origin cert/Cloudflare TLS-mode misconfiguration; observable but not exploitable",
+    "Cloudflare 530/1016 on api.getjavelin.io implies origin not resolvable from CF edge"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"getjavelin.io\"",
+      "ssl:\"javelin.live\"",
+      "ssl.cert.subject.cn:\"*.getjavelin.io\""
+    ],
+    "active_probe": {
+      "path": "/v1/guardrail/test/apply",
+      "method": "POST",
+      "port": 443,
+      "host_header": "api.javelin.live",
+      "response_markers": ["TBD -- prod endpoint Cloudflare-blocked from sandbox; requires verified operator find"],
+      "false_positive_check": "deferred"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"getjavelin.io\"",
+    "strict": "ssl.cert.subject.cn:\"*.getjavelin.io\"",
+    "version": "http.html:\"javelin\" http.html:\"/guardrail/\""
+  },
+  "deployment_tells": [
+    "Cloudflare-fronted",
+    "api.javelin.live -> api.highflame.app 301 redirect (tenant alias or rename in flight)",
+    "DMARC on getjavelin.io is p=none (matches Cat-33 AI-security mid-stage band)",
+    "javelin.live apex has no DMARC and no MX -- abandoned/aliased domain"
+  ],
+  "pivot_paths": [
+    "Investigate highflame.app -- tenant or rename?",
+    "Cert-CN sweep on *.getjavelin.io and *.javelin.live",
+    "Operator config leaks containing JAVELIN_API_BASE"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane D (commercial SaaS LLM firewall).",
+  "disclosure_contact": {
+    "security_txt": "https://getjavelin.io/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "support@getjavelin.io",
+    "channel_observed": "DMARC reports + support@ mailbox"
+  },
+  "dmarc_posture": {
+    "policy": "none",
+    "rua": "support@getjavelin.io",
+    "mx_provider": "Google Workspace",
+    "insight_80_placement": "Seed/Series A band (p=none with rua published; transitional)",
+    "note": "javelin.live apex has NO DMARC and NO MX; getjavelin.io is the operational apex"
+  },
+  "insight_82_status": "INCONCLUSIVE (Cloudflare 525/530/1016 from sandbox blocks marker probe; needs validated operator find)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py",
+    "POST api-dev.javelin.live (NXDOMAIN), api.getjavelin.io (CF 530) 2026-06-07",
+    "dig +short TXT _dmarc.javelin.live (empty), _dmarc.getjavelin.io 2026-06-07"
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "platform": "enkryptai",
+  "display_name": "Enkrypt AI",
+  "category": "ai-guardrails",
+  "apex": "enkryptai.com",
+  "api_apex": "api.enkryptai.com",
+  "api_endpoint": "/guardrails/policy/detect",
+  "default_ports": [
+    443
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "ENKRYPTAI_API_KEY",
+    "ENKRYPTAI_API_BASE",
+    "ENKRYPTAI_POLICY_NAME",
+    "ENKRYPTAI_DEPLOYMENT_NAME"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL \u2014 commercial AI security vendor; founded 2023; Boston/SF; CEO Yash Datta; red-teaming + runtime guardrails for enterprise GenAI",
+  "install_tell": "SaaS api.enkryptai.com; LiteLLM hook posts to /guardrails/policy/detect",
+  "misconfig_patterns": [
+    "ENKRYPTAI_API_KEY leaked in proxy config; HubSpot integration suggests marketing tooling adjacency"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"*.enkryptai.com\""
+    ],
+    "active_probe": {
+      "path": "/guardrails/policy/detect",
+      "method": "POST",
+      "response_markers": [
+        "enkrypt",
+        "policy"
+      ],
+      "false_positive_check": "Require Enkrypt brand in cert SAN"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"enkryptai.com\"",
+    "strict": "ssl.cert.subject.cn:\"enkryptai.com\" http.status:200",
+    "version": "ssl.cert.subject.cn:\"enkryptai.com\" http.html:\"enkrypt\""
+  },
+  "dmarc_posture": "p=none (MONITORING-ONLY, weakest enforcement tier); Microsoft 365 MX + HubSpot SPF",
+  "deployment_tells": [
+    "api.enkryptai.com canonical",
+    "policy_name + deployment_name dual-axis config"
+  ],
+  "pivot_paths": [
+    "ENKRYPTAI_API_KEY -> all configured policies + deployments + red-team artifacts"
+  ],
+  "vulnerabilities": [
+    "DMARC p=none means enkryptai.com is spoofable; phishing risk for AI-security customers"
+  ],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "_dmarc.enkryptai.com",
+      "status": "CONFIRMED"
+    }
+  ]
+}

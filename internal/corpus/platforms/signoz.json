@@ -1,0 +1,78 @@
+{
+  "platform": "signoz",
+  "display_name": "SigNoz (full-stack observability — Datadog OSS alternative)",
+  "category": "observability/full-stack",
+  "default_ports": [8080, 3301, 4317, 4318, 8085, 9093, 4320],
+  "api_paths": [
+    "/api/v1/version",
+    "/api/v1/health",
+    "/api/v1/register",
+    "/api/v1/services",
+    "/api/v1/dashboards",
+    "/api/v1/alerts",
+    "/api/v1/user"
+  ],
+  "auth_default": "open_registration_window",
+  "auth_config_env": [
+    "SIGNOZ_USER_ROOT_ENABLED (opt-in, v0.112.0+)",
+    "SIGNOZ_USER_ROOT_EMAIL",
+    "SIGNOZ_USER_ROOT_PASSWORD",
+    "SIGNOZ_USER_ROOT_ORG_NAME",
+    "SIGNOZ_USER_ROOT_ORG_ID",
+    "SIGNOZ_TOKENIZER_JWT_SECRET (hardcoded 'secret' in default compose — JWT forgery surface)"
+  ],
+  "default_creds": [
+    "first registrant via POST /api/v1/register becomes admin (open until first claim)"
+  ],
+  "install_tell": "curl -sL https://get.signoz.io/install.sh | bash (Docker Compose all-in-one)",
+  "misconfig_patterns": [
+    "First-registrant-becomes-admin window open from t=0",
+    "SIGNOZ_TOKENIZER_JWT_SECRET=secret hardcoded — JWT forge across any non-rotated deploy",
+    "Helm operators flip ClusterIP→LoadBalancer broadly, exposing 8123 ClickHouse",
+    "Docker quickstart maps 8080 + 4317 + 4318 directly to host"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"SigNoz\"",
+      "http.html:\"/api/v1/version\" \"SigNoz\"",
+      "http.favicon.hash:<MMH3-of-favicon.ico>",
+      "http.html:\"setup_completed\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/version",
+      "method": "GET",
+      "response_markers": ["\"version\":", "\"ee\":", "\"setup_completed\":"],
+      "false_positive_check": "JSON shape with setup_completed boolean; setup_completed:false = open_registration_window (DO NOT POST register); setup_completed:true = invite_required"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"SigNoz\"",
+    "strict": "http.title:\"SigNoz\" http.html:\"/api/v1/version\"",
+    "version": "http.title:\"SigNoz\" http.html:\"setup_completed\""
+  },
+  "deployment_tells": [
+    "<title>SigNoz</title> + /manifest.json + /favicon.ico",
+    "/api/v1/version returns {version,ee,setup_completed}",
+    "ClickHouse 8123/9000 commented out in default compose (internal-only)",
+    "/api/v1/register registered as am.OpenAccess(aH.registerUser) in source"
+  ],
+  "pivot_paths": [
+    "/api/v1/version setup_completed:false → open admin claim window (NAMES are the finding, do not POST)",
+    "Shadow port 8123 ClickHouse HTTP → raw signoz_traces/signoz_logs/signoz_metrics databases",
+    "Shadow port 9000 ClickHouse native → same raw store, faster protocol",
+    "Hardcoded JWT secret 'secret' → forge admin token on non-rotated deploys",
+    "Shadow port 4317/4318 OTel ingest → trace poisoning surface"
+  ],
+  "vulnerabilities": [
+    "No published GHSAs as of 2026-06-09 (clean CVE field)",
+    "Issue #10222 (Feb 2026) — embargoed responsible disclosure inquiry"
+  ],
+  "sources": [
+    "CANDIDATE — signoz.io/docs/userguide/authentication/ (first-registrant=admin)",
+    "CANDIDATE — github.com/SigNoz/signoz/blob/main/pkg/query-service/app/http_handler.go (am.OpenAccess)",
+    "CANDIDATE — github.com/SigNoz/signoz/issues/6001 (automatic admin account)",
+    "CANDIDATE — signoz.io/docs/manage/administrator-guide/configuration/root-user/ (v0.112.0+)",
+    "CANDIDATE — github.com/SigNoz/charts charts/signoz/values.yaml",
+    " pre-assessment OSINT 2026-06-09 (cat-54-otel-collector)"
+  ]
+}

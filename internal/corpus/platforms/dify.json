@@ -1,0 +1,133 @@
+{
+  "platform": "dify",
+  "display_name": "Dify",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    80,
+    443,
+    5003
+  ],
+  "api_paths": [
+    "/console/api/setup",
+    "/console/api/init",
+    "/console/api/version",
+    "/console/api/system-features",
+    "/console/api/workspaces/current/tool-provider/api/test/pre",
+    "/v1/chat-messages",
+    "/v1/completion-messages",
+    "/v1/workflows/run",
+    "/install",
+    "/apps"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [
+    "INIT_PASSWORD",
+    "SECRET_KEY",
+    "CONSOLE_WEB_URL",
+    "CONSOLE_API_URL",
+    "DB_PASSWORD",
+    "REDIS_PASSWORD",
+    "ENABLE_EMAIL_PASSWORD_LOGIN",
+    "ALLOW_REGISTER"
+  ],
+  "default_creds": [
+    {
+      "user": "postgres",
+      "pass": "difyai123456",
+      "context": "PostgreSQL DB_USERNAME/DB_PASSWORD in docker/.env.example and docker-compose.yaml (CVE-2025-56157); not published to host by default in 1.0.1+ but reachable from any compromised container/sidecar."
+    },
+    {
+      "user": "(none)",
+      "pass": "difyai123456",
+      "context": "REDIS_PASSWORD default in docker/.env.example line 61; also embedded in CELERY_BROKER_URL redis://:difyai123456@redis:6379/1."
+    }
+  ],
+  "install_tell": "git clone https://github.com/langgenius/dify.git && cd dify/docker && cp .env.example .env && docker compose up -d  # then open http://localhost/install",
+  "misconfig_patterns": [
+    "Operator runs cp .env.example .env without setting INIT_PASSWORD, then exposes port 80 to the internet before completing /install -> first-visitor claimable admin (GET /console/api/setup == not_started)",
+    "Leaving DB_PASSWORD/REDIS_PASSWORD at difyai123456 default -> trivial lateral movement from any container/SSRF foothold to the data + vector store",
+    "SECRET_KEY left empty in multi-replica deploys -> inconsistent session signing / token forgery risk across nodes",
+    "ALLOW_REGISTER / ENABLE_EMAIL_PASSWORD_LOGIN left open on an internet-facing instance -> arbitrary account self-registration into the workspace",
+    "plugin_daemon debug port 5003 exposed to host and reachable from outside the trust boundary",
+    "Running a version below the SSRF/auth-bypass fix line while exposing /console/api/workspaces/.../tool-provider/api/test/pre"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"/console/api\"",
+      "http.title:\"Dify\"",
+      "http.favicon.hash:<dify-favicon-hash>",
+      "http.html:\"_next\" http.html:\"Dify\""
+    ],
+    "active_probe": {
+      "path": "/console/api/setup",
+      "method": "GET",
+      "response_markers": [
+        "{\"step\": \"not_started\"}",
+        "{\"step\": \"finished\", \"setup_at\":",
+        "JSON key \"step\" with value not_started|finished"
+      ],
+      "false_positive_check": "Do NOT fingerprint on generic strings (\"AI\", \"chat\", \"workflow\") — they collide with thousands of unrelated SaaS hosts and trip the ~50% rule. The vendor-unique discriminator is the unauthenticated GET /console/api/setup returning a JSON body whose top-level key is exactly \"step\" with value \"not_started\" or \"finished\" (plus optional \"setup_at\" ISO timestamp). This route+schema pair is Dify-specific and not present on LangFlow/Flowise/n8n/RAGFlow. Confirm a second marker (GET /console/api/version returns {\"version\": ..., \"release_date\": ...} or /console/api/system-features returns a JSON object with sso_enforced_for_signin / enable_email_password_login keys) before labeling a host Dify. A bare 200 on /install with a Next.js shell alone is insufficient — many SPA builders serve _next. The setup-step JSON is the load-bearing confirmation. A {\"step\":\"not_started\"} read on an internet-exposed host is itself the finding: an un-bootstrapped instance whose admin is claimable."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"/console/api\" http.title:\"Dify\"",
+    "strict": "http.title:\"Dify\" http.html:\"_next\" http.html:\"/console/api\"",
+    "version": "http.title:\"Dify\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "nginx reverse proxy on 80/443 fronting api:5001 and web:3000 (only nginx + plugin_daemon publish to host)",
+    "docker-ssrf_proxy-1 sidecar container (squid on 3128) is a Dify-specific compose tell",
+    "plugin_daemon debugging port 5003 published to host by default (EXPOSE_PLUGIN_DEBUGGING_PORT)",
+    "11-service compose stack: api, worker, worker_beat, web, db(postgres), redis, sandbox, ssrf_proxy, plugin_daemon, weaviate/qdrant, nginx",
+    "SECRET_KEY auto-generated into persistent storage if left empty; PLUGIN_DAEMON_KEY / PLUGIN_DIFY_INNER_API_KEY ship with sample values in .env.example",
+    "/install Next.js (_next) SPA on first run; main app served from / after setup"
+  ],
+  "pivot_paths": [
+    "GET /console/api/setup -> {\"step\":\"not_started\"} signals an un-bootstrapped instance whose admin is claimable by the next visitor (read-only detection of the claimable-admin window — do NOT POST)",
+    "GET /console/api/version -> exact build for CVE scoping (e.g. < 1.14.2 -> file-preview bypass; <= 1.5.1 -> default DB creds)",
+    "GET /console/api/system-features -> reveals sso_enforced_for_signin / enable_email_password_login / enable_social_oauth_login to map the login surface and whether self-registration (ALLOW_REGISTER) is open",
+    "Favicon hash + nginx Server header + presence of plugin_daemon:5003 confirm Dify vs sibling builders without auth",
+    "If a marketplace/app share link (/chat/<token> or /completion/<token>) is public, it reveals app naming and prompt framing (business-logic leakage) without console access"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-56157 (CVSS 9.8) — Default hard-coded PostgreSQL creds postgres/difyai123456 in docker-compose.yaml; affects Dify <= 1.5.1 (vendor notes Postgres not host-exposed by default since 1.0.1).",
+    "CVE-2025-63386 — Auth bypass via CORS misconfiguration on /console/api/setup: reflects arbitrary Origin with Access-Control-Allow-Credentials:true; affects v1.9.1.",
+    "CVE-2026-41949 (Dify < 1.14.2) — File-preview authorization bypass: any authenticated user reads up to 3000 chars of any uploaded doc cross-tenant by file UUID.",
+    "CVE-2026-41947 (CVSS 9.1, Dify <= 1.14.1) — Trace-configuration authorization bypass: editor user enables trace config for any app across tenants.",
+    "CVE-2024-10252 (CVSS ~7.2, Dify <= 0.9.1) — Code injection via internal SSRF in sandbox service; authenticated high-priv RCE as root in sandbox.",
+    "CVE-2024-12775 — SSRF via Create-Custom-Tool test endpoint POST /console/api/workspaces/current/tool-provider/api/test/pre (Dify 0.10.1).",
+    "CVE-2024-11822 — SSRF (open issue tracked against current versions).",
+    "GHSA-x53g-q9xm-rf4m / CVE-2025-3466 — affects 1.1.0–1.1.2.",
+    "GHSA-6pw4-jqhv-3626 — Unauthorized access/modification of app orchestration.",
+    "GHSA-jhgq-cx3f-vj5p — Clickjacking.",
+    "Note: 2025-10/11 reports (issues #29277/#29278) describe active RCE exploitation (miner+backdoor) prompting a re-tag of v1.10.1-fix.1 image."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: docker/.env.example ships INIT_PASSWORD= empty (line 27) and SECRET_KEY= empty (line 26). The documented quickstart (docs.dify.ai/en/self-host/quick-start/docker-compose: copy .env.example to .env, docker compose up -d, then visit http://localhost/install) forces a setup wizard that creates the admin account before the app is usable. api/controllers/console/setup.py gates POST /console/api/setup with `if get_setup_status(): raise AlreadySetupError()` AND `if tenant_count > 0: raise AlreadySetupError()` AND `if not get_init_validate_status(): raise NotInitValidateError()`. After admin creation the UI and /console/api require a logged-in session (cookie/JWT). So a completed deployment is auth-on-default. CAVEAT (the load-bearing nuance): the INIT_PASSWORD gate is the ONLY barrier on first-run admin creation, and api/controllers/console/init_validate.py returns True (status \"finished\") when INIT_PASSWORD is unset — `if os.environ.get(\"INIT_PASSWORD\"):` is skipped entirely and the function falls through to `return True`. Since the default .env.example leaves INIT_PASSWORD empty, a fresh instance exposed on port 80 BEFORE the operator completes /install is a claimable-admin race: the first anonymous visitor can POST /console/api/setup and become admin with no init-password challenge. Posture is therefore auth-on-default for an established install, but with a configurable-default-off first-run window driven by the empty INIT_PASSWORD default.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Anthropic/Azure/Bedrock) configured per-workspace in model providers — readable/usable once admin claimed",
+    "Ingested RAG knowledge-base documents and any PII/PHI within them (file preview leaks up to 3000 chars cross-tenant per CVE-2026-41949)",
+    "Visual workflow / agent / chatflow definitions revealing internal business logic, prompts, and tool wiring",
+    "End-user conversation history and message logs per app",
+    "Tool/API credentials stored in custom tool providers (API keys, OAuth secrets)",
+    "PostgreSQL data store (default creds postgres/difyai123456 — CVE-2025-56157, not host-exposed by default since 1.0.1+) and Weaviate/Qdrant/pgvector vector store contents",
+    "Plugin daemon inner-API keys and SECRET_KEY material if .env left at shipped defaults"
+  ],
+  "sources": [
+    "https://github.com/langgenius/dify",
+    "https://github.com/langgenius/dify/blob/main/docker/.env.example",
+    "https://github.com/langgenius/dify/blob/main/docker/docker-compose.yaml",
+    "https://docs.dify.ai/en/self-host/quick-start/docker-compose",
+    "https://github.com/langgenius/dify/blob/main/api/controllers/console/setup.py",
+    "https://github.com/langgenius/dify/blob/main/api/controllers/console/init_validate.py",
+    "https://nvd.nist.gov/vuln/detail/CVE-2025-56157",
+    "https://www.sentinelone.com/vulnerability-database/cve-2025-63386/",
+    "https://www.vulncheck.com/advisories/dify-authorization-bypass-via-file-preview-endpoint",
+    "https://nvd.nist.gov/vuln/detail/CVE-2026-41947",
+    "https://feedly.com/cve/CVE-2024-10252",
+    "https://github.com/langgenius/dify/security",
+    "https://github.com/langgenius/dify/issues/29278",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

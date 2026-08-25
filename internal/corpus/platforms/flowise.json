@@ -1,0 +1,114 @@
+{
+  "platform": "flowise",
+  "display_name": "Flowise",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000
+  ],
+  "api_paths": [
+    "/api/v1/chatflows",
+    "/api/v1/prediction/",
+    "/api/v1/public-chatflows",
+    "/api/v1/public-chatbotConfig",
+    "/api/v1/public-executions",
+    "/api/v1/auth/resolve",
+    "/api/v1/version",
+    "/api/v1/ping",
+    "/api/v1/settings",
+    "/api/v1/node-icon/",
+    "/api/v1/credentials",
+    "/api/v1/mcp/"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [
+    "FLOWISE_USERNAME",
+    "FLOWISE_PASSWORD",
+    "JWT_AUTH_TOKEN_SECRET",
+    "JWT_REFRESH_TOKEN_SECRET",
+    "EXPRESS_SESSION_SECRET",
+    "TOKEN_HASH_SECRET",
+    "APP_URL",
+    "SECURE_COOKIES",
+    "FLOWISE_SECRETKEY_OVERWRITE"
+  ],
+  "default_creds": [],
+  "install_tell": "npx flowise start  (npm i -g flowise) OR docker compose up -d from /docker after cp .env.example .env  (image flowiseai/flowise:latest, port 3000)",
+  "misconfig_patterns": [
+    "Pre-3.0.1 instances left at default (no FLOWISE_USERNAME) = fully unauth UI+API, the 12,000+ exposed fleet behind CVE-2025-8943",
+    "Operators who set only an API key (no per-user login) on current builds = API-token-only protection; a single leaked/guessed token = full management access",
+    "FLOWISE_SECRETKEY_OVERWRITE left at a weak/shared value or encryption.key world-readable on the host volume -> stored LLM credentials decryptable",
+    "Public chatflows + open /api/v1/prediction -> unmetered LLM token abuse even on a 'logged-in only' UI",
+    "CORS_ORIGINS=* and IFRAME_ORIGINS=* shipped as commented defaults; if uncommented as-is, embed/XSS surface widens"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Flowise - Build AI Agents, Visually\"",
+      "http.html:\"Flowise - Build AI Agents, Visually\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/version",
+      "method": "GET",
+      "response_markers": [
+        "JSON body with field \"version\" (e.g. {\"version\":\"3.0.x\"})",
+        "/api/v1/ping returns \"pong\" (200, unauthenticated, used as the Docker healthcheck)",
+        "/api/v1/auth/resolve POST returns JSON {\"redirectUrl\":\"/organization-setup\"} on a fresh install or {\"redirectUrl\":\"/signin\"} once provisioned — vendor-unique org-setup tell",
+        "x-powered-by header is absent (app.disable('x-powered-by')) — distinguishes from generic Express"
+      ],
+      "false_positive_check": "Port 3000 alone is worthless — it collides with Grafana, generic Node/Express, Next.js dev servers, and thousands of unrelated apps. Anchor on the vendor-unique title string \"Flowise - Build AI Agents, Visually\" (the homepage <title>) OR a 200 on GET /api/v1/version returning a JSON object whose ONLY/primary key is \"version\" combined with /api/v1/ping returning the literal \"pong\". Do not key on generic tokens like \"chat\", \"AI\", \"agent\", or \"flow\" — they trip the ~50%-rule across the whole Cat-34 builder cohort (Dify, Langflow, n8n all use similar nouns). Confirm Flowise specifically by POSTing /api/v1/auth/resolve and matching the redirectUrl /organization-setup or /signin response shape, which is unique to Flowise's IdentityManager."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Flowise\"",
+    "strict": "http.title:\"Flowise - Build AI Agents, Visually\"",
+    "version": "http.title:\"Flowise - Build AI Agents, Visually\" port:3000"
+  },
+  "deployment_tells": [
+    "Docker image flowiseai/flowise:latest, single container, volume ~/.flowise:/root/.flowise (encryption.key + sqlite live here)",
+    "Default SQLite DB at ~/.flowise/database.sqlite (DATABASE_TYPE unset => sqlite); postgres only if DATABASE_TYPE=postgres set",
+    "Healthcheck hits http://localhost:3000/api/v1/ping (visible as a recurring unauth ping in logs)",
+    "Server disables X-Powered-By; serves a React SPA from /, all unknown routes return index.html",
+    "Queue mode (MODE=queue) adds Redis + an optional BullMQ dashboard at /admin/queues (ENABLE_BULLMQ_DASHBOARD=true) — JWT-gated",
+    "Common hosting tells: Railway/Render/HuggingFace Spaces/Elestio/Sealos one-click deploys (vendor README badges)"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/version + /api/v1/ping (whitelisted) -> exact version for CVE scoping without auth",
+    "POST /api/v1/auth/resolve -> redirectUrl tells provisioned (/signin) vs un-provisioned (/organization-setup, i.e. claimable admin) state",
+    "GET /api/v1/settings (whitelisted) -> server feature/config flags pre-login",
+    "GET /api/v1/public-chatflows and /api/v1/public-chatbotConfig (whitelisted) -> any chatflow the operator marked public leaks its config/prompt design read-only",
+    "POST /api/v1/prediction/{id} (whitelisted) -> drive any chatflow whose id is known, burning the operator's upstream LLM tokens (LLMjacking) without UI auth",
+    "On pre-3.0.1 (CVE-2025-8943) hosts: full /api/v1/chatflows + /api/v1/credentials enumeration unauthenticated -> read-only metadata of every flow and credential ref"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-8943 (CVSS 9.8, CISA KEV / actively exploited) — Missing authentication + OS command RCE via Custom MCP; NVD: 'versions before 3.0.1 the default installation operates without authentication unless explicitly configured'; affects < 3.0.1 (CWE-306/CWE-862)",
+    "CVE-2025-59528 (CVSS 10.0, actively exploited) — RCE via CustomMCP node unsafe eval of mcpServerConfig; affects >= 2.2.7-patch.1 and < 3.0.6; fixed 3.0.6",
+    "CVE-2025-26319 — Pre-auth arbitrary file upload (/api/v1/openai-assistants-file flow); affects <= 2.2.7-ish builds; mass-exploited",
+    "CVE-2025-61913 (GHSA-pr8x-mr56-fx5p) — Authenticated arbitrary file write -> RCE via writeFile tool overriding system executables; affects < 3.0.1; patched 3.0.8",
+    "CVE-2025-58434 — Authentication/password-reset bypass (High); pre-3.x auth flow weakness"
+  ],
+  "auth_evidence": "PRIMARY SOURCE, current version (v3.0.1+). packages/server/src/index.ts App.config() unconditionally calls initializeJwtCookieMiddleware() and installs a global gate over every /api/v1 path: any non-whitelisted route with no valid JWT cookie AND no valid API key returns 401 {\"error\":\"Unauthorized Access\"} — and this runs for Platform.OPEN_SOURCE, not just enterprise (the license check is the only branch gated on platform type; the auth check is not). packages/server/src/enterprise/middleware/passport/index.ts handler for the whitelisted /api/v1/auth/resolve returns redirectUrl '/organization-setup' when orgService.countOrganizations()===0, i.e. a fresh install forces admin/organization creation before the app is usable, then /signin thereafter. The default docker/.env.example ships NO admin credentials (FLOWISE_USERNAME/FLOWISE_PASSWORD are gone from the current example; only commented JWT_*/EXPRESS_SESSION_SECRET/TOKEN_HASH_SECRET hints remain) — yet the first-run org-setup screen is mandatory, so a default `docker compose up -d` followed by exposing :3000 yields a setup/login wall, not an open UI. HISTORICAL CONTRAST (auth_default shifted rightward, Insight #40): NVD CVE-2025-8943 states verbatim \"Flowise versions before 3.0.1 the default installation operates without authentication unless explicitly configured\" — pre-3.0.1 was configurable-default-off (open unless FLOWISE_USERNAME/FLOWISE_PASSWORD env set), which is the tier that produced the 12,000+ unauth Shodan fleet. Caveat: even on the hardened current build, the WHITELIST_URLS in packages/server/src/utils/constants.ts leave /api/v1/prediction/, /api/v1/public-chatflows, /api/v1/public-chatbotConfig, /api/v1/version, /api/v1/ping and /api/v1/settings answering unauthenticated by design (chatbot-embed + SPA-boot surface), a ui-gated-api-open seam on those specific paths only.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Anthropic/Azure/etc.) stored as encrypted credentials but decryptable with the on-disk FLOWISE_SECRETKEY (~/.flowise/encryption.key) reachable on any unauth-or-compromised instance",
+    "Ingested RAG documents / vector-store contents and the upstream vector DB connection strings (Pinecone/Qdrant/Weaviate/pgvector) wired into Document Store nodes",
+    "Chatflow / agentflow definitions = full business-logic blueprints (prompts, tool wiring, data sources, internal API endpoints)",
+    "Conversation/chat message history and captured leads (/api/v1/leads, /api/v1/chatmessage)",
+    "Credential objects for every connected SaaS (databases, Slack, Google, GitHub, CRM OAuth2 tokens in DEFAULT_ALLOWED_OAUTH2_DOMAINS)",
+    "API keys minting full management access (the only requirement to drive /api/v1 on a 'protected' instance is a single API token)"
+  ],
+  "sources": [
+    "https://github.com/FlowiseAI/Flowise/blob/main/docker/.env.example",
+    "https://github.com/FlowiseAI/Flowise/blob/main/docker/docker-compose.yml",
+    "https://github.com/FlowiseAI/Flowise/blob/main/packages/server/src/index.ts",
+    "https://github.com/FlowiseAI/Flowise/blob/main/packages/server/src/enterprise/middleware/passport/index.ts",
+    "https://github.com/FlowiseAI/Flowise/blob/main/packages/server/src/utils/constants.ts",
+    "https://github.com/FlowiseAI/Flowise/blob/main/README.md",
+    "https://docs.flowiseai.com/configuration/authorization/app-level",
+    "https://nvd.nist.gov/vuln/detail/CVE-2025-8943",
+    "https://github.com/FlowiseAI/Flowise/security/advisories/GHSA-pr8x-mr56-fx5p",
+    "https://www.broadcom.com/support/security-center/protection-bulletin/cve-2025-26319-flowise-pre-auth-arbitrary-file-upload-vulnerability",
+    "https://www.sonicwall.com/blog/flowiseai-custom-mcp-node-remote-code-execution-",
+    "https://thehackernews.com/2026/04/flowise-ai-agent-builder-under-active.html",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

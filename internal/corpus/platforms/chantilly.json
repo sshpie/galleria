@@ -1,0 +1,115 @@
+{
+ "name": "Chantilly",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "online-ml (\"The Fellowship of Online Machine Learning\"), primary author Max Halford (maxhalford25@gmail.com)",
+  "backing": "OSS",
+  "hq": "UNKNOWN (community/individual project; Max Halford is France-based)",
+  "repo": "https://github.com/online-ml/chantilly",
+  "scale": "~98 stars; niche. Part of the River (formerly creme) ecosystem. License BSD-3.",
+  "status": "archived"
+ },
+ "ports": [
+  "5000/tcp (Flask/gunicorn, primary)",
+  "80/tcp (nginx reverse proxy in docker-compose example)",
+  "6379/tcp (Redis backend pivot, not chantilly itself)"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "http.title:\"Chantilly\"",
+  "http.html:\"github.com/creme-ml/chantilly\"",
+  "http.html:\"You need to select a flavor\"",
+  "http.html:\"river_version\" http.html:\"flavor\""
+ ],
+ "verification_primitive": {
+  "probe": "GET http://<host>:5000/api/init (read-only). Optionally GET /api/models to enumerate deployed model names. Both are pure GETs, no state change.",
+  "success_signal": "HTTP 200 with JSON body containing the keys flavor, storage, and river_version (or a JSON error {\"message\":...} from the FlavorNotSet handler, which still confirms chantilly is the running app). /api/models returns {\"models\":[...],\"default\":...}.",
+  "impact_when_open": "Confirms an unauthenticated chantilly instance, leaks storage backend (shelve/redis) and River version. Establishes \u2014 without any write \u2014 that the unauth POST /api/model dill.loads() RCE primitive is reachable, since the same blueprint has zero auth before_request. Restraint: confirm with the GET; do not send the dill RCE payload."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/",
+   "returns": "Chantilly dashboard SPA. HTML <title>Chantilly</title>, Vue app, link to github.com/creme-ml/chantilly, flavor header. Reveals instance is live and unauthenticated."
+  },
+  {
+   "method": "GET",
+   "path": "/api/init",
+   "returns": "JSON {flavor, storage, river_version} \u2014 e.g. {\"flavor\":\"regression\",\"storage\":\"redis\",\"river_version\":\"0.9.0\"}. Leaks backend type and River version (CVE-scoping). Returns FlavorNotSet error if unconfigured. Best fingerprint + recon read."
+  },
+  {
+   "method": "GET",
+   "path": "/api/models",
+   "returns": "JSON {models:[...names...], default:<name>} \u2014 enumerates all deployed model names (slug like 'earsplitting-apricot')."
+  },
+  {
+   "method": "GET",
+   "path": "/api/model",
+   "returns": "Raw dill bytes of the default model (full serialized River estimator) \u2014 model exfiltration, no auth."
+  },
+  {
+   "method": "GET",
+   "path": "/api/model/<name>",
+   "returns": "Raw dill bytes of the named model."
+  },
+  {
+   "method": "POST",
+   "path": "/api/model",
+   "returns": "Stores a model by running dill.loads(request.get_data()) on the raw body \u2014 UNAUTH ARBITRARY DESERIALIZATION = RCE. Returns {name}, 201."
+  },
+  {
+   "method": "POST",
+   "path": "/api/predict",
+   "returns": "Runs the stored model on attacker-supplied features, returns {model, prediction}. Stores features under #<id> if id provided. Inference abuse / model probing."
+  },
+  {
+   "method": "POST",
+   "path": "/api/learn",
+   "returns": "Updates the model and metrics with attacker-supplied ground truth \u2014 UNAUTH MODEL POISONING. Returns {},201."
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/model/<name>",
+   "returns": "Deletes a model (204) \u2014 unauth destructive write."
+  },
+  {
+   "method": "GET",
+   "path": "/api/metrics",
+   "returns": "JSON of current metric values (e.g. {\"MAE\":1.23}). Leaks model performance and that the instance is active."
+  },
+  {
+   "method": "GET",
+   "path": "/api/stats",
+   "returns": "JSON predict/learn call counts and mean/EWM latencies \u2014 usage volume disclosure."
+  },
+  {
+   "method": "GET",
+   "path": "/api/stream/metrics",
+   "returns": "SSE text/event-stream of live metric updates."
+  },
+  {
+   "method": "GET",
+   "path": "/api/stream/events",
+   "returns": "SSE text/event-stream of live predict/learn events including the actual feature payloads flowing through the model \u2014 passive data interception."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://github.com/online-ml/chantilly",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/chantilly/__init__.py",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/chantilly/api.py",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/chantilly/cli.py",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/chantilly/storage.py",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/chantilly/dashboard.py",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/chantilly/templates/index.html",
+  "https://raw.githubusercontent.com/online-ml/chantilly/master/setup.py",
+  "https://github.com/online-ml/chantilly/blob/master/examples/docker-compose/docker-compose.yml",
+  "https://github.com/online-ml/chantilly/blob/master/examples/docker-compose/Dockerfile",
+  "https://github.com/online-ml/chantilly/security/advisories",
+  "https://github.com/online-ml",
+  "https://github.com/online-ml/river",
+  "https://github.com/advisories/GHSA-656c-6cxf-hvcv",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

@@ -1,0 +1,47 @@
+{
+  "platform": "semantic-guard",
+  "display_name": "Semantic Guard (LiteLLM built-in)",
+  "category": "ai-guardrails-library",
+  "apex": "N/A \u2014 no commercial vendor",
+  "api_apex": "N/A \u2014 in-process embedding match",
+  "api_endpoint": "N/A",
+  "default_ports": [],
+  "auth_default": "N/A",
+  "auth_config_env": [],
+  "default_creds": [],
+  "vendor_status": "STUB \u2014 NOT a commercial vendor. LiteLLM-shipped feature that wraps the open-source semantic-router library (Aurelio Labs) for embedding-similarity prompt-injection detection. No vendor apex, no DMARC posture, no business entity. Treat as a LiteLLM internal feature, not a third-party platform.",
+  "install_tell": "Pure Python in-process; depends on semantic-router PyPI package",
+  "misconfig_patterns": [
+    "Misconfigured route templates -> false negatives on novel injection patterns; no network surface to scan"
+  ],
+  "fingerprint": {
+    "passive": [],
+    "active_probe": {}
+  },
+  "shodan_dorks": {
+    "basic": "",
+    "strict": "",
+    "version": ""
+  },
+  "dmarc_posture": "N/A (no apex)",
+  "deployment_tells": [
+    "Imports semantic_router Python library",
+    "Loads route_templates from local YAML"
+  ],
+  "pivot_paths": [
+    "N/A"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "upstream_oss",
+      "url": "github.com/aurelio-labs/semantic-router",
+      "status": "CANDIDATE"
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "platform": "questdb",
+  "display_name": "QuestDB",
+  "category": "time_series_db",
+  "default_ports": [9000, 9009, 8812, 9003],
+  "default_port_notes": {
+    "9000": "PRIMARY — HTTP REST API + Web Console + ILP over HTTP. Attack surface: SQL exec, CSV import/export, admin-equivalent web console.",
+    "9009": "InfluxDB Line Protocol (ILP) over TCP — write-only ingest path.",
+    "8812": "PostgreSQL wire protocol — real Postgres startup handshake, connects with psql/any pg client.",
+    "9003": "Min health-check/metrics server — unauthenticated by design, low value but confirms liveness + version banner."
+  },
+  "api_paths": [
+    "/",
+    "/exec",
+    "/imp",
+    "/exp",
+    "/chk"
+  ],
+  "auth_default": "SPLIT POSTURE by protocol. HTTP (9000, REST+console+ILP/HTTP): auth OFF by default — http.user/http.password both default unset ('N/A'), no credentials exist to guess or disable. PGWire (8812): auth is ALWAYS ON but ships a HARDCODED DEFAULT CREDENTIAL PAIR pg.user=admin / pg.password=quest — a known-default-creds exploitation class, not a true auth-bypass. http.security.readonly and pg.security.readonly both default false, so unauthenticated/default-cred sessions get INSERT/CREATE TABLE, not just SELECT.",
+  "auth_config_env": [
+    "http.user / http.password — server.conf, no default (unset)",
+    "http.security.readonly — default false",
+    "pg.user — default 'admin'",
+    "pg.password — default 'quest'",
+    "pg.readonly.user / pg.readonly.password — default 'user' / 'quest', only active if pg.readonly.user.enabled=true (default false)",
+    "pg.security.readonly — default false",
+    "QDB_HTTP_USER / QDB_HTTP_PASSWORD — Docker env equivalents",
+    "QDB_PG_USER / QDB_PG_PASSWORD — Docker env equivalents, _FILE suffix variants supported"
+  ],
+  "default_creds": [
+    "HTTP: none configured by default — auth fully disabled, no creds exist",
+    "PGWire: admin / quest (hardcoded default, live unless operator overrides pg.user/pg.password)",
+    "PGWire readonly: user / quest (only active if pg.readonly.user.enabled=true, default false)"
+  ],
+  "install_tell": "Web console at '/' is a React SPA (@questdb/web-console npm package) — distinctive JS bundle name/path. Port 9003 min health server returns a QuestDB-shaped response with zero auth even when 9000 is filtered.",
+  "misconfig_patterns": [
+    "9000 exposed with http.user/http.password unset -> full unauth SQL exec + CSV import/export + admin-equivalent web console",
+    "8812 exposed with pg.user/pg.password never changed from admin/quest -> default-cred PGWire login, same blast radius via a Postgres client instead of REST",
+    "http.security.readonly=false (default) paired with open HTTP -> unauth writes (CREATE TABLE, INSERT, DROP), not just reads",
+    "ILP over HTTP/TCP (9009) frequently left open for high-throughput ingest with no auth layer in OSS builds — write-only pivot even if 9000 is otherwise locked down",
+    "Reverse-proxy-only auth (nginx basic auth in front of 9000, per QuestDB's own 2022 blog on this exact gap) — if the proxy is misrouted or bypassed via direct :9000 access, the backend has zero auth of its own"
+  ],
+  "fingerprint": {
+    "passive": [
+      "Web console root ('/') returns QuestDB-branded HTML/JS bundle referencing @questdb/web-console",
+      "PGWire handshake on 8812 reports a QuestDB server_version string in the Postgres startup response"
+    ],
+    "active_probe": {
+      "path": "/exec",
+      "method": "GET",
+      "response_markers": [
+        "JSON envelope: {\"query\":..., \"columns\":[...], \"dataset\":[...], \"count\":...} — QuestDB-specific column/dataset shape distinguishes from InfluxDB/TimescaleDB JSON"
+      ],
+      "false_positive_check": "SELECT 1 trivial query confirms the dataset/columns envelope shape before treating as positive."
+    },
+    "version_router": {}
+  },
+  "shodan_dorks": {
+    "title": "title:\"QuestDB\"",
+    "html": "http.html:\"questdb\"",
+    "http_banner": "port:9000 \"dataset\"",
+    "pgwire_banner": "port:8812 \"QuestDB\""
+  },
+  "engine_routing": {
+    "shodan_visible": "Candidate dorks unverified against live Shodan web UI this pass — doc-grounded research only, route to Step 0 harvest for validation.",
+    "censys_only": "Not evaluated this pass."
+  },
+  "deployment_tells": [
+    "Official Docker image exposes 9000/9009/8812/9003 identically per questdb.com/docs/deployment/docker/ — the 4-port cluster itself is a tell",
+    "Cloud marketplace listings (DigitalOcean, AWS) reference the same default port set and http.user/pg.user config surface",
+    "QuestDB Enterprise (separate product) adds RBAC/OIDC/LDAP — presence of those auth layers indicates Enterprise, not OSS"
+  ],
+  "pivot_paths": [
+    "/exec -> arbitrary SQL execution: table enumeration, schema dump, data read of any table",
+    "/exp -> bulk CSV export of query results = direct exfil primitive, no /exec JSON parsing needed",
+    "/imp -> CSV upload = write primitive; can create/overwrite tables server-side",
+    "PGWire admin/quest login -> same SQL surface via any Postgres client/driver, useful when HTTP is proxied/WAF'd but 8812 is reachable directly",
+    "ILP write path (9009) -> blind data injection into existing/new tables even without read access — data-poisoning framing",
+    "QuestDB SQL COPY and file-system functions in some configs may expose filesystem read/write beyond table data — unconfirmed, verification-stage question"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-0824 / GHSA-xf94-h87h-g9wr: XSS in @questdb/web-console (QuestDB UI), affected up to 1.11.9, fixed 1.1.10 (QuestDB 9.3.0). CVSS 3.5 LOW. Requires user interaction (victim opens malicious link) — not a direct unauth data-exposure vector, but chains against an admin with the web console open on an otherwise-open instance.",
+    "No published GitHub Security Advisories for questdb/questdb as of this pass — no unauth-RCE CVE specific to QuestDB core found. Primary risk class is misconfiguration (auth-off-by-default HTTP + static PGWire default creds), not a code-level CVE."
+  ],
+  "auth_default_thesis": "CONFIRMED, split by protocol. HTTP (9000) ships fully unauthenticated out of the box — no default creds exist to disable. PGWire (8812) ships authenticated-but-static (admin/quest hardcoded default). An exposed OSS QuestDB instance is compromised either via true auth-bypass on 9000 or known-default-credential login on 8812, both converging on the same SQL/data surface. This two-surface split changes both verification-stage probe design and dork strategy — worth its own methodology note distinct from single-surface platforms in this category.",
+  "research_questions": [
+    "questdb.com/docs/reference/api/rest/ 404'd on direct fetch this pass — confirm current canonical path and exact /chk semantics, plus any additional endpoints (/settings, /warnings) from a live fetch or GitHub source",
+    "Confirm whether ILP over HTTP (same 9000 listener) inherits http.user/http.password gating or is unconditionally unauthenticated even when HTTP basic auth IS configured for /exec",
+    "Verify pg.readonly.user.enabled=false is truly the shipped default across current stable release (8.x/9.x) via server.conf reference doc, not just search-cache",
+    "Determine whether QuestDB SQL functions expose filesystem read/write (COPY, table-reader functions) beyond table data",
+    "Shodan/Censys dork set is UNVALIDATED — run Step 0 harvest to confirm hit counts and dork-FP rate (~50% rule) before use",
+    "No unauth-RCE CVE found for QuestDB core this pass — worth a dedicated NVD/GHSA sweep + questdb/questdb GitHub issue-tracker search for historical auth-bypass reports"
+  ],
+  "sources": [
+    "[CANDIDATE —  Cat Time-Series-DB OSINT Platoon build 2026-07-28; doc-grounded, host-unverified]",
+    "https://questdb.com/docs/deployment/docker/",
+    "https://questdb.com/docs/configuration/http-server/",
+    "https://questdb.com/docs/configuration/postgres-wire-protocol/",
+    "https://questdb.com/docs/reference/api/rest/ (via cached/secondary corroboration — direct fetch 404'd this pass)",
+    "https://community.questdb.com/t/cannot-change-default-admin-username-and-password/756/2",
+    "https://github.com/questdb/questdb/security/advisories",
+    "https://www.sentinelone.com/vulnerability-database/cve-2026-0824/",
+    "https://advisories.gitlab.com/pkg/npm/@questdb/web-console/CVE-2026-0824/",
+    "https://questdb.com/blog/2022/08/05/setting-basic-auth-nginx/"
+  ]
+}

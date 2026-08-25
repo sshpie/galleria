@@ -1,0 +1,69 @@
+{
+  "name": "WeNet Runtime",
+  "slug": "wenet",
+  "category": "voice-tts-conversational",
+  "description": "Production-oriented end-to-end speech recognition toolkit (wenet-e2e) whose LibTorch runtime ships three self-hosted server binaries — websocket_server_main, grpc_server_main, and http_server_main — for streaming and offline ASR. Default listening port 10086 across server types, with a bundled browser web client (index.html) for the WebSocket server. No built-in authentication by default. The WebSocket/gRPC transports are largely Shodan http.html-blind and route to Censys/active-probe fingerprinting.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in any of the three WeNet runtime servers (websocket_server_main, grpc_server_main, http_server_main), all defaulting to port 10086. The WebSocket server streams PCM in / JSON transcript out with no credential; a static browser client (runtime/libtorch/web/templates/index.html) is provided to drive it. The gRPC server is wire-only (protobuf, Shodan-blind). The HTTP server variant accepts POSTed audio. None enforce auth — the docs present these as an open ASR demo/serving setup. WebSocket/gRPC serve no descriptive HTML landing page, so http.html/http.title markers are weak; port + protocol handshake is the reliable signal.",
+  "default_ports": [
+    10086
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:10086 \"Upgrade: websocket\"",
+      "rationale": "Port-based: WeNet's websocket_server_main binds 10086 and answers a plain HTTP GET with a WebSocket upgrade/426. Serves no descriptive HTML, so http.html dorks miss it — port + upgrade header is the reachable signal"
+    },
+    {
+      "tier": "basic",
+      "query": "port:10086 product:\"gRPC\"",
+      "rationale": "The grpc_server_main variant on 10086 answers with HTTP/2/gRPC framing; product tag on the WeNet default port narrows to the gRPC runtime"
+    },
+    {
+      "tier": "strict",
+      "query": "port:10086 \"wenet\"",
+      "rationale": "WeNet name string in an error body, gRPC service descriptor, or the served web-client HTML on 10086; low volume, high precision. gRPC service enumeration is best confirmed via active reflection/Censys since Shodan rarely captures the protobuf body"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 10086,
+    "http_path": "/",
+    "title_contains": "",
+    "response_body_contains": [
+      "Upgrade: websocket",
+      "Sec-WebSocket-Accept",
+      "wenet"
+    ],
+    "http_header": "upgrade: websocket"
+  },
+  "api_paths": [
+    "WS :10086 (websocket_server_main: JSON config handshake + PCM stream, partial/final decode results)",
+    "gRPC :10086 (grpc_server_main: streaming Recognize RPC)",
+    "POST :10086 (http_server_main: offline audio decode)",
+    "GET / (bundled web client, runtime/libtorch/web/templates/index.html)"
+  ],
+  "known_vulns": [
+    "No built-in auth — any client reaching 10086 (WS/gRPC/HTTP) gets unlimited ASR decoding",
+    "Compute theft — no rate limiting on any runtime variant; continuous decoding jobs automatable with the bundled clients",
+    "Audio PII exfiltration — streamed/uploaded audio decoded with no consent, auth, or audit logging",
+    "gRPC server ships with no TLS by default (plaintext h2c) and, where reflection is enabled, exposes the full service descriptor to unauthenticated enumeration",
+    "HTTP server variant accepts unauthenticated audio POST with no upload size/type limits — DoS surface",
+    "Bundled web client served without access control leaks the deployment's existence and connection parameters"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — an open 10086 endpoint (any of the three server flavors) is free E2E ASR decoding, scriptable with WeNet's own clients. (2) Audio PII exfiltration — WeNet is common in Chinese production ASR pipelines; open endpoints transcribe sensitive audio without auth or logging. (3) gRPC exposure — plaintext h2c with optional reflection lets an attacker enumerate and invoke the Recognize RPC directly. (4) Shodan-blindness on WS/gRPC favors operator obscurity; Censys/active gRPC-reflection and WebSocket handshake probing enumerate these hosts where http.html dorks miss them. (5) The HTTP variant adds an unauthenticated, unbounded audio-upload DoS surface.",
+  "deployment_notes": "LibTorch runtime built from wenet-e2e/wenet (runtime/libtorch); pre-built image wenetorg/wenet-mini:latest. Three interchangeable server binaries all default to --port 10086: websocket_server_main (streaming, with a static browser client at runtime/libtorch/web/templates/index.html), grpc_server_main (streaming RPC, plaintext h2c by default), http_server_main (offline decode). WebSocket and gRPC serve no descriptive HTML — Shodan http.html/http.title dorks largely return 0; fingerprint by port 10086 + WebSocket-upgrade/426 or gRPC/HTTP-2 framing (Censys/active-probe route). Also has ONNX/GPU (Triton) and mobile runtimes, but the LibTorch servers are the canonical exposed network surface. Common in Chinese production ASR deployments; presented in docs as an open demo/serving stack with no auth.",
+  "docker_images": [
+    "wenetorg/wenet-mini:latest"
+  ],
+  "github_repos": [
+    "wenet-e2e/wenet"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

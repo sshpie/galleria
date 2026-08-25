@@ -1,0 +1,61 @@
+{
+  "platform": "clickhouse-keeper",
+  "display_name": "ClickHouse Keeper",
+  "category": "distributed_coordination",
+  "default_ports": [
+    9181,
+    9234,
+    2181
+  ],
+  "api_paths": [],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CLICKHOUSE_KEEPER_PASSWORD"
+  ],
+  "default_creds": [],
+  "install_tell": "ClickHouse Keeper config block (<keeper_server>) in config.xml, or standalone clickhouse-keeper binary; often co-located on the same host as ClickHouse itself (distinct process/port from the 8123/9000 HTTP/native interfaces already tracked under platform 'clickhouse')",
+  "misconfig_patterns": [
+    "Password auth is OPTIONAL — ships with none configured; operator must explicitly set CLICKHOUSE_KEEPER_PASSWORD or XML password field",
+    "Ships as ZooKeeper 4lw-command-compatible drop-in replacement — same unauth 4lw exposure class as ZooKeeper itself, on a different default port (9181 vs 2181), so port-2181-only ZK dorks miss this population entirely",
+    "Often deployed to REPLACE ZooKeeper for a ClickHouse cluster — operators who hardened their ZK ensemble frequently forget Keeper is the same exposure class under a new name/port",
+    "Overlap note: base ClickHouse HTTP interface (8123/9000, tracked in tome as 'clickhouse', category vector_feature) is a SEPARATE listener from Keeper (9181) — a host can show one without the other; do not conflate the two dork sets"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9181",
+      "port:9181 \"imok\""
+    ],
+    "active_probe": {
+      "path": "ruok",
+      "method": "4LW",
+      "response_markers": [
+        "imok"
+      ],
+      "false_positive_check": "raw TCP 'ruok' 4lw write must return exactly 'imok' -- shared with ZK-compatible 4lw servers generally, so confirm platform with 'srvr'/'stat' response format (ClickHouse Keeper's stat output differs in banner text from Java ZooKeeper -- look for absence of 'Zookeeper version:' JVM-style string and presence of ClickHouse build info instead)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9181",
+    "strict": "port:9181 \"imok\"",
+    "version": "port:9181 \"imok\" \"ClickHouse\""
+  },
+  "deployment_tells": [
+    "raw TCP 'ruok' to :9181 returns 'imok' unauth",
+    "raw TCP 'mntr' to :9181 returns Keeper metrics (zk_followers-style keys, some ClickHouse-specific) without auth",
+    "raw TCP 'stat' response format differs from Java ZK banner (no JVM version string) -- distinguishes Keeper from real ZooKeeper on a relocated port",
+    "co-occurrence with ClickHouse HTTP (8123 'Ok.') on the SAME ip is a strong operator-linkage signal but not required -- Keeper can run standalone as pure coordination backend for a ClickHouse cluster whose data nodes are elsewhere"
+  ],
+  "pivot_paths": [
+    "4lw 'wchs'/'cons' -> connected ClickHouse data-node IPs -> pivots to the actual cluster this Keeper coordinates",
+    "'conf' 4lw -> Raft cluster member list -> full Keeper ensemble topology unauth",
+    "if co-located with ClickHouse HTTP 8123, cross-pivot to SHOW CREATE TABLE / system.tables per the 'clickhouse' tome entry"
+  ],
+  "vulnerabilities": [
+    "No CVE required — optional-password-by-default is a design-default finding"
+  ],
+  "sources": [
+    "https://clickhouse.com/docs/guides/sre/keeper/clickhouse-keeper",
+    "https://github.com/ClickHouse/ClickHouse/issues/86323",
+    "[CANDIDATE —  cat-distributed-coordination survey 2026-07-30; new category, not yet population-verified; distinct tome entry from 'clickhouse' (HTTP interface, vector_feature category) to avoid corpus collision]"
+  ]
+}

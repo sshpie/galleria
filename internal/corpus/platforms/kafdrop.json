@@ -1,0 +1,49 @@
+{
+  "platform": "kafdrop",
+  "display_name": "Kafdrop",
+  "category": "event_streaming_webui",
+  "default_ports": [
+    9000
+  ],
+  "api_paths": [
+    "/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 9000:9000 obsidiandynamics/kafdrop \u2014 NO built-in auth mechanism at all; docs explicitly say front it with a reverse proxy",
+  "misconfig_patterns": [
+    "deployed with no reverse-proxy auth layer in front"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Kafdrop\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "HTML title: Kafdrop"
+      ],
+      "false_positive_check": "distinctive title string, low FP expected"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Kafdrop\"",
+    "strict": "http.title:\"Kafdrop\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "collides on port 9000 with CMAK \u2014 disambiguate by title string"
+  ],
+  "pivot_paths": [
+    "built-in message payload viewer -> browser-based read access, no client tooling needed",
+    "consumer-group lag/offsets visible -> business-process telemetry"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://github.com/obsidiandynamics/kafdrop#security",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] SOURCE-CONFIRMED 2026-07-14 (github.com/obsidiandynamics/kafdrop lib/template.ftlh): title tag is literally \"Kafdrop: ${title}\" \u2014 page title is a PREFIX not an exact string (e.g. \"Kafdrop: Cluster Overview\"). http.title:\"Kafdrop\" as substring match is correct; do not use exact-match title filters."
+  ]
+}

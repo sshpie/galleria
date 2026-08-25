@@ -1,0 +1,94 @@
+{
+  "name": "LiveKit Server",
+  "slug": "livekit",
+  "category": "voice-tts-conversational",
+  "description": "Open-source WebRTC SFU / realtime media server that is the backbone for self-hosted realtime voice-AI agents (LiveKit Agents framework workers connect out to it). Exposes an HTTP/WebSocket signaling endpoint on port 7880 (RTC signaling at /rtc, room/management RPC via Twirp under /twirp/*), plus TCP 7881 and a UDP/ICE range for media. Room access requires a signed JWT minted with the server's API key/secret; the classic weakness is the well-known development key pair (devkey/secret) left in place.",
+  "auth_tier": "B",
+  "default_auth": "token",
+  "auth_notes": "LiveKit gates room join and all RoomService management RPCs behind a JWT signed with an API key + secret pair configured on the server; without a valid token the signaling endpoint rejects join and management calls. This makes the platform auth_tier B (token required) rather than fully open. The dominant real-world failure is credential defaults and leakage: running 'livekit-server --dev' (and countless copied livekit.yaml quickstarts) uses the published pair API key 'devkey' / secret 'secret', so anyone can forge admin-level tokens; API keys/secrets are also frequently committed to client bundles and repos. auto_create_room is enabled by default, so a valid (or forged-with-default-secret) token can spin up rooms freely. The HTTP endpoint itself (health, validate) answers unauthenticated and is the fingerprint surface.",
+  "default_ports": [
+    7880,
+    7881,
+    7882
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7880 http.html:\"LiveKit\"",
+      "rationale": "The server's HTTP index / validate response and error bodies reference LiveKit; direct name match on the canonical signaling port"
+    },
+    {
+      "tier": "basic",
+      "query": "port:7880 http.html:\"missing authorization\"",
+      "rationale": "Hitting /rtc or a Twirp RoomService path without a token returns a LiveKit auth-error body ('missing authorization header'); high-signal for an exposed but token-gated LiveKit signaling endpoint"
+    },
+    {
+      "tier": "strict",
+      "query": "port:7880 http.html:\"twirp\" http.html:\"livekit\"",
+      "rationale": "Twirp RPC error envelopes name the livekit RoomService/EgressService; conjunction with the livekit token on 7880 is high-precision for the management RPC surface"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"LiveKit\" http.header:\"server\" port:7880",
+      "rationale": "Server header / build info on the signaling port for version-targeted enumeration against known CVE-fixed releases"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7880,
+    "http_path": "/rtc/validate",
+    "title_contains": "LiveKit",
+    "response_body_contains": [
+      "LiveKit",
+      "missing authorization",
+      "twirp",
+      "RoomService"
+    ],
+    "http_header": "server: livekit"
+  },
+  "api_paths": [
+    "GET /rtc/validate",
+    "GET /rtc",
+    "GET /",
+    "POST /twirp/livekit.RoomService/CreateRoom",
+    "POST /twirp/livekit.RoomService/ListRooms",
+    "POST /twirp/livekit.RoomService/ListParticipants",
+    "POST /twirp/livekit.RoomService/DeleteRoom",
+    "POST /twirp/livekit.RoomService/SendData",
+    "POST /twirp/livekit.EgressService/StartRoomCompositeEgress",
+    "POST /twirp/livekit.IngressService/CreateIngress",
+    "POST /twirp/livekit.SIPService/CreateSIPTrunk"
+  ],
+  "known_vulns": [
+    "Default development credentials — 'livekit-server --dev' and copied quickstart livekit.yaml ship API key 'devkey' / secret 'secret'; an attacker who knows the pair forges admin JWTs and fully controls the server",
+    "API key/secret leakage — secrets embedded in client JS bundles or committed to repos allow token forgery (RoomService admin, egress, ingress, SIP)",
+    "Room enumeration and hijack — with a valid/forged token, ListRooms + ListParticipants + join expose live realtime voice/video sessions and let an attacker join or inject data",
+    "auto_create_room enabled by default — forged tokens can create arbitrary rooms and consume media/compute resources",
+    "Egress abuse — StartRoomCompositeEgress can record/exfiltrate live sessions to attacker-controlled storage when egress creds are reachable",
+    "SIP/Ingress abuse — CreateSIPTrunk / CreateIngress can bridge external telephony/streams into rooms, a toll-fraud and injection vector",
+    "Unauthenticated info surface — /rtc/validate and health endpoints disclose configuration/version details useful for CVE scoping without a token"
+  ],
+  "default_creds": [
+    {
+      "username": "devkey",
+      "password": "secret"
+    }
+  ],
+  "risk_notes": "LiveKit is token-gated, so an exposed :7880 is not automatically open — but the ecosystem's default 'devkey'/'secret' pair collapses that gate for a large fraction of self-hosted instances. Chain: (1) find :7880 with the LiveKit/twirp/missing-authorization signature -> (2) test the default key pair (or a secret harvested from the operator's client JS bundle / repo) -> (3) mint an admin JWT -> (4) ListRooms/ListParticipants to enumerate live realtime voice-AI sessions, join or inject data, start egress to record/exfiltrate audio+video, or abuse SIP/ingress for telephony bridging and toll fraud. Even without a working key, the unauthenticated /rtc/validate + error envelopes reliably fingerprint the server and leak version for CVE scoping. Note on scope: the LiveKit *Agents* framework (livekit/agents) is a worker library that dials OUT to this server and exposes no inbound port of its own — the exposed, fingerprintable surface is the LiveKit server documented here.",
+  "deployment_notes": "Distributed as the livekit/livekit-server Docker image and Go binary; commonly self-hosted via docker-compose or Kubernetes behind a TLS-terminating LB. Ports: 7880/tcp = HTTP + WebSocket signaling (and RoomService Twirp RPC), 7881/tcp = TCP fallback for WebRTC media, 7882/udp (and a configurable UDP range, often 50000-60000) = ICE/RTP media; a Redis dependency backs multi-node clustering. Realtime voice-AI stacks run LiveKit Agents workers (Python/Node) that register outbound to the server and orchestrate STT->LLM->TTS pipelines inside rooms — so on the wire only the server's 7880 is the discoverable service. Internet exposure is normal and intended (clients must reach signaling), which makes the credential posture the whole security story: production requires operator-generated key/secret pairs, but --dev defaults and secret leakage are widespread. Not previously in the tome corpus.",
+  "docker_images": [
+    "livekit/livekit-server",
+    "livekit/livekit-server:latest"
+  ],
+  "github_repos": [
+    "livekit/livekit",
+    "livekit/agents",
+    "livekit/protocol",
+    "livekit/livekit-cli"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "platform": "chatbot-ui",
+  "display_name": "Chatbot UI",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000,
+    54321,
+    54322,
+    54323,
+    54324
+  ],
+  "api_paths": [
+    "/api/chat/openai",
+    "/api/chat/anthropic",
+    "/api/chat/google",
+    "/api/chat/mistral",
+    "/api/chat/groq",
+    "/api/chat/custom",
+    "/api/chat/openrouter",
+    "/api/chat/perplexity",
+    "/api/chat/azure",
+    "/api/retrieval/process",
+    "/api/retrieval/retrieve",
+    "/api/assistants/openai",
+    "/api/command",
+    "/api/keys",
+    "/api/username/available",
+    "/[locale]/login",
+    "/en/login",
+    "/manifest.json"
+  ],
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "EMAIL_DOMAIN_WHITELIST",
+    "EMAIL_WHITELIST",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY"
+  ],
+  "default_creds": [
+    {
+      "user": "(supabase demo)",
+      "pass": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU",
+      "context": "Hardcoded Supabase DEMO service_role JWT (iss:supabase-demo) committed in supabase/migrations/20240108234540_setup.sql at the delete_storage_object() function. This is the well-known default local-Supabase service-role key. If an operator exposes the Supabase Kong/REST gateway (default container supabase_kong_chatbotui:8000, host port 54321) without rotating it, this key grants full service_role (RLS-bypassing) DB+storage access. The README only instructs replacing it for HOSTED deployments; local-quickstart instances keep the demo key."
+    },
+    {
+      "user": "(self-register)",
+      "pass": "(any)",
+      "context": "No shipped login credential, but config.toml enable_signup=true + enable_confirmations=false + empty EMAIL_WHITELIST means an exposed instance lets any visitor create their own account with no approval = effective default-credential equivalent for app access."
+    }
+  ],
+  "install_tell": "git clone https://github.com/mckaywrigley/chatbot-ui.git && npm install && supabase start && cp .env.local.example .env.local && npm run chat   # local UI at http://localhost:3000, Supabase Studio at http://localhost:54323",
+  "misconfig_patterns": [
+    "Exposing port 3000 to the internet with Supabase default config (open signup, no email confirmation, empty whitelist) -> unauthorized registration + LLMjacking",
+    "Co-exposing Supabase ports (54321/54322/54323) on the same public host as the frontend",
+    "Leaving the hardcoded demo service_role key in migration unrotated on a publicly reachable Supabase gateway",
+    "Setting OPENAI_API_KEY/etc as server env vars (intended to 'override globally for all users') on an instance that allows open signup = paying for anonymous strangers' inference",
+    "Following only the LOCAL quickstart (which never tells you to rotate the demo key or lock signups) and then exposing it"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Chatbot UI\"",
+      "http.html:\"Start Chatting\"",
+      "http.html:\"ChatbotUISVG\"",
+      "http.html:\"supabase_kong_chatbotui\"",
+      "http.html:\"/manifest.json\" http.html:\"Chabot UI PWA\""
+    ],
+    "active_probe": {
+      "path": "/manifest.json",
+      "method": "GET",
+      "response_markers": [
+        "\"short_name\": \"Chatbot UI\"",
+        "\"name\": \"Chatbot UI\"",
+        "\"theme_color\": \"#000000\"",
+        "/icon-512x512.png with purpose:maskable",
+        "redirect to /<locale>/login (e.g. /en/login)",
+        "X-Powered-By: Next.js header on / and /api/* routes"
+      ],
+      "false_positive_check": "\"Chatbot UI\" as a title/phrase collides with thousands of unrelated chat apps and generic LLM front-ends, so title-only matching is a ~50%-rule trap. Disambiguate to THIS project by requiring the Mckay Wrigley fingerprint stack together: (1) the landing page renders the exact \"Start Chatting\" CTA link to /login plus the inline ChatbotUISVG component; (2) requesting / 302/308-redirects into a LOCALE-PREFIXED login path (/en/login, /fr/login etc.) because of next-i18n-router middleware -- generic chat UIs do not locale-prefix; (3) /manifest.json returns short_name AND name both exactly \"Chatbot UI\" with theme_color #000000 and a maskable /icon-512x512.png plus description 'Chabot UI PWA!'; (4) Next.js tells (X-Powered-By: Next.js, _next/static asset paths). Exclude the v1.0 'legacy' branch lineage (localStorage architecture, no /login, no Supabase) and unrelated WordPress/Oracle 'chatbot' products surfaced by keyword search.\""
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Chatbot UI\" http.html:\"Start Chatting\"",
+    "strict": "http.title:\"Chatbot UI\" http.html:\"Start Chatting\" http.html:\"_next/static\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Port 3000 serving a Next.js app titled 'Chatbot UI' with a 'Start Chatting' -> /login landing",
+    "Companion Supabase stack ports nearby: 54321 (Kong/REST API), 54322 (Postgres), 54323 (Studio), 54324 (Inbucket mail catcher)",
+    "Docker container/network names containing 'chatbotui' (project_id='chatbotui' in config.toml -> supabase_kong_chatbotui, supabase_db_chatbotui, *_chatbotui_default network)",
+    "Locale-prefixed routes (/en/...) from next-i18n-router",
+    "Often fronted by Vercel (hosted README path) -> x-vercel-id / vercel-edge headers, or self-hosted via ghcr.io/mckaywrigley/chatbot-ui image",
+    "PWA manifest at /manifest.json with description 'Chabot UI PWA!' (note the vendor's typo 'Chabot')"
+  ],
+  "pivot_paths": [
+    "If Supabase REST (54321) exposed: query PostgREST endpoints with the leaked demo service_role key for full RLS-bypass read of profiles/messages/files tables (READ-ONLY enumeration of schema/row counts only -- names are the finding, do not exfiltrate)",
+    "If Supabase Studio (54323) exposed: /project/default/editor gives a full DB GUI",
+    "If app self-signup open: register an account, then read your own workspace to confirm the instance is live and which LLM providers are wired (model dropdown reveals which provider keys the operator set)",
+    "Enumerate /api/username/available?username=X to probe account/username namespace without auth",
+    "Read /manifest.json + /_next/static/*/_buildManifest.js to fingerprint exact Next.js build and route set",
+    "GET / and inspect 302/308 Location for locale prefix to confirm the i18n middleware = this fork"
+  ],
+  "vulnerabilities": [
+    "No CVE or GHSA is assigned specifically to mckaywrigley/chatbot-ui as of 2026-06-12 (GitHub Advisory DB + repo Security tab show none; keyword 'chatbot-ui' results map to unrelated WordPress/Oracle products). Posture risk is configuration-class, not a tracked CVE.",
+    "Config-class exposure (not CVE): open self-signup default (config.toml enable_signup=true, enable_confirmations=false, empty EMAIL_WHITELIST) -> unauthorized account creation + LLMjacking of operator's server-side keys on any internet-exposed instance.",
+    "Config-class exposure (not CVE): hardcoded Supabase demo service_role JWT in migration 20240108234540_setup.sql -> full RLS-bypass DB access if Supabase REST gateway (54321) is exposed unrotated.",
+    "Inherited dependency surface: as a Next.js app, instances pin a Next.js version in package.json/package-lock.json; unrelated Next.js middleware/SSRF CVEs (e.g. CVE-2025-29927 auth-bypass class) may apply to stale forks but are not chatbot-ui-specific -- version-scope per deployed Next.js build, not assumed."
+  ],
+  "auth_evidence": "Architecture is Next.js (port 3000) fronting Supabase Auth + Postgres-with-RLS; auth is INHERITED from Supabase, not built in-app. The web UI is login-gated: app/[locale]/page.tsx renders only a \"Start Chatting\" button linking to /login, and app/[locale]/layout.tsx wraps the app shell as `{session ? <GlobalState>{children}</GlobalState> : children}` so no usable UI renders without a session. The REST/chat/retrieval API routes are NOT unauthenticated: every model route calls getServerProfile() in lib/server/server-chat-helpers.ts, which runs `supabase.auth.getUser()` and `throw new Error(\"User not found\")` when there is no valid Supabase session cookie. Data isolation is Supabase RLS (e.g. setup migration policy `TO authenticated USING (auth.uid()::text = owner_id::text)`). HOWEVER, the documented-quickstart Supabase config ships the access-restriction control OFF: supabase/config.toml sets `[auth] enable_signup = true`, `[auth.email] enable_signup = true`, and `[auth.email] enable_confirmations = false`; and .env.local.example leaves `EMAIL_DOMAIN_WHITELIST=` and `EMAIL_WHITELIST=` EMPTY. Net effect on a default exposed instance: any internet user can self-register an account with no email confirmation and immediately use the app — including spending the operator's server-side LLM API keys set via OPENAI_API_KEY/ANTHROPIC_API_KEY env vars (which getServerProfile's addApiKeysToProfile injects globally for all users). The hardening lever (set EMAIL_WHITELIST / EMAIL_DOMAIN_WHITELIST, or disable signup in the Supabase dashboard per README \"Configure Auth\" step) exists but is off in the shipped defaults. Quoted: supabase/config.toml lines `enable_signup = true` / `enable_confirmations = false`; .env.local.example `EMAIL_DOMAIN_WHITELIST=` / `EMAIL_WHITELIST=`.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_GEMINI_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, PERPLEXITY_API_KEY, OPENROUTER_API_KEY, AZURE_OPENAI_API_KEY -- server-injected globally for all users via getServerProfile(); any self-registered user can burn them (LLMjacking)",
+    "Per-user API keys stored in the Supabase 'profiles' table (openai_api_key, anthropic_api_key, etc. columns)",
+    "Ingested RAG documents and their chunked embeddings: 'files', 'file_items' (vector store via pgvector), 'collections' tables -- the private documents users uploaded for retrieval",
+    "Conversation history: 'chats' and 'messages' tables",
+    "Custom assistant/agent definitions and system prompts: 'assistants', 'presets', 'prompts', 'tools' tables (business logic / proprietary prompts)",
+    "Workspace metadata and uploaded workspace images",
+    "Supabase Postgres directly (port 54322) and Supabase Studio admin GUI (port 54323, /project/default/editor) if those ports are exposed alongside 3000"
+  ],
+  "sources": [
+    "https://github.com/mckaywrigley/chatbot-ui",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/README.md",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/.env.local.example",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/supabase/config.toml",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/supabase/migrations/20240108234540_setup.sql",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/middleware.ts",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/lib/server/server-chat-helpers.ts",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/app/%5Blocale%5D/layout.tsx",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/app/%5Blocale%5D/page.tsx",
+    "https://github.com/mckaywrigley/chatbot-ui/blob/main/public/manifest.json",
+    "https://github.com/mckaywrigley/chatbot-ui/security",
+    "https://github.com/advisories",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

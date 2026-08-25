@@ -1,0 +1,42 @@
+{
+  "name": "Unsloth",
+  "category": "training-framework",
+  "github": "https://github.com/unslothai/unsloth",
+  "description": "Fine-tuning optimization library with optional Studio IDE (FastAPI backend).",
+  "default_ports": [8888, 8000, 8080, 80, 443],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "api-bypass",
+  "tls_default": false,
+  "fingerprint_status": "present",
+  "fingerprint_note": "Unsloth Studio health endpoint returns unique service field.",
+  "dorks": {
+    "basic": "\"Unsloth UI Backend\"",
+    "strict": "http.status:200 AND \"service\":\"Unsloth UI Backend\"",
+    "version": "\"desktop_protocol_version\""
+  },
+  "dork_notes": "Service field is hardcoded in studio/backend/main.py. FP risk: 2-5%. Health endpoint is standard but combo is tight.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "present",
+  "aimap_status_version": "v1.9.17+",
+  "aimap_fingerprint_name": "Unsloth Studio",
+  "aimap_ports": [8888, 8000, 8080, 80, 443],
+  "aimap_probes": [
+    {
+      "path": "/api/health",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "json_field", "field": "chat_only"},
+        {"type": "body_contains", "value": "Unsloth UI Backend"}
+      ]
+    }
+  ],
+  "severity": "high",
+  "exposure_data": "training data, HuggingFace tokens, exported weights, training config",
+  "research_date": "2026-06-05",
+  "sources": [
+    "https://github.com/unslothai/unsloth",
+    "github.com/sshpie/aimap line 4270-4279"
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "name": "WhisperFusion",
+  "slug": "whisperfusion",
+  "category": "voice-tts-conversational",
+  "description": "Collabora's ultra-low-latency conversational AI stack chaining WhisperLive (STT) + an LLM (Mistral/Phi via TensorRT-LLM) + WhisperSpeech (TTS) behind a Docker Compose deployment with a served Web GUI. Provides a browser-accessible full-duplex speech conversation demo. No built-in authentication by default; the web GUI is served as HTML on port 8000 with a WhisperLive WebSocket backend behind it.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the reference Docker Compose deployment. A simple web server serves the conversational Web GUI on http://<host>:8000 (HTML, so partially Shodan http.html-visible), which then connects to the WhisperLive WebSocket backend for streaming STT and to the TensorRT-LLM + WhisperSpeech pipeline. Neither the GUI nor the WebSocket backend enforces any credential. Because the GUI is minimal (demo frontend, often JS-driven), some markers render in served HTML while the speech transport itself is WebSocket/wire-only.",
+  "default_ports": [
+    8000,
+    6006
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"WhisperFusion\"",
+      "rationale": "Direct project-name match in the served Web GUI HTML title/body; high signal where the demo frontend labels itself"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"WhisperSpeech\" http.html:\"whisper\"",
+      "rationale": "WhisperSpeech (the TTS component, near-unique to this Collabora stack) co-occurring with a whisper marker in the demo GUI distinguishes WhisperFusion from generic whisper web UIs"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"WhisperFusion\" http.html:\"Collabora\"",
+      "rationale": "Project name plus the Collabora attribution string in the demo GUI is very high precision and low volume"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/",
+    "title_contains": "WhisperFusion",
+    "response_body_contains": [
+      "WhisperFusion",
+      "WhisperSpeech",
+      "Collabora",
+      "whisperlive"
+    ],
+    "http_header": ""
+  },
+  "api_paths": [
+    "GET / (Web GUI, HTML)",
+    "WS (WhisperLive STT backend handshake, JSON config + PCM audio)",
+    "WS/HTTP (TensorRT-LLM inference bridge)",
+    "audio out (WhisperSpeech TTS stream)"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated access to a full STT+LLM+TTS conversational pipeline on GPU",
+    "LLM prompt-injection / abuse surface — the exposed conversational bridge lets any visitor drive the Mistral/Phi model (jailbreak, content generation, resource abuse) at operator cost",
+    "GPU compute theft — the pipeline requires >=24GB GPU RAM; an open instance is high-value free inference (STT + LLM + TTS combined)",
+    "WhisperLive WebSocket backend inherits WhisperLive's no-auth, client-selectable-model, plaintext-ws issues",
+    "No rate limiting on the conversational endpoint — automatable abuse of the full pipeline",
+    "Demo frontend served without TLS or access control in the reference compose file"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Free conversational-AI compute — an exposed instance chains STT+LLM+TTS on a 24GB+ GPU with no auth; an attacker gets a complete voice-LLM pipeline at operator expense. (2) LLM abuse via the speech/text bridge — driving the backing Mistral/Phi model for prohibited generation or as an open proxy. (3) Audio PII + conversation exfiltration — full-duplex conversations processed with no auth or logging. (4) Chained WhisperLive weaknesses — the STT backend's VRAM-exhaustion and plaintext-ws exposures apply. Deployments are typically demos/research, so hardening is rare.",
+  "deployment_notes": "Docker Compose reference deployment with pre-built TensorRT-LLM containers; requires a high-VRAM NVIDIA GPU (RTX 4090-class, >=24GB). Web GUI served on 8000 (HTML — partially Shodan http.html-visible); TensorRT/build tooling sometimes exposes 6006. Components: WhisperLive (STT) + Mistral or Phi-2/Phi-3-mini (LLM, TensorRT-LLM) + WhisperSpeech (TTS). The speech transport rides the WhisperLive WebSocket, so deep transport fingerprinting overlaps the WhisperLive profile (Censys/active-probe). Basic host discovery is possible via the served GUI HTML on 8000. Almost always deployed as an unauthenticated demo; enterprise fronting is uncommon.",
+  "docker_images": [
+    "ghcr.io/collabora/whisperfusion:latest",
+    "ghcr.io/collabora/whisperlive-gpu:latest"
+  ],
+  "github_repos": [
+    "collabora/WhisperFusion",
+    "collabora/WhisperLive",
+    "collabora/WhisperSpeech"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

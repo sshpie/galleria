@@ -1,0 +1,56 @@
+{
+  "platform": "trulens",
+  "display_name": "TruLens",
+  "category": "observability",
+  "default_ports": [8501],
+  "api_paths": ["/"],
+  "auth_default": "off",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "pip install trulens trulens-apps-langchain; run_dashboard() launches Streamlit on port 8501",
+  "misconfig_patterns": [
+    "Streamlit dashboard has no authentication layer — anyone who can reach port 8501 sees all trace data",
+    "Default SQLite database (default.sqlite in cwd) readable by any local process",
+    "PHOENIX_HOST-equivalent not present — Streamlit binds to 0.0.0.0 by default, exposing dashboard network-wide",
+    "PostgreSQL or Snowflake backend credentials in TruSession() database_url logged in plaintext if debug enabled",
+    "No TLS on Streamlit dashboard — credentials and trace data transmitted cleartext"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8501 http.html:\"trulens\"",
+      "port:8501 http.html:\"TruLens\"",
+      "port:8501 http.html:\"Leaderboard\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["TruLens", "Leaderboard", "Evaluations", "streamlit"],
+      "false_positive_check": "Port 8501 is generic Streamlit default; response must contain 'TruLens' or 'Leaderboard' in body — not just Streamlit markers"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8501 http.html:\"TruLens\"",
+    "strict": "port:8501 http.html:\"TruLens\" http.html:\"Leaderboard\"",
+    "version": "port:8501 http.html:\"TruLens\" http.html:\"trulens\""
+  },
+  "deployment_tells": [
+    "Streamlit app on port 8501 with 'TruLens' and 'Leaderboard' in page body",
+    "Two-page app: Leaderboard (aggregate) and Evaluations (per-trace)",
+    "SQLite file default.sqlite in working directory",
+    "run_dashboard() Python call in application code"
+  ],
+  "pivot_paths": [
+    "GET / on port 8501 -> Leaderboard page shows all app versions, feedback scores, trace counts without auth",
+    "Evaluations page -> individual trace records including full input/output messages to LLM",
+    "SQLite file access (if local) -> direct SQL query of all OTEL spans including prompts and completions",
+    "TruSession database_url -> PostgreSQL/MySQL backend with full evaluation and trace history"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://www.trulens.org/getting_started/dashboard/",
+    "https://www.trulens.org/reference/trulens/dashboard/run/",
+    "https://github.com/truera/trulens",
+    "https://deepwiki.com/truera/trulens",
+    "https://discuss.streamlit.io/t/trulens-tru-run-dashboard-ip/89133"
+  ]
+}

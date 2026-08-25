@@ -1,0 +1,72 @@
+{
+  "name": "OpenVoiceOS / Mycroft Messagebus",
+  "slug": "openvoiceos",
+  "category": "voice-tts-conversational",
+  "description": "The central websocket message bus of OpenVoiceOS (OVOS) and legacy Mycroft-core self-hosted voice assistants. ovos-messagebus (a Tornado websocket server, path /core, default port 8181) is the 'nervous system' that every skill, STT/TTS, GUI, and intent component connects to. The protocol is a plaintext JSON message bus with NO authentication and NO encryption by design — any client that reaches the socket can emit or observe every internal message, including skill invocations and system commands.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The OVOS/Mycroft messagebus has no authentication mechanism whatsoever — it is an open Tornado websocket. Security is delegated entirely to network placement: the shipped default binds to 127.0.0.1:8181, and the documentation explicitly warns operators to firewall the port. However, split base/satellite deployments, Picroft/OVOS images, and containers routinely rebind host to 0.0.0.0 so remote satellites and GUI clients can connect, at which point the bus is world-open. There is no credential, token, or TLS gate even when exposed (ssl:false default). Reaching the socket = full read/write of the internal bus. A separate GUI protocol bus (ovos-gui) uses base port 18181 with the same no-auth model.",
+  "default_ports": [
+    8181,
+    18181
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8181 \"Server: TornadoServer\"",
+      "rationale": "ovos-messagebus is served by Tornado on 8181; the TornadoServer banner on this port is the primary blind-fingerprint since the websocket body is not http.html-indexable"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8181 \"426 Upgrade Required\"",
+      "rationale": "HTTP GET without websocket upgrade headers to the /core endpoint returns 426; combined with port 8181 narrows to bus-style websocket servers"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8181 \"Server: TornadoServer\" \"426 Upgrade Required\"",
+      "rationale": "Tornado + 426-on-8181 conjunction is a high-precision blind signature for the OVOS/Mycroft messagebus; final confirmation requires an active websocket handshake to /core (see risk_notes) rather than Shodan http.html"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8181,
+    "http_path": "/core",
+    "title_contains": "",
+    "response_body_contains": [
+      "426 Upgrade Required",
+      "TornadoServer"
+    ],
+    "http_header": "server: TornadoServer"
+  },
+  "api_paths": [
+    "GET /core"
+  ],
+  "known_vulns": [
+    "No authentication on the message bus — any client reaching ws://host:8181/core can subscribe to and inject every internal message",
+    "Remote skill invocation / command execution surface — emitting bus messages such as recognizer_loop:utterance, mycroft.skills.execute, or skill-specific intents makes the assistant act on attacker-chosen commands; OS-command and shell skills escalate this to code execution",
+    "Full audio/utterance eavesdropping — every recognized utterance and skill dialog traverses the bus in cleartext and is readable by any connected client",
+    "Configuration and secret leakage — configuration.patch / mycroft.conf messages and skill settings (which may carry API keys and tokens) are observable and writable over the bus",
+    "mycroft.audio.service.play / speak messages allow arbitrary audio/TTS playback through the device",
+    "No TLS — bus traffic is plaintext, trivially sniffable on the LAN even when not directly exposed",
+    "GUI bus (18181) exposes the same open model for the display/mycroft-gui protocol"
+  ],
+  "default_creds": [],
+  "risk_notes": "The messagebus is the single highest-value internal surface of an OVOS/Mycroft device: it has no auth, and reaching it is equivalent to being every trusted component at once. Chain: (1) find open :8181 with the Tornado/426 signature -> (2) open a websocket to /core -> (3) passively observe utterances and skill traffic (surveillance of everything spoken to the device) and/or (4) inject recognizer_loop:utterance or direct skill intents to make the device execute commands, speak arbitrary audio, or hit connected smart-home/automation skills. Skills that shell out or control home automation turn this into code execution / physical-world impact. Because the safe default is localhost-bound, an internet-exposed :8181 almost always means an intentional 0.0.0.0 rebind for a satellite/GUI split — i.e. a real, reachable bus, not an accident. Verification is an active websocket handshake, not an http.html read, so Shodan gives only the blind Tornado/426 candidate and confirmation routes to an active /core probe.",
+  "deployment_notes": "OVOS ships as container images and as full device images (ovos-installer, buildroot, legacy Picroft). ovos-messagebus runs as its own service (pip package ovos-messagebus / mycroft.messagebus) and every other component is a client of it. Shipped config: host 127.0.0.1, port 8181, route /core, ssl false. Real exposure comes from: base+satellite architectures where the bus host is set to 0.0.0.0 so remote OVOS satellites and the mycroft-gui (KDE Plasma display) connect over the LAN/WAN; Docker deployments that publish 8181; and users troubleshooting who rebind and forget. Because it is a raw websocket JSON bus, Shodan's http.html filters return nothing — fingerprinting is banner/handshake-based (TornadoServer header, 426 on plain GET) and belongs to the Censys/active-banner route. Legacy mycroft-core (Mycroft AI, now discontinued/community-forked into OVOS) uses the identical bus and port.",
+  "docker_images": [
+    "smartgic/ovos-messagebus",
+    "smartgic/ovos-core"
+  ],
+  "github_repos": [
+    "OpenVoiceOS/ovos-messagebus",
+    "OpenVoiceOS/ovos-bus-client",
+    "OpenVoiceOS/ovos-core",
+    "OpenVoiceOS/ovos-gui",
+    "MycroftAI/mycroft-core"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

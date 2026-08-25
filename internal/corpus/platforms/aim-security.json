@@ -1,0 +1,61 @@
+{
+  "platform": "aim-security",
+  "display_name": "Aim Security (Aim Labs)",
+  "category": "ai-guardrail-saas",
+  "default_ports": [443],
+  "api_paths": ["/fw/v1/analyze", "/fw/v1/analyze/stream"],
+  "auth_default": "on",
+  "auth_config_env": ["AIM_API_BASE", "Authorization"],
+  "default_creds": [],
+  "install_tell": "SaaS at api.aim.security. WebSocket streaming variant at wss://api.aim.security/fw/v1/analyze/stream. LiteLLM hook passes prompts via /fw/v1/analyze for synchronous scan. EchoLeak research house (the firm that disclosed the M365 Copilot zero-click).",
+  "misconfig_patterns": [
+    "WS endpoint authentication should mirror REST; operator MITM unlikely but topology depends on operator deployment"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"aim.security\"",
+      "ssl.cert.subject.cn:\"aim.security\""
+    ],
+    "active_probe": {
+      "path": "/fw/v1/analyze",
+      "method": "POST",
+      "port": 443,
+      "host_header": "api.aim.security",
+      "response_markers": ["Authorization header is required"],
+      "false_positive_check": "generic FastAPI/Starlette default; pair with cert-CN to confirm vendor"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"aim.security\"",
+    "strict": "ssl.cert.subject.cn:\"aim.security\"",
+    "version": "http.html:\"/fw/v1/analyze\""
+  },
+  "deployment_tells": [
+    "Outlook/Microsoft 365 inbound MX (aim-security.mail.protection.outlook.com)",
+    "Distinct from Cat-33 majority Google Workspace pattern"
+  ],
+  "pivot_paths": [
+    "POST /fw/v1/analyze -- generic 401 error (not vendor-branded)",
+    "Cert-CN pivot via aim.security SAN",
+    "WS upgrade probe to /fw/v1/analyze/stream"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane D (commercial SaaS guardrail; the EchoLeak vendor).",
+  "disclosure_contact": {
+    "security_txt": "https://aim.security/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "(no rua published)",
+    "channel_observed": "founder/contact form on aim.security"
+  },
+  "dmarc_posture": {
+    "policy": "none",
+    "rua": null,
+    "mx_provider": "Microsoft 365 (Outlook)",
+    "insight_80_placement": "Anomaly: well-funded (Series A/B per EchoLeak press) but p=none. Suggests recent setup or in-flight migration; flag as candidate to re-dig in 30 days."
+  },
+  "insight_82_status": "NOT CONFIRMED (HTTP 401 'Authorization header is required' is a Starlette/FastAPI default; not vendor-distinctive)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py",
+    "POST api.aim.security/fw/v1/analyze marker probe 2026-06-07",
+    "dig +short TXT _dmarc.aim.security 2026-06-07"
+  ]
+}

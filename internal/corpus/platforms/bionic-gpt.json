@@ -1,0 +1,118 @@
+{
+  "platform": "bionic-gpt",
+  "display_name": "BionicGPT",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000,
+    7703,
+    7700
+  ],
+  "api_paths": [
+    "/v1/chat/completions",
+    "/v1/models",
+    "/console",
+    "/app/team",
+    "/automations",
+    "/audit_trail",
+    "/datasets",
+    "/documents",
+    "/assistants",
+    "/api_keys",
+    "/mcp_api_keys",
+    "/oauth2",
+    "/oidc"
+  ],
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "DANGER_JWT_OVERRIDE",
+    "ENABLE_BARRICADE",
+    "APP_BASE_URL",
+    "ENABLE_SAAS"
+  ],
+  "default_creds": [
+    {
+      "user": "john@acme.org",
+      "pass": "(no password - hardcoded unsigned JWT via DANGER_JWT_OVERRIDE)",
+      "context": "Default infra-as-code/docker-compose.yml bakes a fixed JWT (sub=1234567890, name=John Doe, email=john@acme.org) into the app service env; every request to the quickstart deployment is authenticated as this identity with no login"
+    },
+    {
+      "user": "postgres",
+      "pass": "testpassword",
+      "context": "Postgres/pgvector container in default compose; also application_user:testpassword in APP_DATABASE_URL/DATABASE_URL"
+    }
+  ],
+  "install_tell": "curl -O https://raw.githubusercontent.com/bionic-gpt/bionic-gpt/main/infra-as-code/docker-compose.yml && docker compose up   # web console -> http://localhost:3000 (app internal 7703); k8s/helm path also documented for production with oauth2-proxy",
+  "misconfig_patterns": [],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"DANGER_JWT_OVERRIDE\"",
+      "http.title:\"Bionic\"",
+      "http.html:\"bionicgpt\"",
+      "http.html:\"/static/index.css\" http.html:\"Assistants\""
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": [
+        "OpenAI-compatible JSON model list returned without an Authorization header (proves DANGER_JWT_OVERRIDE / no fronting oauth2-proxy)",
+        "X-Forwarded-User / X-Forwarded-Email header trust model",
+        "axum server response on internal port 7703 mapped to 3000",
+        "console / assistants / datasets routes load unauthenticated"
+      ],
+      "false_positive_check": "\"Bionic\", \"chat\", and \"AI\" collide with thousands of unrelated hosts - do NOT fingerprint on those alone. Discriminator: the Bionic app is a Rust/axum server that on a default quickstart answers /v1/chat/completions and /v1/models OpenAI-style on port 3000 (->7703) WITHOUT any Authorization header because DANGER_JWT_OVERRIDE is set and no oauth2-proxy fronts it. To avoid the ~50% false positive vs a generic OpenAI-compatible gateway (LiteLLM, vLLM, Ollama, LocalAI): confirm BOTH (a) the Bionic web console HTML (unique routes /console, /datasets, /assistants, audit_trail, team-based RAG UI) AND (b) the OpenAI-compatible /v1 surface answering unauth on the SAME host. A host serving only /v1 is a generic LLM proxy, not Bionic. A production Bionic behind oauth2-proxy/barricade returns 302->IdP on /console and is NOT the open-default case - so an unauth 200 on /console with the Bionic asset bundle is the load-bearing confirmation."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"bionicgpt\"",
+    "strict": "http.html:\"bionicgpt\" http.html:\"Assistants\" port:3000",
+    "version": "http.html:\"bionicgpt\" \"1.12\""
+  },
+  "deployment_tells": [
+    "Published port 3000 mapped to internal axum port 7703 (the app default PORT in config.rs is 7703)",
+    "Docker images ghcr.io/bionic-gpt/bionicgpt:1.12.x, bionicgpt-rag-engine, bionicgpt-db-migrations, bionicgpt-postgres-mcp",
+    "Bundled ankane/pgvector Postgres with POSTGRES_PASSWORD=testpassword (compose-only tell)",
+    "kreuzberg doc-engine container (ghcr.io/kreuzberg-dev/kreuzberg) for document parsing/OCR",
+    "README architecture: Nginx Router -> OAuth2 Proxy -> Rust axum server -> Postgres/pgVector; production = Kubernetes (k3s/EKS/AKS/GKE) helm",
+    "Written in Rust (axum); 'Ultra Fast Rust based UI' marketing string",
+    "extra_hosts host.docker.internal:host-gateway (to reach a host Ollama)"
+  ],
+  "pivot_paths": [
+    "GET /v1/models then /v1/chat/completions unauth -> confirm open LLM relay and enumerate which provider/models are wired (read-only)",
+    "Browse /console, /assistants, /datasets, /documents unauth -> enumerate ingested RAG corpora and assistant system prompts (names ARE the finding; do not download corpora)",
+    "Read Models/Providers admin page -> upstream LLM provider API key presence (metadata-confirm, do not exfiltrate)",
+    "Read /audit_trail and team roster -> operator attribution + SSO domain (org identification)",
+    "If 5432 also exposed: bundled Postgres pgvector at postgres:testpassword -> schema-level read of conversation history + embeddings (enumerate tables, do not dump)",
+    "GET /history -> conversation history confirming live use vs honeypot"
+  ],
+  "vulnerabilities": [
+    "No published GHSA/CVE for bionic-gpt/bionic-gpt as of 2026-06-12 (security advisories page: 'There aren't any published security advisories'). Latest release v1.12.11 (2026-02-12).",
+    "Design exposure (not a CVE): crates/web-server/jwt.rs never verifies the JWT signature - it base64-decodes the payload and trusts sub/email; signature validation is wholly delegated to the upstream oauth2-proxy. If the proxy is removed/misconfigured, any attacker-crafted unsigned JWT or any X-Forwarded-User/X-Forwarded-Email header is accepted as identity.",
+    "Design exposure (not a CVE): DANGER_JWT_OVERRIDE env var ships SET in the default quickstart compose, authenticating all traffic as a fixed admin identity with no login or rate limit.",
+    "Related upstream (only if oauth2-proxy IS deployed): CVE-2025-54576 oauth2-proxy auth bypass - scope-limited, applies to the fronting component not the Bionic app itself."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: the quickstart artifact (docs \"Docker Compose\" page tells users to `curl -O .../infra-as-code/docker-compose.yml` then `docker compose up`). That default infra-as-code/docker-compose.yml file (1) carries the header comment \"Do not expose this configuration to the internet... This is NOT a production configuration\", (2) publishes the `app` service as `3000:7703`, (3) sets `DANGER_JWT_OVERRIDE: eyJhbGci...` on the app service (a hardcoded unsigned JWT: sub=1234567890, name=\"John Doe\", email=john@acme.org), and (4) ships NO oauth2-proxy / barricade / keycloak / nginx-auth service. The auth model lives entirely in crates/web-server/jwt.rs: the Jwt FromRequestParts extractor does `if let Ok(override_token) = std::env::var(\"DANGER_JWT_OVERRIDE\") { Some(override_token) } else { ...X-Forwarded-Access-Token header... }`. When the override is set EVERY request is authenticated as that identity, and even on the header path the token signature is NEVER verified (it base64-decodes the middle segment and reads sub/email out of the JSON). Real authentication is delegated to an upstream oauth2-proxy/barricade that injects X-Forwarded-User / X-Forwarded-Email (see config.rs `enable_barricade = env::var(\"ENABLE_BARRICADE\").is_ok()` and README architecture diagram User -> Nginx -> OAuth2 Proxy -> Rust Server). Net: a user who runs the documented quickstart and exposes port 3000 gets a fully unauthenticated UI+API where every visitor is the baked-in admin \"John Doe\" - auth EXISTS (oauth2-proxy) but is OFF in the shipped default and must be added for production.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI / Anthropic / Ollama / custom provider creds configured in the Models/Providers admin UI - readable+editable as the baked-in admin)",
+    "Ingested RAG documents and datasets (enterprise PDF/CSV/HTML/PPTX uploaded to Assistants - often internal/PII-laden), stored as chunks+embeddings in Postgres pgvector",
+    "Assistant / Agentic-RAG pipeline definitions and system prompts (reveal business logic and data sources)",
+    "Full conversation history (README: 'All questions and responses are recording and available in the Postgres database')",
+    "Raw vector store contents (pgvector embeddings + source text in the bundled Postgres, password testpassword)",
+    "API keys minted for assistants (the OpenAI-compatible Assistants API keys) and MCP API keys",
+    "Audit trail / team membership / SSO-mapped user roster",
+    "Bundled Postgres at testpassword reachable if 5432 also exposed - direct DB read of everything above"
+  ],
+  "sources": [
+    "https://github.com/bionic-gpt/bionic-gpt",
+    "https://raw.githubusercontent.com/bionic-gpt/bionic-gpt/main/infra-as-code/docker-compose.yml",
+    "https://raw.githubusercontent.com/bionic-gpt/bionic-gpt/main/crates/web-server/jwt.rs",
+    "https://raw.githubusercontent.com/bionic-gpt/bionic-gpt/main/crates/web-server/config.rs",
+    "https://raw.githubusercontent.com/bionic-gpt/bionic-gpt/main/README.md",
+    "https://bionic-gpt.com/docs/running-locally/docker-compose/",
+    "https://bionic-gpt.com/docs/guides/api/",
+    "https://github.com/bionic-gpt/bionic-gpt/security/advisories",
+    "https://github.com/bionic-gpt/bionic-gpt/releases/tag/v1.12.11",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

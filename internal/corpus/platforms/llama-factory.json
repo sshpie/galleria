@@ -1,0 +1,61 @@
+{
+  "name": "LLaMA-Factory",
+  "category": "training-framework",
+  "github": "https://github.com/hiyouga/LLaMA-Factory",
+  "description": "Unified fine-tuning framework. Gradio WebUI + optional FastAPI inference server.",
+  "default_ports": [7860, 8000, 80, 443, 10000, 10004, 10007, 6006],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "ui-unauth",
+  "tls_default": false,
+  "fingerprint_status": "present",
+  "fingerprint_note": "Gradio WebUI + LlamaBoard training UI. /gradio_api/info is 1 MB-safe anchor (avoids truncation on large / pages).",
+  "dorks": {
+    "basic": "\"LLaMA Factory\" AND \"gradio\"",
+    "strict": "http.status:200 AND \"LLaMA Factory\" AND \"gradio\"",
+    "version": "/gradio_api/info AND \"get_model_info\""
+  },
+  "dork_notes": "LlamaBoard variant (training UI) fires /gradio_api/info with get_model_info endpoint. FP risk: 3-8%. get_model_info is LLaMA-Factory-unique.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "present",
+  "aimap_status_version": "v1.9.17+",
+  "aimap_fingerprint_name": "LLaMA-Factory",
+  "aimap_ports": [7860, 8000, 80, 443, 10000, 10004, 10007, 6006],
+  "aimap_probes": [
+    {
+      "path": "/gradio_api/info",
+      "label": "PRIMARY (1 MB-safe)",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "body_contains", "value": "get_model_info"}
+      ]
+    },
+    {
+      "path": "/",
+      "label": "fallback (Gradio WebUI)",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "body_contains", "value": "LLaMA Factory"},
+        {"type": "body_contains", "value": "gradio"}
+      ]
+    },
+    {
+      "path": "/v1/score/evaluation",
+      "label": "inference server detect",
+      "conditions": [
+        {"type": "status_code", "value": "405"},
+        {"type": "body_contains", "value": "Method Not Allowed"},
+        {"type": "json_field", "field": "detail"}
+      ]
+    }
+  ],
+  "severity": "high",
+  "exposure_data": "training data, model weights, training config (datasets, hyperparams)",
+  "research_date": "2026-06-05",
+  "research_note": "Field-observed LlamaBoard on ports 10000/10004/10007/6006 in Cat-04 survey 2026-06-05.",
+  "sources": [
+    "https://github.com/hiyouga/LLaMA-Factory",
+    "github.com/sshpie/aimap line 4215-4248"
+  ]
+}

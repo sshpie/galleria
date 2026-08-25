@@ -1,0 +1,64 @@
+{
+  "platform": "singlestore",
+  "display_name": "SingleStore",
+  "category": "vector_feature",
+  "default_ports": [
+    3306,
+    8080
+  ],
+  "api_paths": [
+    "/",
+    "/ping"
+  ],
+  "auth_default": "required",
+  "auth_config_env": [
+    "SINGLESTORE_ROOT_PASSWORD"
+  ],
+  "default_creds": [
+    {
+      "user": "root",
+      "pass": "singlestore",
+      "context": "community/trial deployment default"
+    }
+  ],
+  "install_tell": "docker run -p 3306:3306 -p 8080:8080 singlestore/cluster-in-a-box:latest",
+  "misconfig_patterns": [
+    "Default root:singlestore credentials in trial/community deployments",
+    "Studio UI at :8080 exposes full database browser",
+    "VECTOR type (SingleStore 8.0+) support — dot_product/l2_distance/euclidean_distance UDFs"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8080 SingleStore",
+      "port:3306 \"SingleStore\""
+    ],
+    "active_probe": {
+      "path": "/ping",
+      "method": "GET",
+      "response_markers": [
+        "SingleStore"
+      ],
+      "false_positive_check": "MySQL banner at :3306 must include SingleStore string to distinguish from plain MySQL"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8080 SingleStore",
+    "strict": "port:3306 \"SingleStore\"",
+    "version": "port:3306 \"SingleStore\" \"version\""
+  },
+  "deployment_tells": [
+    "MySQL banner at :3306 includes SingleStore version string",
+    "Studio UI at :8080 accessible with default root:singlestore",
+    "dot_product() / l2_distance() UDFs indicate vector workload"
+  ],
+  "pivot_paths": [
+    "MySQL :3306 → root:singlestore → SHOW DATABASES",
+    "Studio :8080 → full schema browser with default credentials",
+    "SHOW CREATE TABLE {t} → detect vector workload via UDF usage"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.singlestore.com/cloud/reference/sql-reference/vector-functions/",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "platform": "grayswan",
+  "display_name": "Gray Swan AI (Cygnal)",
+  "category": "ai-guardrail-saas",
+  "default_ports": [443],
+  "api_paths": ["/cygnal/monitor"],
+  "auth_default": "on",
+  "auth_config_env": ["GRAYSWAN_API_BASE", "Authorization"],
+  "default_creds": [],
+  "install_tell": "SaaS at api.grayswan.ai. Cygnal monitoring endpoint /cygnal/monitor receives mirrored LLM traffic. Docs: docs.grayswan.ai/cygnal/monitor-requests. Gray Swan is known for the Cygnal red-team work and the Shade jailbreak benchmark.",
+  "misconfig_patterns": [
+    "Operator AUTH token in env var leaked via config repos",
+    "API key in LiteLLM litellm_params persisted to operator-side YAML"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"grayswan.ai\"",
+      "ssl.cert.subject.cn:\"*.grayswan.ai\""
+    ],
+    "active_probe": {
+      "path": "/cygnal/monitor",
+      "method": "POST",
+      "port": 443,
+      "host_header": "api.grayswan.ai",
+      "response_markers": ["CONTENT_VALIDATION_ERROR", "Either text or messages must be provided"],
+      "false_positive_check": "JSON body must contain error_code field equal to literal 'CONTENT_VALIDATION_ERROR'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"grayswan.ai\"",
+    "strict": "ssl.cert.subject.cn:\"*.grayswan.ai\"",
+    "version": "http.html:\"cygnal\" http.html:\"CONTENT_VALIDATION_ERROR\""
+  },
+  "deployment_tells": [
+    "Cloudflare-fronted",
+    "Distinctive /cygnal/ route prefix",
+    "Vendor self-publishes monitor-requests docs"
+  ],
+  "pivot_paths": [
+    "POST /cygnal/monitor with empty body -- HTTP 400 with CONTENT_VALIDATION_ERROR + cygnal-pathed branded body",
+    "Cert-CN pivot via *.grayswan.ai",
+    "docs.grayswan.ai HTML scrape for the schema reference"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane D (commercial SaaS monitor; mirroring lane, not blocking).",
+  "disclosure_contact": {
+    "security_txt": "https://grayswan.ai/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "(no rua published)",
+    "channel_observed": "security@grayswan.ai expected; verify on apex"
+  },
+  "dmarc_posture": {
+    "policy": "none",
+    "rua": null,
+    "mx_provider": "Google Workspace",
+    "insight_80_placement": "Anomaly band: well-funded research-prominent vendor but p=none. Either pre-Series-A or SOC2 deferred. Suggests outbound-deliverability priority over inbound-spoof defense."
+  },
+  "insight_82_status": "CONFIRMED (HTTP 400 with error_code 'CONTENT_VALIDATION_ERROR' + path-coupled branding /cygnal/monitor; distinctive at population scale)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py",
+    "POST api.grayswan.ai/cygnal/monitor marker probe 2026-06-07",
+    "dig +short TXT _dmarc.grayswan.ai 2026-06-07"
+  ]
+}

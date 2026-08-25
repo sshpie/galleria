@@ -1,0 +1,107 @@
+{
+  "platform": "m3db",
+  "display_name": "M3DB / M3 (Uber M3 Coordinator, M3 Query, M3 Aggregator)",
+  "category": "time_series_db",
+  "default_ports": [7201, 7203, 9000, 9001, 9002, 9003, 9004],
+  "default_port_notes": {
+    "7201": "PRIMARY — M3 Coordinator HTTP API. Fronts placement/namespace CRUD and Prometheus remote-write ingestion. Unauthenticated by default.",
+    "7203": "Coordinator metrics endpoint (Prometheus self-scrape) — exact default conflicts between doc examples (0.0.0.0:3030 in admin-mode doc vs 7203 in common deployment convention). Config-dependent, verify per-target.",
+    "9000": "M3DB node client (TChannel/Thrift) — cluster read/write RPC.",
+    "9001": "M3DB node cluster/gossip communication.",
+    "9002": "M3DB node HTTP — node-local health/debug (/health).",
+    "9003_9004": "Additional node ports seen only in kube/bundle.yaml and m3dbnode-statefulset.yaml manifests, NOT independently confirmed in prose docs — debug/pprof vs additional RPC purpose unconfirmed."
+  },
+  "api_paths": [
+    "/api/v1/services/m3db/namespace",
+    "/api/v1/services/m3db/placement",
+    "/api/v1/database/create",
+    "/api/v1/database/namespace/create",
+    "/api/v1/prom/remote/write",
+    "/api/v1/prom/remote/read",
+    "/api/v1/query",
+    "/api/v1/query_range",
+    "/api/v1/graphite/render",
+    "/api/v1/label/<name>/values",
+    "/health",
+    "/metrics"
+  ],
+  "auth_default": "NO AUTH BY DESIGN — not merely off-by-default, structurally absent. Official FAQ/architecture docs and the m3query config struct (src/cmd/services/m3query/config/config.go) confirm M3DB has no access control of any kind: no users, no roles/permissions, no TLS/auth/API-key fields in the config struct at all. Recommended mitigation is operator-added reverse proxy — opt-in infrastructure, not a shipped toggle.",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Official K8s manifests (github.com/m3db/m3 kube/bundle.yaml, kube/m3dbnode-statefulset.yaml): StatefulSet m3dbnode + Deployment m3coordinator, clusterManagement via etcd (or noop-etcd for single-node admin mode)",
+  "misconfig_patterns": [
+    "7201 exposed to 0.0.0.0/internet with no reverse-proxy auth layer — this is the default/undocumented-as-risky state, not a deviation from default",
+    "/api/v1/prom/remote/write reachable unauth -> arbitrary metric injection / storage exhaustion / cardinality-bomb DoS",
+    "/api/v1/services/m3db/namespace and /placement reachable unauth -> full namespace/placement enumeration and mutation (create/delete namespaces = data-destructive)",
+    "/api/v1/database/create reachable unauth -> attacker can provision new namespaces/placements, resource-exhaustion or topology pivot",
+    "noop-etcd 'admin mode' instances left running in prod — docs explicitly frame this as dev/single-node convenience, not hardened",
+    "node ports 9000-9002 reachable outside coordinator/cluster network — should be internal-only, coordinator is the intended public-ish edge"
+  ],
+  "fingerprint": {
+    "passive": [
+      "GET / or GET /api/v1/services/m3db/namespace on 7201 returning JSON with registry.namespaces keys",
+      "M3-prefixed custom headers (M3-Metrics-Type, M3-Storage-Policy, M3-Restrict-By-Tags-JSON) on POST responses to /api/v1/prom/remote/write"
+    ],
+    "active_probe": {
+      "path": "/api/v1/services/m3db/namespace",
+      "method": "GET",
+      "response_markers": [
+        "JSON registry.namespaces envelope",
+        ":9002/health small JSON liveness blob (byte-level shape unconfirmed this pass — verify during Verify stage)"
+      ],
+      "false_positive_check": "Server header not confirmed in docs — schema-level path/JSON-key matching is the reliable marker, not headers."
+    },
+    "version_router": {}
+  },
+  "shodan_dorks": {
+    "namespace_marker": "port:7201 \"namespace\"",
+    "html_marker": "port:7201 http.html:\"m3\"",
+    "node_health": "port:9002 \"/health\"",
+    "product_tag_unverified": "product:\"M3DB\" (unverified as an actual Shodan product tag — test during harvest)"
+  },
+  "engine_routing": {
+    "shodan_visible": "No prior OSINT/dork research found for M3DB — genuine gap for the harvest stage to close.",
+    "censys_only": "Not evaluated this pass."
+  },
+  "deployment_tells": [
+    "Kubernetes StatefulSet named m3dbnode / Deployment named m3coordinator (official chart naming)",
+    "etcd co-located as clusterManagement backend (real clusters) vs noop-etcd (single-node/dev)",
+    "Uber-origin OSS — common in fintech/ad-tech/observability stacks doing high-cardinality metrics at scale; less common as casual self-host than Prometheus/InfluxDB",
+    "Prometheus remote_write/remote_read config pointing at :7201/api/v1/prom/remote/write is a strong M3-as-long-term-storage tell"
+  ],
+  "pivot_paths": [
+    "Namespace/placement enumeration (GET /api/v1/services/m3db/namespace) -> full topology + retention policy disclosure, no auth required",
+    "Remote-write injection (POST /api/v1/prom/remote/write) -> forge/poison metrics data, potential downstream dashboard/alerting manipulation",
+    "Query API data read (/api/v1/query, /query_range, /graphite/render) -> read all stored time-series data unauth — the core auth-off-default finding for this platform",
+    "Database/namespace create-delete -> destructive: attacker can delete production namespaces or provision resource-exhausting new ones",
+    "Node-level 9002/health + 9000/9001 if exposed -> cluster topology/liveness fingerprinting, secondary to coordinator's richer unauth surface"
+  ],
+  "vulnerabilities": [
+    "NO CVEs or GHSA advisories found for m3db/m3/m3query/m3coordinator (GitHub Advisory Database query 'm3db' = 0 results). Explicit null result, not a gap — consistent with a threat model that never claimed to have auth to bypass. The exposure is a design-default/misconfiguration class finding, not a patchable CVE."
+  ],
+  "auth_default_thesis": "STRONGEST CONFIRMATION IN THE CATEGORY. M3DB/M3Coordinator ships with zero authentication, authorization, or access-control mechanism in the open-source binary — the config struct itself has no auth fields to misconfigure. This is starker than most category peers where auth exists but defaults off (VictoriaMetrics, InfluxDB v1): here there is nothing to toggle at all, 100% of the auth burden sits on the operator to bolt on a reverse proxy.",
+  "research_questions": [
+    "Confirm exact metrics-port default in a stock non-admin-mode deployment (7203 vs 3030) — docs show two conflicting examples",
+    "Confirm whether /api/v1/label/<name>/values and other Prometheus-HTTP-API-compatible metadata endpoints are implemented identically on M3Query (inferred from 'Prometheus-compatible' framing, not path-by-path doc-verified)",
+    "Determine node-level ports 9003/9004 purpose (only seen in yaml manifests) — debug/pprof vs additional RPC",
+    "Verify actual /health response schema on port 9002 with a live target (byte-level fingerprint needed for aimap FP)",
+    "Test whether any Shodan/Censys signal already exists for M3 in the wild — no prior OSINT found this pass, needs harvest-stage validation",
+    "Confirm whether M3Aggregator (separate service, not covered in this pass) has its own distinct unauth surface worth a follow-up brief",
+    "Validate real-world prevalence: is M3 common enough in the exposed population to justify a dedicated aimap enumerator, or rare enough (Uber-scale tool) that hits will be sparse"
+  ],
+  "sources": [
+    "[CANDIDATE —  Cat Time-Series-DB OSINT Platoon build 2026-07-28; doc-grounded, host-unverified]",
+    "https://m3db.io/docs/architecture/m3coordinator/",
+    "https://m3db.io/docs/how_to/m3coordinator_admin/",
+    "https://m3db.io/docs/reference/m3coordinator/api/remote/",
+    "https://m3db.io/docs/faqs/",
+    "https://github.com/m3db/m3/blob/master/site/content/faqs/faqs.md",
+    "https://github.com/m3db/m3/blob/master/kube/bundle.yaml",
+    "https://github.com/m3db/m3/blob/master/kube/m3dbnode-statefulset.yaml",
+    "https://github.com/m3db/m3/blob/master/src/cmd/services/m3query/config/config.go",
+    "https://github.com/m3db/m3/blob/master/src/query/api/v1/handler/database/create.go",
+    "https://github.com/advisories?query=m3db (0 results confirmed)",
+    "https://m3db.io/docs/operational_guide/placement_configuration/",
+    "https://m3db.io/docs/reference/m3query/api/query/"
+  ]
+}

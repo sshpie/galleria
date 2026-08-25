@@ -1,0 +1,45 @@
+{
+  "name": "Determined AI",
+  "category": "mlops",
+  "github": "https://github.com/determined-ai/determined",
+  "description": "HPE MLDE — distributed training orchestration platform. MLOps control plane for training jobs.",
+  "default_ports": [8080, 8443, 5432, 80, 443],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "empty-password",
+  "tls_default": true,
+  "tls_default_note": "8443 is TLS; 8080 is plaintext gRPC-JSON gateway",
+  "fingerprint_status": "present",
+  "fingerprint_note": "Master API returns camelCase JSON with unique clusterId + masterId fields. Unauthenticated by design (GetMaster on allowlist).",
+  "dorks": {
+    "basic": "http.status:200 AND \"clusterId\"",
+    "strict": "http.status:200 AND \"masterId\" AND \"version\"",
+    "version": "\"version\":\"[0-9.]+\""
+  },
+  "dork_notes": "clusterId + masterId combo is unique to Determined. FP risk: <2%. Master endpoint exposed by design.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "present",
+  "aimap_status_version": "v1.9.17+",
+  "aimap_fingerprint_name": "Determined AI",
+  "aimap_ports": [8080, 8443, 80, 443],
+  "aimap_probes": [
+    {
+      "path": "/api/v1/master",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "json_field", "field": "clusterId"},
+        {"type": "json_field", "field": "masterId"}
+      ]
+    }
+  ],
+  "severity": "medium",
+  "severity_note": "Auth tier A* (metadata leak only). Real takeover: empty-password admin default (not probed here).",
+  "exposure_data": "experiments, checkpoints, training data, arbitrary container exec on GPU cluster",
+  "research_date": "2026-06-05",
+  "sources": [
+    "https://github.com/determined-ai/determined",
+    "github.com/sshpie/aimap line 4315-4324",
+    "determined/master/internal/grpcutil/auth.go (3 unauth RPCs)"
+  ]
+}

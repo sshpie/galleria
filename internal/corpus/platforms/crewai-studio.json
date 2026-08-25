@@ -1,0 +1,35 @@
+{
+  "name": "CrewAI Studio",
+  "category": "agent-platform",
+  "github": "https://github.com/strnad/CrewAI-Studio",
+  "description": "Streamlit no-code GUI for building/running CrewAI agents. Bundled Postgres.",
+  "default_ports": [8501, 5432],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "ui-unauth",
+  "tls_default": false,
+  "fingerprint_status": "candidate",
+  "fingerprint_note": "<title>CrewAI Studio</title> + Streamlit framing (/static/, /_stcore/health). No login gate in app/app.py. Inherits CrewAI core CVEs (CVE-2026-2275/85/86/87) when code-interpreter tools run.",
+  "dorks": {
+    "basic": "http.title:\"CrewAI Studio\"",
+    "strict": "http.title:\"CrewAI Studio\" http.html:\"streamlit\"",
+    "version": null
+  },
+  "dork_notes": "1 host 2026-06-19 but REFUTED (was a code-server instance, title collision). Population near-zero on Shodan.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "aimap_ports": null,
+  "aimap_probes": null,
+  "severity": "high",
+  "severity_note": "Open Streamlit UI -> provider keys + one-click crew-run -> CrewAI core sandbox-fallback RCE / SSRF / file-read CVEs.",
+  "exposure_data": "provider API keys, agent/crew/task definitions, tool assignments, code-exec via core CVEs",
+  "research_date": "2026-06-19",
+  "sources": [
+    "https://github.com/strnad/CrewAI-Studio",
+    "CERT/CC VU#221883 (CVE-2026-2275/2285/2286/2287)",
+    "CANDIDATE:  cat-agent-platforms survey 2026-06-19, 0 confirmed (1 host refuted as code-server)"
+  ]
+}

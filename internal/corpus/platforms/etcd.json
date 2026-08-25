@@ -1,0 +1,72 @@
+{
+  "platform": "etcd",
+  "display_name": "etcd (standalone, non-Kubernetes)",
+  "category": "distributed_coordination",
+  "default_ports": [
+    2379,
+    2380
+  ],
+  "api_paths": [
+    "/v2/keys",
+    "/v2/keys/?recursive=true",
+    "/v3/kv/range",
+    "/version",
+    "/health",
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ETCD_CLIENT_CERT_AUTH",
+    "ETCD_AUTH_TOKEN"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 2379:2379 -p 2380:2380 quay.io/coreos/etcd:latest — standalone deploy, no k8s apiserver co-located (k8s-embedded etcd is a separate  category, do not duplicate)",
+  "misconfig_patterns": [
+    "auth subsystem is OFF by default until 'etcdctl auth enable' is explicitly run — full read/write with zero credentials out of the box",
+    "client-cert-auth (mTLS) not required by default — plaintext HTTP client port reachable",
+    "v2 API /v2/keys/?recursive=true dumps entire keyspace in one unauth GET",
+    "v3 API grpc-gateway /v3/kv/range with base64 empty-string key + range_end=\\\\0 dumps entire v3 keyspace unauth",
+    "/metrics exposes Prometheus stats incl. cluster member count, leader changes — recon without touching keyspace"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"etcdserver\"",
+      "port:2379",
+      "\"etcd_server_version\""
+    ],
+    "active_probe": {
+      "path": "/version",
+      "method": "GET",
+      "response_markers": [
+        "etcdserver",
+        "etcdcluster"
+      ],
+      "false_positive_check": "GET /version must return JSON with both 'etcdserver' and 'etcdcluster' keys — unique to etcd's version endpoint, unauth by design"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:2379",
+    "strict": "http.html:\"etcdserver\" port:2379",
+    "version": "\"etcd_server_version\" port:2379"
+  },
+  "deployment_tells": [
+    "GET :2379/version -> {\"etcdserver\":\"3.x.x\",\"etcdcluster\":\"3.x.0\"} with zero auth",
+    "GET :2379/v2/keys/?recursive=true -> full legacy keyspace dump",
+    "POST-shaped grpc-gateway GET :2379/v3/kv/range (base64 key='', range_end='\\\\0') -> full v3 keyspace dump",
+    "GET :2379/metrics -> etcd_server_has_leader, etcd_server_is_leader, member list -> cluster topology without keyspace read"
+  ],
+  "pivot_paths": [
+    "keyspace dump often contains service-discovery entries: DB connection strings, service URLs, sometimes plaintext credentials stored by naive app configs",
+    "if co-located with k8s (hand off — different category) keyspace holds cluster secrets; standalone etcd used by Kafka/Cadence/Vitess/TiKV/CockroachDB for coordination-only metadata, lower blast radius but still config/topology leak",
+    "cross-check: instances also answering on 2380 (peer port) confirm multi-node ensemble -> higher-value target (more members' data reachable via a single unauth node)"
+  ],
+  "vulnerabilities": [
+    "CVE-2018-1002105 (unrelated k8s apiserver, noted for cross-category awareness)",
+    "No CVE required — 'no-auth-by-default' is a design-default finding, not a bug"
+  ],
+  "sources": [
+    "https://etcd.io/docs/v3.4/op-guide/configuration/",
+    "https://etcd.io/docs/v3.3/dev-guide/api_grpc_gateway/",
+    "[CANDIDATE —  cat-distributed-coordination survey 2026-07-30; new category, not yet population-verified; explicitly scoped to standalone non-k8s deploys per dispatch]"
+  ]
+}

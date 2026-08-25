@@ -1,0 +1,51 @@
+{
+  "platform": "cmak",
+  "display_name": "CMAK (Cluster Manager for Apache Kafka)",
+  "category": "event_streaming_webui",
+  "default_ports": [
+    9000
+  ],
+  "api_paths": [
+    "/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "yahoo/CMAK \u2014 NO built-in authentication; README states to front it with a reverse proxy for auth",
+  "misconfig_patterns": [
+    "deployed with no reverse-proxy auth layer in front"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"CMAK\"",
+      "http.title:\"Kafka Manager\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "HTML title: CMAK or legacy Kafka Manager"
+      ],
+      "false_positive_check": "run both title variants \u2014 CMAK is the 2017+ rename, Kafka Manager the older brand on stale deployments"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"CMAK\"",
+    "strict": "http.title:\"CMAK\"",
+    "version": "http.title:\"Kafka Manager\""
+  },
+  "deployment_tells": [
+    "collides on port 9000 with Kafdrop \u2014 disambiguate by title string",
+    "often embeds ZooKeeper connection string (ZK cluster topology)"
+  ],
+  "pivot_paths": [
+    "partition reassignment, preferred-replica election, topic delete \u2014 admin-grade actions unauth",
+    "broker config view, ZooKeeper connection string exposure"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://github.com/yahoo/CMAK#security",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] SOURCE-CHECK 2026-07-14 (github.com/yahoo/CMAK app/views/main.scala.html): title tag is a template variable \"@title\", NOT a fixed string in source \u2014 the rendered value depends on the controller passing the title per-page/per-cluster-name. http.title:\"CMAK\" is UNVERIFIED from source (may work if a static default title is set at startup, but not confirmed) \u2014 treat as a hypothesis to live-test, not confirmed intel. http.title:\"Kafka Manager\" (legacy rename) has the same caveat."
+  ]
+}

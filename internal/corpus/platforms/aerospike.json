@@ -1,0 +1,63 @@
+{
+  "platform": "aerospike",
+  "display_name": "Aerospike AVS",
+  "category": "vector_feature",
+  "default_ports": [
+    3000,
+    5000,
+    8080
+  ],
+  "api_paths": [
+    "/",
+    "/api/v1/indexes"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "AEROSPIKE_SECURITY",
+    "AEROSPIKE_USER",
+    "AEROSPIKE_PASSWORD"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 3000:3000 -p 5000:5000 aerospike/aerospike-server:latest",
+  "misconfig_patterns": [
+    "security off by default — info-protocol fully open",
+    "info-protocol exposes node/version/edition/namespaces/sets without auth",
+    "AVS (Aerospike Vector Service) at :5000 — /api/v1/indexes open without auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:3000 \"Aerospike\"",
+      "port:5000 \"Aerospike\""
+    ],
+    "active_probe": {
+      "path": "",
+      "method": "TCP-info",
+      "response_markers": [
+        "node",
+        "version",
+        "edition"
+      ],
+      "false_positive_check": "Aerospike info protocol returns tab-delimited node/version/edition fields — Aerospike-unique wire format"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:3000 \"Aerospike\"",
+    "strict": "port:3000 \"Aerospike\"",
+    "version": "port:3000 \"Aerospike\" \"edition\""
+  },
+  "deployment_tells": [
+    "Aerospike info-protocol at :3000 — netcat returns node/version/edition/namespaces",
+    "AVS REST API at :5000 — GET /api/v1/indexes returns vector index list",
+    "Enterprise pattern: finance/telco high-throughput workloads"
+  ],
+  "pivot_paths": [
+    "TCP :3000 info-protocol → sets + namespaces → data volume estimate",
+    "GET :5000/api/v1/indexes → AVS vector index list + dimensions",
+    "Aerospike :3000 → aql -h host → SHOW SETS; SHOW NAMESPACES"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://aerospike.com/docs/vector",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

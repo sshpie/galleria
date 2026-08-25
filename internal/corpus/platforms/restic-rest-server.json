@@ -1,0 +1,75 @@
+{
+  "platform": "restic-rest-server",
+  "display_name": "restic REST Server",
+  "category": "backup_snapshot",
+  "default_ports": [8000],
+  "api_paths": [
+    "/snapshots/",
+    "/index/",
+    "/keys/",
+    "/locks/",
+    "/data/",
+    "/config"
+  ],
+  "auth_default": "on",
+  "auth_config_env": ["RESTIC_REPOSITORY", "RESTIC_PASSWORD", "RESTIC_PASSWORD_FILE"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8000:8000 -v /data:/data restic/rest-server  (or: rest-server --path /data --listen :8000)",
+  "misconfig_patterns": [
+    "rest-server started without .htpasswd (--no-auth) serves the full repo API unauthenticated on :8000",
+    "HARD GATE — restic is fully client-side-encrypted: /snapshots/ returns only SHA-256 object IDs, /config is an encrypted blob, no path/hostname/tag metadata is exposed server-side. AI/ML content CANNOT be confirmed from the wire. In-scope confirmation is external/metadata-only: reverse-DNS/TLS cert CN/Shodan org resolves to an AI/ML operator, OR aimap fingerprints an adjacent MLflow/Ollama/vector DB on the same IP (restic :8000 is that stack's backup tier), OR public IaC/docker-compose ties the rest-server volume to a model/training/embedding dir. The encrypted snapshot list is NOT evidence of AI data.",
+    "Restraint: names and counts ONLY. Snapshot/index/data IDs and their count are the finding. GET on any /data/<id>, /snapshots/<id>, /index/<id>, /keys/<id>, or the /config BODY pulls an encrypted repo blob = exfiltration, forbidden. Any POST/PUT (object upload, repo init) or DELETE is a write/destroy primitive, forbidden. The slash-username directory-traversal CVE is a write/cross-tenant primitive — document applicability from the version banner, never fire it. Stop at HEAD /config + the array of IDs."
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8000 \"Content-Type: application/vnd.x.restic.rest.v2\"",
+      "port:8000 http.headers_hash:* \"vnd.x.restic.rest\" -\"401 Unauthorized\" -\"WWW-Authenticate\"",
+      "\"Server: rest-server\" port:8000"
+    ],
+    "active_probe": {
+      "path": "/snapshots/",
+      "method": "GET",
+      "response_markers": [
+        "Content-Type response header value application/vnd.x.restic.rest.v2 (or .v1) on a list/object response — restic-protocol-unique",
+        "HEAD /config -> 200 with a tiny body == an initialized restic repo present at that path",
+        "GET /snapshots/ -> JSON array of 64-hex-char strings (v1) or array of {\"name\":\"<64hex>\",\"size\":N} (v2) — all object names exactly 32-byte SHA-256 hex",
+        "401 with WWW-Authenticate: Basic realm=\"restic\" when .htpasswd auth is enforced (negative marker: confirms platform but gated)",
+        "Prometheus /metrics with rest_server_* metric names when --prometheus set"
+      ],
+      "false_positive_check": "Require the exact Content-Type token application/vnd.x.restic.rest.* — never match on http.title or bare port:8000 (8000 is a very noisy dev/admin port: Django runserver, Splunk Web, SonarQube, Portainer agent). rclone serve restic emits the SAME content type but a different binary — disambiguate via Server header (rclone vs rest-server / Go-http-server). A 200 on GET /snapshots/ alone is not proof: an empty/non-repo path returns []; require non-empty 64-hex IDs AND a 200 on HEAD /config. Reject HTML or any non-hex token (catch-all/honeypot guard). 401/403 = surface-open-access-not-exercised, not a finding."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8000 \"Content-Type: application/vnd.x.restic.rest.v2\"",
+    "strict": "port:8000 http.headers_hash:* \"vnd.x.restic.rest\" -\"401 Unauthorized\" -\"WWW-Authenticate\"",
+    "version": "\"Server: rest-server\" port:8000"
+  },
+  "deployment_tells": [
+    "Content-Type application/vnd.x.restic.rest.v2 (or .v1) on list/object responses — restic-protocol-unique",
+    "HEAD /config returns 200 with a tiny body == initialized restic repo at that path",
+    "GET /snapshots/ returns a strict JSON array of 64-char SHA-256 hex IDs (v1) or {name,size} objects (v2)"
+  ],
+  "pivot_paths": [
+    "HEAD /config -> confirm a repo exists at the default path (200) without pulling any blob",
+    "GET /snapshots/ -> enumerate snapshot object COUNT and IDs only (names are the finding; count = how many restore points exist)",
+    "GET /index/ and GET /locks/ -> index count gauges repo size; a present lock = a backup job is live right now (operator-activity signal, read-only)",
+    "GET /keys/ -> count of key files = how many passphrases/master-key slots guard the repo (more keys = shared/multi-user repo)",
+    "If --private-repos is suspected, probe HEAD /<likely-username>/config for sibling repos by name only (never traverse with a slash-username — that is the CVE write primitive, off-limits)",
+    "Correlate :8000 restic with aimap fingerprints on the same IP to attribute the backup to an AI/ML stack — all read-only, no object bytes fetched"
+  ],
+  "vulnerabilities": [
+    "GHSA-43vp-fcqq-x2q8 / SNYK-GOLANG-GITHUBCOMRESTICRESTSERVER-2404178: directory traversal in rest-server < 0.11.0 — a username containing a slash (e.g. foo/config) under --private-repos escapes its repo dir to read/delete another user's config/objects; CVSS 6.5; fixed 0.11.0 by restricting usernames to [unicode/0-9/-./@]",
+    "rest-server 0.10.0 pre-CVE (wojas): URL-encoded slash bypass of --private-repos path restriction (e.g. /foo/../bar) let one authenticated user reach another repo's objects; superseded by the 0.11.0 username-validation hardening"
+  ],
+  "sources": [
+    "https://restic.readthedocs.io/en/latest/REST_backend.html",
+    "https://raw.githubusercontent.com/restic/restic/master/doc/REST_backend.rst",
+    "https://raw.githubusercontent.com/restic/rest-server/master/README.md",
+    "https://github.com/restic/rest-server",
+    "https://github.com/restic/rest-server/releases/tag/v0.11.0",
+    "https://security.snyk.io/vuln/SNYK-GOLANG-GITHUBCOMRESTICRESTSERVER-2404178",
+    "https://restic.readthedocs.io/en/stable/100_references.html",
+    "https://rclone.org/commands/rclone_serve_restic/",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (CONFIRMED)"
+  ]
+}

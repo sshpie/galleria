@@ -1,0 +1,52 @@
+{
+  "platform": "llamafirewall",
+  "display_name": "LlamaFirewall (Meta)",
+  "category": "guardrail-framework",
+  "entry_type": "FRAMEWORK",
+  "vendor": "Meta / facebookresearch (canonical repo now meta-llama/PurpleLlama)",
+  "repo": "https://github.com/meta-llama/PurpleLlama/tree/main/LlamaFirewall",
+  "paper": "https://arxiv.org/abs/2505.03574",
+  "license": "Custom (Meta Llama Community / NOASSERTION on repo root)",
+  "default_ports": [],
+  "exposes_network_by_default": false,
+  "auth_default": "n/a (in-process library; not a network service)",
+  "api_paths": [],
+  "install_tell": "pip install llamafirewall",
+  "components": [
+    "PromptGuard 2 (BERT-style direct injection classifier)",
+    "AlignmentCheck (chain-of-thought audit module)",
+    "CodeShield (code-output static analysis)",
+    "Regex + Custom Scanners"
+  ],
+  "fingerprint": {
+    "passive": [
+      "github.com/meta-llama/PurpleLlama/LlamaFirewall path reference in pyproject or import",
+      "Python import: from llamafirewall import LlamaFirewall, Scanner, Trace",
+      "Hosted PromptGuard-2 weights pulled from meta-llama/Llama-Prompt-Guard-2 on HF"
+    ],
+    "active_probe": null
+  },
+  "deployment_tells": [
+    "Library, not a service. Surfaces as a Python import in agent code.",
+    "Examples/ directory shows wrapper pattern: scan(user_input) -> ScanResult before LLM call.",
+    "PromptGuard-2 model weights downloaded from HF on first run; outbound HF call is the deployment fingerprint.",
+    "Operators sometimes wrap LlamaFirewall in a FastAPI/Flask service to expose REST. That deployment is the network-surface variant."
+  ],
+  "misconfig_patterns": [
+    "AlignmentCheck depends on an LLM call to a configured provider; provider creds leaked in env/.env",
+    "Operators expose LlamaFirewall via a thin FastAPI wrapper without auth (default-no-auth wrapper class)",
+    "CodeShield disabled or in observe-only mode in production (config: scanner_mode=observe)"
+  ],
+  "vulnerabilities": [],
+  "cve_catalog_2026_06_07": {
+    "nvd": "0 results for keyword 'llamafirewall'",
+    "github_advisories_on_PurpleLlama": "0 published",
+    "note": "Framework is a year old (arxiv May 2025). No published CVEs. Threat model carried by the paper, not by disclosed bugs."
+  },
+  "dork_population_substitution_risk": "HIGH. Any dork that matches 'llamafirewall' or 'PromptGuard' will select operators who chose to expose the framework via a thin wrapper -- a SELF-SELECTED subpopulation that is already more security-conscious than the general agent-runtime population. Inverse selection: the operators who quietly use LlamaFirewall as a library inside their agent will be invisible. The dork measures the wrapper deployment style, not framework adoption.",
+  "lane_d_role": "In-process wrapper at the tool-call layer; the canonical OSS reference for 'lib.guard(message) before send_email()'. Email is one of many tool-calls it can wrap.",
+  "sources": [
+    {"url": "https://github.com/meta-llama/PurpleLlama", "status": "CONFIRMED", "verified": "2026-06-07"},
+    {"url": "https://arxiv.org/abs/2505.03574", "status": "CONFIRMED"}
+  ]
+}

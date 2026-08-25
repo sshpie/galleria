@@ -1,0 +1,70 @@
+{
+  "platform": "openfl",
+  "display_name": "OpenFL (Intel Open Federated Learning)",
+  "category": "federated_learning",
+  "default_ports": [
+    50051,
+    50052,
+    8443
+  ],
+  "api_paths": [
+    "grpc://50051/openfl.federation.Director",
+    "grpc://50052/openfl.federation.Envoy"
+  ],
+  "auth_default": "mtls_required",
+  "auth_config_env": [
+    "OPENFL_USE_TLS",
+    "OPENFL_REQUIRE_CLIENT_AUTH"
+  ],
+  "default_creds": [],
+  "install_tell": "fx director start (or fx director start --disable-tls)",
+  "misconfig_patterns": [
+    "mTLS-on by default (use_tls=True, require_client_auth=True) — strongest auth-on-default in Cat-53",
+    "require_client_auth is ignored when use_tls=False — no 'TLS without client cert' middle ground exists by design",
+    "Insecure escape hatch documented: fx director start --disable-tls, Federation(...) kwarg, use_tls=False",
+    "Release notes mention earlier bug where TLS-on was occasionally broken in distributed setups — operators may have shipped --disable-tls as a permanent workaround",
+    "Upstream Open Federated Learning repo has an ARCHIVE NOTICE pointing community at Flower — population may be aging / unmaintained"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:50051",
+      "ssl.cert.subject.CN matches plan FQDN convention"
+    ],
+    "active_probe": {
+      "path": "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
+      "method": "gRPC",
+      "response_markers": [
+        "openfl.federation.Director",
+        "openfl.federation.Envoy"
+      ],
+      "false_positive_check": "Empty reflection = cert-required (auth-on); populated reflection = insecure mode (finding)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:50051 \"grpc-status\"",
+    "strict": "port:50051 \"openfl\"",
+    "version": "port:50051,50052 ssl.cert.subject.O:\"smallstep\""
+  },
+  "deployment_tells": [
+    "fx pki wraps smallstep step-ca (downloaded by OpenFL itself) — step-ca on 8443 next to gRPC on 50051 is the strong co-deploy signal",
+    "Cert CN convention: FQDN-for-Director, collaborator-name-for-Envoy",
+    "Aggregator port plan-defined (50051/50052 in tutorials, no single canonical default)",
+    "gRPC-over-mTLS — HTML/body/header facets return zero; route to Censys + Stage 0c scanner",
+    "FeTS / BraTS (Penn + Intel, 71 hospital sites, six continents), pharma, insurance, ISS"
+  ],
+  "pivot_paths": [
+    "Direct-IP TLS probe (no SNI) on 50051 -> default cert leak = operator FQDN",
+    "Censys SAN extraction on 8443 step-ca cert -> consortium identifier",
+    "gRPC reflection (if --disable-tls) -> openfl.federation service enum (read-only)"
+  ],
+  "vulnerabilities": [
+    "Zero direct CVEs / GHSAs against securefederatedai/openfl",
+    "Sibling-class risk: NVFlare had unauth pickle-deserialization RCE — class-of-bug worth probing on OpenFL, no public audit"
+  ],
+  "sources": [
+    "https://openfl.readthedocs.io/",
+    "https://github.com/securefederatedai/openfl",
+    "data/platform-intel/cat53-openfl-osint-2026-06-09.md",
+    "[CANDIDATE -  2026-06-09, pre-population-verification]"
+  ]
+}

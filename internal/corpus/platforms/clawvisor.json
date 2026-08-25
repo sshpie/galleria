@@ -1,0 +1,184 @@
+{
+  "platform": "clawvisor",
+  "display_name": "Clawvisor (AI-Agent-Gatekeeper)",
+  "category": "ai_agent_authorization_gateway",
+  "subcategory": "ai_email_guardrails_lane_c_adjacent",
+  "default_ports": [25297, 443],
+  "api_paths": [
+    "/api/tasks",
+    "/api/tasks/{id}/expand",
+    "/api/agents",
+    "/api/restrictions",
+    "/health"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_REDIRECT_URL",
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "CLAWVISOR_LLM_VERIFICATION_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "OSS self-hostable (Go server + web dashboard) OR hosted SaaS at clawvisor.com. Self-host installer: curl -fsSL https://clawvisor.com/install.sh | sh. Default server.port=25297 binds 127.0.0.1; override to 0.0.0.0 for Cloud Run. SQLite local default; Postgres in prod (DATABASE_URL). Magic-link auth out of the box; admin@local seeded on first run. Vault backend local file ./vault.key or GCP KMS. Repo: github.com/clawvisor/clawvisor (221 stars 2026-06-07, Go, MIT-style).",
+  "misconfig_patterns": [
+    "Self-host trap: docs explicitly warn that running the agent on the same host as Clawvisor allows the agent to bypass the gateway by reading the SQLite database or process environment directly. Operators who ignore the WARNING block sit the agent next to the daemon and lose the entire trust model.",
+    "callback.allow_private_cidrs is empty by default but accepts operator overrides. Adding overly-broad CIDRs (10.0.0.0/8) opens SSRF callback exposure to internal endpoints.",
+    "callback.require_https=false default. Production deployments accepting http:// callback URLs (except localhost) are vulnerable to callback hijacking on any tenant that does not set true.",
+    "vault.backend=local with vault.key sitting on disk next to clawvisor.db means database-disk compromise = full credential vault disclosure. Operators without backend=gcp on cloud deploys are exposed.",
+    "auth.max_users=0 (unlimited) by default. A self-hosted Clawvisor exposed on 0.0.0.0 with magic-link auth and no max_users cap can be enrolled into by any visitor with email access.",
+    "approval.on_timeout=fail is the safe default (300s) but operators flipping to 'skip' silently auto-approve any action whose human-in-the-loop timer expires."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"clawvisor.com\"",
+      "http.html:\"AI Agent Gatekeeper\"",
+      "http.title:\"Clawvisor\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "<title>Clawvisor",
+        "AI Agent Gatekeeper",
+        "AI agent gatekeeper. Policy-based access control, credential vaulting, and human-in-the-loop approvals"
+      ],
+      "false_positive_check": "Body must contain BOTH '<title>Clawvisor' (literal tag) AND the meta description fragment 'policy-based access control, credential vaulting'. Brand string 'Clawvisor' alone is unique enough but the meta phrase anchors the SaaS instance vs a self-host landing.",
+      "self_host_marker_25297": "GET /health on port 25297 returns 200 with JSON body; X-Powered-By or Server header from Go net/http (no banner string). Web dashboard at / on 25297 serves the React/Vite SPA frontend_dir bundle.",
+      "self_host_marker_api": "GET /api/tasks returns 401 unauthorized when JWT absent; presence of /api/tasks AND /api/tasks/{id}/expand path pair anchors Clawvisor vs other policy gateways."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"clawvisor.com\"",
+    "strict": "ssl.cert.subject.cn:\"clawvisor.com\" http.html:\"AI Agent Gatekeeper\"",
+    "version": "http.html:\"AI Agent Gatekeeper\" http.html:\"Policy-based access control\"",
+    "self_host_default_port": "port:25297 http.title:\"Clawvisor\"",
+    "favicon_pivot_needed": "Favicon hash TBD (logo lives at clawvisor.com web/public/favicon.svg)."
+  },
+  "deployment_tells": [
+    "Hosted SaaS: clawvisor.com behind Google (A records 216.239.32.21 et al, Google Domains parking infra reused as origin layer). Likely Cloud Run given render.yaml + GCP KMS vault backend.",
+    "Self-host: single Go binary clawvisor-server. Magic-link auth via SMTP. SQLite default in ./clawvisor.db; Postgres via DATABASE_URL.",
+    "Frontend: web/dist served from server binary; React + Vite + Tailwind (web/ source).",
+    "LLM intent verification: optional, recommended haiku model (claude-haiku-4-5-20251001 in default config), fail_closed=true, 60s verdict cache.",
+    "Task risk assessment: on by default, produces low/medium/high/critical level surfaced in dashboard.",
+    "Agents declare 'tasks' with a purpose + service/action list + auto_execute flag; user approves the scope once; subsequent in-scope requests pass without per-request approval.",
+    "Notification channels: dashboard, Telegram, push (per-user OAuth + bot token activation).",
+    "MCP integration for Claude Desktop and Claude Code skill install via `clawvisor-server connect-agent`."
+  ],
+  "pivot_paths": [
+    "OSS GitHub: github.com/clawvisor/clawvisor (221 stars), cowork-plugin, cowork-plugins (Claude Code), local-integrations (Go): pivot for issues, deployment YAMLs in deploy/, render.yaml.",
+    "Self-host install script: https://clawvisor.com/install.sh: binary download URL probably exposes release artifacts and operator-side update channel.",
+    "DMARC reporting addr `eric@clawvisor.com` (ruf/rua) leaks founder email (Eric: operator/founder attribution).",
+    "google-site-verification + oneleet-domain-verification TXT records confirm Google Workspace + Oneleet (SOC2 automation) usage.",
+    "Shodan port:25297 + Clawvisor title sweep finds operator self-host deployments exposed to internet (the explicit operator-warning case).",
+    "OAuth scope manifest IS the threat-model surface for this category: see oauth_scope_manifest below; do not exercise, document."
+  ],
+  "vulnerabilities": [],
+  "oauth_scope_manifest": {
+    "discipline_note": "READ, DO NOT EXERCISE. The scope set requested IS the finding. Names are the finding. Captured from internal/adapters/definitions/*.yaml (source-of-truth) and internal/adapters/google/*/adapter.go (Go scope constants).",
+    "google": {
+      "workspace_marketplace_listing": "not detected via passive scrape (Workspace Marketplace SPA hydrates client-side; either not listed or detection requires headless browser). Hosted deployments use customer's own Google Cloud project per docs/GOOGLE_OAUTH_SETUP.md, so per-customer OAuth consent screens rather than a single Marketplace listing.",
+      "oauth_consent_screen_apis_required": [
+        "Gmail API",
+        "Google Calendar API",
+        "Google Drive API",
+        "Contacts API"
+      ],
+      "gmail_scopes": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile"
+      ],
+      "calendar_scopes": [
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/userinfo.email"
+      ],
+      "drive_scopes": [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/userinfo.email"
+      ],
+      "contacts_scopes": [
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/userinfo.email"
+      ],
+      "sheets_scopes": "(grep returned no match in google_sheets.yaml at fetch time; either inherits from drive scope or no Sheets adapter scope file shipped 2026-06-07)",
+      "scope_breadth_finding": "Gmail.modify is requested by default. Per Google's scope-classification, gmail.modify is a RESTRICTED scope (CASA security assessment required for production verification). Operator running Clawvisor's hosted SaaS is on the hook for CASA; self-host deployments must complete their own Google Cloud OAuth consent screen with the same restricted-scope review."
+    },
+    "microsoft": {
+      "graph_scopes_outlook": [
+        "Mail.Read",
+        "Mail.Send",
+        "Calendars.ReadWrite",
+        "offline_access"
+      ],
+      "graph_scopes_onedrive": [
+        "Files.ReadWrite",
+        "offline_access"
+      ],
+      "graph_scopes_teams": "microsoft_teams.yaml.disabled (shipped disabled 2026-06-07)",
+      "appsource_listing": "not detected via passive scrape. Per microsoft credential.go architecture, OAuth flow is per-customer Azure AD app registration rather than AppSource publisher listing.",
+      "scope_breadth_finding": "Mail.Send + Calendars.ReadWrite + Files.ReadWrite combined under one consent is a wide-aperture grant. offline_access enables long-lived refresh tokens; if Clawvisor's vault.key is disclosed, refresh tokens permit attacker re-authentication until tenant admin revokes."
+    },
+    "other_provider_scopes": {
+      "github": "scopes: [\"repo\", \"read:org\"] (per docs/INTEGRATION_YAML_SPEC.md example)",
+      "spotify_example": "scopes: [\"user-read-playback-state\", \"user-modify-playback-state\"] (example only)",
+      "non_oauth_per_user_token": ["github", "slack", "notion", "linear", "stripe", "twilio", "perplexity", "imessage (local chat.db on macOS)"]
+    }
+  },
+  "deployment_artifacts_observed": [
+    "Repo path internal/adapters/definitions/*.yaml: the AUTHORITATIVE scope catalog per provider. Tracking this file across releases gives a scope-creep timeline.",
+    "Repo path security/semgrep, security/zap: operator-side static + dynamic security testing harness shipped in-repo (SAST + DAST CI baseline visible).",
+    "Repo path render.yaml: Cloud Run / Render deploy spec.",
+    "Repo path deploy/: additional deployment manifests (Docker, K8s likely).",
+    "skills/ dir: Claude Code skill files shipped in-repo for the agent-side integration.",
+    "release-please configured (CHANGELOG.md, .release-please-manifest.json): release cadence trackable from git tags."
+  ],
+  "no_secret_leaks_observed_passive": "Passive read of README, config.example.yaml, integration docs, and adapter YAMLs surfaced no plaintext API keys, no JWT secret defaults, no hardcoded OAuth client_secret. config.example.yaml uses env-var indirection throughout. (Active GitHub code search for secrets was unauthenticated and 401-blocked; not exercised under restraint discipline.)",
+  "operator": {
+    "domain": "clawvisor.com",
+    "registered_inferred_from_dns": "active 2026-06-07; A records on Google parking infra (216.239.32-38.21).",
+    "founder_email_leaked_via_dmarc": "eric@clawvisor.com (DMARC rua + ruf addresses)",
+    "ns_inferred": "Google Domains (resolution pattern). NS records not directly captured this session.",
+    "hosting": {
+      "frontend_resolves_to": "216.239.32-38.21 (Google parking + Cloud Run-style fronting)",
+      "mx": "smtp.google.com (Workspace inbound)",
+      "spf": "v=spf1 include:_spf.google.com -all (strict -all, hardened)",
+      "dmarc": "v=DMARC1; p=none; rua/ruf=eric@clawvisor.com; fo=1; adkim=s; aspf=s",
+      "dmarc_posture": "p=none w/ strict alignment (adkim=s aspf=s): observe-only, but the strict alignment is unusual for p=none and signals an operator who knows what they are doing.",
+      "verification_tells": [
+        "google-site-verification (Workspace)",
+        "oneleet-domain-verification (Oneleet SOC2 automation)"
+      ]
+    },
+    "stage_inferred": "YC 2026 batch (per category brief); OSS-first commercial. Single visible founder ('Eric' from DMARC + commit attribution likely). Per Insight #78 stage proxy: DMARC p=none = YC-current/pre-seed cohort (matches)."
+  },
+  "competitive_lane": {
+    "lane": "Lane C: Inbox Agent / Workspace addon middleware (Cat-33), with broader positioning as cross-service AI agent authorization gateway",
+    "differentiator": "Architecturally Clawvisor is NOT a Workspace addon (no Marketplace listing detected). It is a self-hostable / hosted policy gateway that sits between the agent and Google/Microsoft Graph APIs using per-customer OAuth consent. The brief's Lane C framing applies because the operative threat surface is the OAuth scope set requested from the customer's Workspace tenant, even though the integration shape is not the App Marketplace addon model.",
+    "siblings_in_lane": ["Alter (alterauth.com)", "Salus (usesalus.ai): runtime proxy variant, Lane B+C dual"],
+    "siblings_adjacent": ["Sluice (MTA-relay, Lane A)", "AegisAI (inbox-side)"]
+  },
+  "sources": [
+    "https://clawvisor.com/ (PRIMARY landing)",
+    "https://github.com/clawvisor/clawvisor (PRIMARY OSS source)",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/README.md",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/config.example.yaml",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/docs/GOOGLE_OAUTH_SETUP.md",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/docs/INTEGRATION_YAML_SPEC.md",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/definitions/google_gmail.yaml (PRIMARY scope manifest)",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/definitions/google_calendar.yaml",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/definitions/google_drive.yaml",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/definitions/google_contacts.yaml",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/definitions/microsoft_outlook.yaml (PRIMARY MS scope manifest)",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/definitions/microsoft_onedrive.yaml",
+    "https://raw.githubusercontent.com/clawvisor/clawvisor/main/internal/adapters/google/gmail/adapter.go (scope literal Go constants: corroborates YAML)",
+    "dig A/MX/TXT/_dmarc.clawvisor.com 2026-06-07",
+    "GitHub API: orgs/clawvisor, /repos/clawvisor/clawvisor 2026-06-07"
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "platform": "rosmaster",
+  "display_name": "ROS1 master (roscore / rosmaster)",
+  "category": "robotics_control_plane",
+  "default_ports": [
+    11311,
+    11315,
+    11316,
+    11317
+  ],
+  "api_paths": [
+    "/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ROS_MASTER_URI",
+    "ROS_IP",
+    "ROS_HOSTNAME"
+  ],
+  "default_creds": [],
+  "install_tell": "roscore (interactive) OR roslaunch <pkg> <file>.launch OR docker run -p 11311:11311 osrf/ros:noetic-desktop-full roscore",
+  "misconfig_patterns": [
+    "ROS1 master has NO authentication concept. caller_id parameter is identification, not authentication. Any client that reaches port 11311 can call any XML-RPC method.",
+    "Default bind 0.0.0.0 — internet exposure is purely a routing/firewall question, no in-product control.",
+    "getSystemState returns the complete topology graph (publishers, subscribers, services) in one call — full robot stack census from one read.",
+    "getParam / getParamNames frequently leak credentials, cloud API tokens, model paths, calibration secrets stored on the parameter server.",
+    "registerPublisher + publish to /cmd_vel (or equivalent motor topic) lets an unauth caller physically move the robot — the Brown 2018 paper demonstrated this with consent.",
+    "ROS1 Noetic EOL May 2025; no further security patches upstream. Install base lingers in academia + legacy industrial.",
+    "docker-compose patterns in published tutorials hardcode `11311:11311` port exposure — leaked verbatim in many GitHub repos.",
+    "Co-deployment with rosbridge_server (9090) + web_video_server (8080) on the same /32 is the headline exposure class."
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"<methodResponse><fault>\" \"faultCode\"",
+      "port:11311 \"<methodResponse>\"",
+      "port:11311 \"<methodResponse><fault>\" \"faultCode\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "POST",
+      "body": "<?xml version=\"1.0\"?><methodCall><methodName>getUri</methodName><params><param><value><string>-probe</string></value></param></params></methodCall>",
+      "content_type": "text/xml",
+      "response_markers": [
+        "<methodResponse>",
+        "<params>",
+        "<value><array>",
+        "<value><string>http://"
+      ],
+      "false_positive_check": "rosmaster getUri returns a three-element XML-RPC array: [status_code int, status_message string, master_uri string starting with 'http://']. Reject if response is XML-RPC fault for unknown method (then it's generic XML-RPC, not rosmaster). Reject if body contains 'WordPress' or 'xmlrpc.php' (WordPress XML-RPC). Reject if Supervisor 'system.listMethods' signature returns (Supervisor's XML-RPC RPC interface). Confirm with secondary getSystemState call returning array of three arrays (publishers, subscribers, services)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"<methodResponse><fault>\" \"faultCode\"",
+    "strict": "port:11311 \"<methodResponse>\"",
+    "version": "port:11311 \"<methodResponse><fault>\" \"faultCode\"",
+    "notes": "Insight #93: basic dork is port-free so it catches rosmaster relocated to non-11311 (11315/11316/11317 alt-ports for parallel ROS networks). Strict + version are port-pinned and high-precision but blind to relocated masters. XML-RPC fault body is shared with WordPress xmlrpc.php and Supervisor — disambiguate via active getUri probe. Shodan-dark concern HIGH: port 11311 is non-standard and Shodan banner-grab on it is inconsistent. Censys cross-population delta expected at Stage 0b. The Brown 2018 paper (DeMarinis et al., arxiv:1808.03322) is the historical population baseline: 100+ rosmasters per scan, 28 countries, 70%+ on .edu/research networks."
+  },
+  "deployment_tells": [
+    "TurtleBot 2/3/4 — roscore on the onboard NUC or Raspberry Pi, ROS1 Kinetic/Melodic/Noetic.",
+    "Clearpath Husky / Jackal — Ubuntu 18.04 + ROS1 Melodic factory image.",
+    "PR2 legacy Willow Garage installs still in long-running university labs.",
+    "Docker image osrf/ros:noetic-desktop-full is the canonical container; docker-compose with `ports: 11311:11311` is the standard leak.",
+    "Systemd unit wrapping `roslaunch <pkg> <file>.launch` for production robots.",
+    "ROS_MASTER_URI env var on every ROS node points back to host:11311 — leaks self-identity.",
+    "Co-deploy ports: 9090 (rosbridge), 8080/8181 (web_video_server), 11345 (gzserver), 1234 (gzclient), 7400-7500 (DDS bridge), 22 (SSH), 5900 (VNC), 8888 (Jetson Jupyter).",
+    "Cert subject-CN patterns: typically NONE (most ROS deployments are plain HTTP/XML-RPC, no TLS). When TLS present, robot.<lab>.<univ>.edu is the common pattern.",
+    "Edge boards: NVIDIA Jetson (Nano/Xavier/Orin) and Intel NUC dominate the host CPU."
+  ],
+  "pivot_paths": [
+    "POST / getUri → master self-identity (URI) — fingerprint anchor",
+    "POST / getSystemState → complete [publishers, subscribers, services] graph — gold standard enum",
+    "POST / getPublishedTopics → topic + msg type registry",
+    "POST / getTopicTypes → full type registry",
+    "POST / getParamNames → parameter namespace dump",
+    "POST / getParam → parameter values (credential / token / path leak hotspot — read selectively)",
+    "POST / lookupNode → node XML-RPC URI (per-node API endpoint discovery)",
+    "POST / lookupService → service URI (per-service endpoint discovery)",
+    "Shadow-sweep on same IP: 9090 (rosbridge), 8080 (web_video_server), 11345 (gzserver), 8888 (Jupyter), 5900 (VNC)"
+  ],
+  "vulnerabilities": [
+    "CVE-2020-10289 — ros_comm DoS via crafted message types (Alias Robotics).",
+    "CVE-2021-38492 — actionlib message buffer.",
+    "Alias Robotics RVD (Robot Vulnerability Database) catalogs ~200 ROS-ecosystem issues, most without CVEs.",
+    "No CISA KEV entries for ROS as of 2026-06-09."
+  ],
+  "do_not_call": [
+    "POST / registerPublisher — injects rogue publisher (preludes a publish to robot command topic; this is the move-the-robot primitive)",
+    "POST / unregisterPublisher — deregisters a legitimate publisher",
+    "POST / registerService — injects rogue service handler",
+    "POST / unregisterService — tears down legitimate service",
+    "POST / registerSubscriber — injects rogue subscriber",
+    "POST / unregisterSubscriber — deregisters legitimate subscriber",
+    "POST / setParam — mutates parameter server",
+    "POST / deleteParam — mutates parameter server"
+  ],
+  "data_class": "robot topology + parameter-server contents (frequent credential/token/path leakage) + indirect physical-motion capability when chained with registerPublisher+publish. NOT user PII directly, but exposes operational robot state and the means to control physical actuators.",
+  "restraint_notes": [
+    "Identity probe = POST / getUri only.",
+    "Topology read = POST / getSystemState + POST / getPublishedTopics + POST / getTopicTypes (three read-only calls cover the full graph).",
+    "Parameter read = POST / getParamNames first; read selected getParam values only when names suggest secret-leak (e.g. /robot/api_key, /credentials/*, /aws/*). Stop at name enumeration when sensitive — names ARE the finding.",
+    "NEVER call register*/unregister*/setParam/deleteParam — these mutate the master state and the registerPublisher path leads to robot motion.",
+    "Insight #93: pair port:11311-pinned dork with at least one port-free anchor to catch relocated masters.",
+    "Insight #12 shadow-sweep: every confirmed rosmaster gets a 9090 + 8080 + 11345 cross-port check on the same /32."
+  ],
+  "version_history_auth_relevant": {
+    "ROS1 Box Turtle (2010-03)": "first ROS1 release; no auth, no auth on roadmap",
+    "ROS1 Kinetic (2016)": "no auth change",
+    "ROS1 Melodic (2018-05)": "no auth change; Brown paper scan period (Dec 2017 — Jan 2018) caught this generation",
+    "ROS1 Noetic (2020-05)": "final ROS1 release; no auth added; EOL May 2025",
+    "ROS2 transition": "ROS2 abandons the central master entirely (DDS discovery); SROS2 layers cert-based auth on top of DDS — but the install base of ROS1 lingers"
+  },
+  "sources": [
+    "http://wiki.ros.org/ROS/Master_API",
+    "http://wiki.ros.org/roscore",
+    "http://docs.ros.org/en/melodic/api/rosmaster/html/rosmaster.master_api.ROSMasterHandler-class.html",
+    "https://arxiv.org/abs/1808.03322",
+    "https://cs.brown.edu/~vpk/papers/rossec.icra19.pdf",
+    "https://h2r.cs.brown.edu/scanning-the-internet-for-ros/",
+    "https://bernharddieber.com/publication/dieber2019penetration/dieber2019penetration.pdf",
+    "https://github.com/vmayoral/robot_hacking_manual",
+    "https://arxiv.org/abs/2208.02615",
+    "https://tianweiz07.github.io/Papers/22-ccs-2.pdf",
+    "[CANDIDATE —  Cat-X-ROS OSINT Platoon Squad 1, 2026-06-09; doc-grounded, host-unverified]"
+  ],
+  "status": "CANDIDATE"
+}

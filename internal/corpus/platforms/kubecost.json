@@ -1,0 +1,54 @@
+{
+  "platform": "kubecost",
+  "display_name": "Kubecost (cost-analyzer)",
+  "category": "cost-allocation",
+  "default_ports": [9090, 9003],
+  "api_paths": [
+    "/model/allocation",
+    "/model/assets",
+    "/model/savings",
+    "/model/version",
+    "/model/healthz",
+    "/model/prometheusQuery"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "helm install kubecost cost-analyzer/cost-analyzer (built on OpenCost core)",
+  "misconfig_patterns": [
+    "No authentication by default; IBM/AWS docs warn: do not expose outside cluster without an auth layer",
+    "Port 9090 shared with Prometheus — bare port match is FP-prone",
+    "<title>Kubecost UNVERIFIED from source (closed frontend image) — confirm on live 200"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Kubecost\" port:9090",
+      "http.title:\"Kubecost\" http.html:\"/model/\""
+    ],
+    "active_probe": {
+      "path": "/model/allocation?window=1d",
+      "method": "GET",
+      "response_markers": ["cpuCost", "totalCost", "\"code\":200"],
+      "false_positive_check": "JSON envelope {\"code\":200,\"data\":[...]} with per-namespace cpuCost/ramCost/pvCost/networkCost keys"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"kubecost\"",
+    "strict": "http.title:\"Kubecost\" port:9090",
+    "version": "http.title:\"Kubecost\" http.html:\"/model/version\""
+  },
+  "deployment_tells": [
+    "/model/ path prefix is the Kubecost tell vs OpenCost bare paths",
+    "nginx frontend + cost-model backend on 9090",
+    "bundles Prometheus/Grafana subcharts"
+  ],
+  "pivot_paths": [
+    "GET /model/allocation -> per-namespace/per-pod cost -> full cluster topology + dollar-weighted target ranking",
+    "GET /model/assets -> node instance types, zones, spot/on-demand, PV+LB costs",
+    "GET /model/savings -> right-sizing + idle waste -> operational maturity signal"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

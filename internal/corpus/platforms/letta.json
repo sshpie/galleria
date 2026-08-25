@@ -1,0 +1,35 @@
+{
+  "name": "Letta",
+  "category": "agent-platform",
+  "github": "https://github.com/letta-ai/letta",
+  "description": "Self-hosted stateful agent server. Persistent agent memory (core blocks + pgvector archival), tool-calling, REST API + ADE.",
+  "default_ports": [8283, 8083, 80, 5432],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "api-unauth",
+  "tls_default": false,
+  "fingerprint_status": "present",
+  "fingerprint_note": "GET /v1/health/ (trailing slash) returns {version, status:'ok'}; /v1/blocks/ memory-block route is near-unique. Auth only when SECURE=true + LETTA_SERVER_PASSWORD set (opt-in).",
+  "dorks": {
+    "basic": "letta",
+    "strict": "port:8283 http.html:\"/v1/blocks\"",
+    "version": "\"status\":\"ok\" \"version\""
+  },
+  "dork_notes": "CORRECTION (2026-06-19 round-2, primary source): the docker default IS 0.0.0.0-exposed — letta/server/startup.sh sets HOST=0.0.0.0 and compose publishes 8283:8283. NOT dark by bind (round-1 claim 'Default deploy not 0.0.0.0-exposed' was WRONG). It is Shodan-BANNER-dark by construction: the info.summary marker lives in /openapi.json (Shodan crawls / only). port:8283 http.html:\"Create LLM agents with long-term memory\"=0; bare port:8283=40,806 but 'No data returned' dominant (banner-dark at scale). pip/CLI `letta server` does bind 127.0.0.1. Engine route: Censys / active-probe of :8283, NOT Shodan HTML dorking.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "aimap_ports": null,
+  "aimap_probes": null,
+  "severity": "high",
+  "severity_note": "Unauth = read AND write full agent memory (core blocks, pgvector archival/RAG corpus, message history), provider keys, create+run Python tools (code-exec). CVE-2024-39025 (v0.3.17 /users data exposure).",
+  "exposure_data": "agent memory (core + archival pgvector), message history, provider keys, Python tool source, code-exec",
+  "research_date": "2026-06-19",
+  "sources": [
+    "https://github.com/letta-ai/letta",
+    "CVE-2024-39025",
+    "CANDIDATE:  cat-agent-platforms survey 2026-06-19. Round-1: 'letta' freetext=3, 0/3 verified. Round-2: docker default 0.0.0.0:8283 CONFIRMED from startup.sh (NOT localhost-dark as round-1 assumed); banner-dark by construction (info.summary in /openapi.json, uncrawled). Route to Censys/active-probe."
+  ]
+}

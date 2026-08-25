@@ -1,0 +1,64 @@
+{
+  "platform": "qualifire",
+  "display_name": "Qualifire",
+  "category": "ai-guardrails",
+  "apex": "qualifire.ai",
+  "api_apex": "api.qualifire.ai (also proxy.qualifire.ai)",
+  "api_endpoint": "/v1/evaluate (proxy mode)",
+  "default_ports": [
+    443
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "QUALIFIRE_API_KEY",
+    "QUALIFIRE_BASE_URL"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL \u2014 Israeli AI quality + guardrails vendor; founded 2024; Tel Aviv; offers both reverse-proxy mode (proxy.qualifire.ai) and standalone API (api.qualifire.ai)",
+  "install_tell": "Dual-mode: proxy.qualifire.ai (transparent reverse proxy) + api.qualifire.ai (standalone)",
+  "misconfig_patterns": [
+    "QUALIFIRE_API_KEY leaked",
+    "Proxy mode -> Qualifire sees every LLM prompt and completion in cleartext (necessary by design, but a concentration risk operators may underweight)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"*.qualifire.ai\""
+    ],
+    "active_probe": {
+      "path": "/v1/evaluate",
+      "method": "POST",
+      "response_markers": [
+        "qualifire",
+        "evaluation",
+        "verdict"
+      ],
+      "false_positive_check": "Require qualifire cert SAN"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"qualifire.ai\"",
+    "strict": "ssl.cert.subject.cn:\"qualifire.ai\" http.status:200",
+    "version": "ssl.cert.subject.cn:\"qualifire.ai\" http.html:\"Qualifire\""
+  },
+  "dmarc_posture": "p=quarantine adkim=s aspf=s (strict alignment); Google MX + HubSpot + Amplemarket SPF (outbound marketing stack)",
+  "deployment_tells": [
+    "api.qualifire.ai vs proxy.qualifire.ai split",
+    "HubSpot + Amplemarket = active outbound sales"
+  ],
+  "pivot_paths": [
+    "QUALIFIRE_API_KEY -> all evaluation results + (in proxy mode) full prompt/completion history"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "_dmarc.qualifire.ai",
+      "status": "CONFIRMED"
+    }
+  ]
+}

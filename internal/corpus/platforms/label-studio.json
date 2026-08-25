@@ -1,0 +1,71 @@
+{
+  "platform": "label-studio",
+  "display_name": "Label Studio (Heartex/Humansignal)",
+  "category": "data_labeling",
+  "default_ports": [
+    8080,
+    80,
+    443
+  ],
+  "api_paths": [
+    "/version",
+    "/api/projects/",
+    "/api/users/",
+    "/api/tasks",
+    "/api/projects/{id}/export"
+  ],
+  "auth_default": "mandatory_first_run_signup",
+  "auth_config_env": [
+    "LABEL_STUDIO_USERNAME",
+    "LABEL_STUDIO_PASSWORD",
+    "LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 heartexlabs/label-studio:latest",
+  "misconfig_patterns": [
+    "Operator deploys with no admin signup completed (fresh install, 0 projects)",
+    "Operator runs --no-auth or LABEL_STUDIO_DISABLE_SIGNUP=true for internal demos",
+    "Labeled training data exposure via /api/projects/{id}/export when unauth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Label Studio\""
+    ],
+    "active_probe": {
+      "path": "/version",
+      "method": "GET",
+      "response_markers": [
+        "\"release\"",
+        "\"label-studio-os-package\""
+      ],
+      "false_positive_check": "IMPORTANT: /version body is wrapped in <pre>...</pre> HTML; strip wrapper before json.loads or the probe falsely returns dead"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Label Studio\"",
+    "strict": "http.title:\"Label Studio\" port:8080",
+    "version": "http.title:\"Label Studio\" \"label-studio-os-package\""
+  },
+  "deployment_tells": [
+    "Modern operators on 1.20+; long-tail on 1.13.1 and 1.15.0",
+    "Cloud spread: AWS / GCP / Hetzner / Alibaba / Tencent (no operator concentration)",
+    "/version JSON wrapped in <pre> HTML (Django default rendering)",
+    "99.75% of LIVE hosts return 401 on /api/projects/"
+  ],
+  "pivot_paths": [
+    "GET /api/projects/ -> list project NAMES, counts, members_count",
+    "GET /api/users/ -> annotator account list (PII)",
+    "GET /api/projects/{id}/export -> dump labeled training data (NEVER)",
+    "GET /api/tasks?project={id} -> individual annotation payloads (NEVER)"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-49146 - XSS",
+    "CVE-2024-22087 - SSRF in storage interfaces",
+    "Operator-side: --no-auth mode and shared default admin creds"
+  ],
+  "sources": [
+    "https://labelstud.io/guide",
+    "case-studies/commercial/label-studio-population-survey-2026-06-08.md (1/500 unauth = 0.2%, the strongest auth-on-default measurement in the program)",
+    "[CONFIRMED -  2026-06-08 population survey]"
+  ]
+}

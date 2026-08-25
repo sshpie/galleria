@@ -1,0 +1,46 @@
+{
+  "platform": "aws-cost-exporter",
+  "display_name": "electrolux-oss aws-cost-exporter",
+  "category": "cost-allocation",
+  "default_ports": [9090],
+  "api_paths": [
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["AWS_ACCESS_KEY", "AWS_ACCESS_SECRET"],
+  "default_creds": [],
+  "install_tell": "docker run -p 9090:9090 (electrolux-oss/aws-cost-exporter, Python prometheus_client)",
+  "misconfig_patterns": [
+    "Auth OFF on /metrics (Prometheus model)",
+    "Port 9090 collides with Prometheus server itself",
+    "Publisher label leaks raw AWS account ID; group-by LINKED_ACCOUNT exposes multi-account org structure"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9090 http.html:\"aws_daily_cost_usd\""
+    ],
+    "active_probe": {
+      "path": "/metrics",
+      "method": "GET",
+      "response_markers": ["aws_daily_cost_usd"],
+      "false_positive_check": "Prometheus text with aws_daily_cost_usd metric + Publisher/ChargeType/RegionName labels"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"aws_daily_cost_usd\"",
+    "strict": "port:9090 http.html:\"aws_daily_cost_usd\"",
+    "version": "http.html:\"aws_daily_cost_usd\""
+  },
+  "deployment_tells": [
+    "Python prometheus_client server header",
+    "metric aws_daily_cost_usd with Publisher/RegionName/ChargeType labels",
+    "port 9090 generic"
+  ],
+  "pivot_paths": [
+    "GET /metrics -> aws_daily_cost_usd Publisher label = AWS account ID -> org structure + per-service daily spend"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

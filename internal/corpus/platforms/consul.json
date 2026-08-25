@@ -1,0 +1,75 @@
+{
+  "platform": "consul",
+  "display_name": "HashiCorp Consul",
+  "category": "distributed_coordination",
+  "default_ports": [
+    8500,
+    8501,
+    8600
+  ],
+  "api_paths": [
+    "/v1/kv/?recurse=true",
+    "/v1/catalog/services",
+    "/v1/agent/members",
+    "/v1/agent/self",
+    "/ui/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CONSUL_HTTP_TOKEN",
+    "CONSUL_ACL_DEFAULT_POLICY"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8500:8500 hashicorp/consul:latest agent -dev (dev mode = ACLs off, HTTP API fully open)",
+  "misconfig_patterns": [
+    "ACL system is DISABLED by default unless operator runs 'consul acl bootstrap' — full unauth HTTP API by default, not just an 'allow' policy edge case",
+    "Pre-1.9 shipped guidance defaulted acl_default_policy to 'allow' even once ACLs were turned on — legacy long-lived clusters often never rotated this",
+    "-dev mode (common in quick-start docs, copy-pasted into prod) disables ACLs entirely and binds 0.0.0.0",
+    "/v1/kv/?recurse=true dumps entire KV store including app secrets operators store there (anti-pattern, but observed in the wild)",
+    "/v1/catalog/services + /v1/agent/members leak full service mesh topology and node membership without auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Consul\" port:8500",
+      "http.title:\"Consul\"",
+      "\"X-Consul-Index\""
+    ],
+    "active_probe": {
+      "path": "/v1/agent/self",
+      "method": "GET",
+      "response_markers": [
+        "\"Config\"",
+        "\"Member\"",
+        "Consul"
+      ],
+      "false_positive_check": "GET /v1/agent/self must return JSON with top-level 'Config' and 'Member' keys and a 'Consul' version string under Config -- unique to Consul agent API, unauth response confirms ACL-off state directly (200 here = ACLs disabled or default token has read)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8500",
+    "strict": "http.html:\"Consul\" port:8500",
+    "version": "\"X-Consul-Index\" port:8500"
+  },
+  "deployment_tells": [
+    "GET :8500/v1/agent/self -> 200 with full JSON config (Datacenter, NodeName, Consul version) confirms unauth read",
+    "GET :8500/v1/kv/?recurse=true -> 200 = KV store fully open (vs 403 = ACLs enforced)",
+    "GET :8500/v1/catalog/services -> service name list -> topology map without a single auth token",
+    "GET :8500/v1/agent/members -> full cluster node list incl. internal IPs, tags, build version",
+    "UI at :8500/ui/ renders the same data visually — confirms operator-facing, not just an API artifact"
+  ],
+  "pivot_paths": [
+    "/v1/catalog/service/{name} -> per-service instance IPs:ports -> direct pivot to backend services registered in the mesh",
+    "/v1/kv/?recurse=true -> frequently contains DB connection strings, feature flags, and (anti-pattern) plaintext secrets",
+    "/v1/agent/members -> internal RFC1918 IP disclosure -> maps the private network from a public listener",
+    "Consul Connect / service-mesh intentions (if exposed) reveal authorization topology between services"
+  ],
+  "vulnerabilities": [
+    "CVE-2020-25864 / CVE-2020-25865 (Consul Connect proxy) — noted for chain awareness, not this survey's primary vector",
+    "No CVE required for KV/catalog/members disclosure — default-config finding"
+  ],
+  "sources": [
+    "https://developer.hashicorp.com/consul/docs/secure/acl/best-practice",
+    "https://developer.hashicorp.com/consul/docs/reference/agent/configuration-file/acl",
+    "[CANDIDATE —  cat-distributed-coordination survey 2026-07-30; new category, not yet population-verified]"
+  ]
+}

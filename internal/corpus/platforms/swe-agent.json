@@ -1,0 +1,59 @@
+{
+  "platform": "swe-agent",
+  "display_name": "SWE-agent",
+  "category": "agent_framework",
+  "default_ports": [],
+  "api_paths": [],
+  "auth_default": "N/A-cli-tool",
+  "auth_config_env": [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GITHUB_TOKEN"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install sweagent  (Princeton NLP; CLI: sweagent run --config <yaml>; no web server, governed by single yaml config file)",
+  "misconfig_patterns": [
+    "LLM provider API keys (OpenAI, Anthropic) and GITHUB_TOKEN committed to config YAML files in public repos -- primary exposure vector",
+    "No web service to scan -- Shodan fingerprinting not viable at population scale",
+    "Research/eval runs may log full LLM conversations to disk including any injected content from target repos"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"swe-agent\""
+    ],
+    "active_probe": {
+      "path": "N/A",
+      "method": "N/A",
+      "response_markers": [],
+      "false_positive_check": "No HTTP listener. http.html:\"swe-agent\" = 6 hits on Shodan -- all are documentation pages, not live SWE-agent endpoints. http.html:\"swe-bench\" = 25 hits -- adjacent research infrastructure (SWE-bench eval harness), not SWE-agent deployments. Active probe not applicable. GitHub code-search for committed API keys in sweagent config YAMLs is the viable discovery route."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"swe-agent\"",
+    "strict": null,
+    "version": null,
+    "note": "http.html:\"swe-agent\" = 6 hits (all docs pages, not live endpoints). http.html:\"swe-bench\" = 25 hits (adjacent research infra, not SWE-agent). No viable Shodan fingerprint -- CLI research pipeline with no web listener. Primary discovery route is GitHub code-search for committed provider keys in config YAMLs."
+  },
+  "deployment_tells": [
+    "No web listener -- pure CLI pipeline (Princeton NLP research tool)",
+    "Governed by single YAML config file (--config param)",
+    "GitHub Codespaces access for browser-based runs -- no self-hosted web service",
+    "Outputs structured trajectory logs to disk (traj/*.traj JSON files)"
+  ],
+  "pivot_paths": [
+    "GitHub code-search: filename:*.yaml \"OPENAI_API_KEY\" sweagent -- locate committed provider keys in research configs",
+    "GitHub code-search: filename:*.yaml \"GITHUB_TOKEN\" sweagent -- locate committed GitHub tokens"
+  ],
+  "vulnerabilities": [],
+  "auth_evidence": "SWE-agent is a CLI research pipeline from Princeton NLP with no HTTP listener. README confirms CLI-only usage ('governed by a single yaml file', 'batch mode for benchmarking'). No web server, no port binding, no authentication surface. Browser access is via GitHub Codespaces (managed cloud environment), not a self-hosted web service.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Provider API keys (OpenAI, Anthropic) potentially committed to config YAML files in public research repos",
+    "GITHUB_TOKEN with repo access scope in config files (enables code read/write on target repos)"
+  ],
+  "sources": [
+    "https://github.com/princeton-nlp/SWE-agent",
+    "https://raw.githubusercontent.com/princeton-nlp/SWE-agent/main/README.md",
+    "CANDIDATE:  platform research 2026-06-26 -- Shodan dork survey: http.html:\"swe-agent\"=6 hits (all docs), http.html:\"swe-bench\"=25 hits (adjacent infra). Confirmed CLI-only from README: no web server, single yaml config, Codespaces for browser access. No web fingerprinting viable."
+  ]
+}

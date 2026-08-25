@@ -1,0 +1,116 @@
+{
+  "platform": "lobe-chat",
+  "display_name": "Lobe Chat",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3210
+  ],
+  "api_paths": [
+    "/webapi/proxy",
+    "/webapi/chat/openai",
+    "/webapi/chat/[provider]",
+    "/webapi/models/[provider]",
+    "/webapi/create-image/comfyui",
+    "/webapi/plugin/gateway",
+    "/trpc/edge",
+    "/trpc/lambda",
+    "/manifest.webmanifest"
+  ],
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "ACCESS_CODE",
+    "NEXT_PUBLIC_ENABLE_NEXT_AUTH",
+    "AUTH_SECRET",
+    "KEY_VAULTS_SECRET",
+    "NEXT_AUTH_SSO_PROVIDERS",
+    "AUTH_CASDOOR_ID",
+    "AUTH_CASDOOR_SECRET",
+    "AUTH_CASDOOR_ISSUER"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d -p 3210:3210 -e OPENAI_API_KEY=sk-xxxx --name lobe-chat lobehub/lobe-chat   # client-side quickstart; ACCESS_CODE optional. Database edition: mkdir lobe-chat-db && cd lobe-chat-db && bash <(curl -fsSL https://lobe.li/setup.sh) && docker compose up -d",
+  "misconfig_patterns": [
+    "ACCESS_CODE left unset -> fully open UI+API exposed to the internet on :3210 (the dominant misconfig)",
+    "Operator sets OPENAI_API_KEY server-side but no ACCESS_CODE -> anyone reaching the host proxies LLM calls on the operator's billing (LLMjacking)",
+    "Running an unpatched client-side image (<=2.1.56) reachable from the internet -> unauth /webapi/proxy SSRF live",
+    "Database edition deployed but reverse-proxy/ingress exposes :3210 directly, bypassing the intended auth fronting",
+    "KEY_VAULTS_SECRET committed or weak -> DB-stored user API keys decryptable if the Postgres store is also exposed"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"x-lobe-chat-auth\"",
+      "http.html:\"manifest.webmanifest\" http.title:\"LobeChat\"",
+      "http.title:\"LobeChat\"",
+      "http.html:\"/webapi/\""
+    ],
+    "active_probe": {
+      "path": "/manifest.webmanifest",
+      "method": "GET",
+      "response_markers": [
+        "JSON with \"name\":\"LobeChat\" / \"short_name\":\"LobeChat\"",
+        "\"description\" referencing LobeHub / private ChatGPT",
+        "icons referencing /icons/icon-512x512.png",
+        "POST /webapi/proxy with a URL body returns a server-side fetched response (pre-2.1.57, unauth)",
+        "GET / served by Next.js with _next/static chunks and inline self.__next_f bootstrap referencing lobe-chat"
+      ],
+      "false_positive_check": "\"chat\", \"AI\", and \"LobeChat\" branding collide with the hundreds of forks/derivatives and the AIDotNet/lobe-chat .NET reskin. To avoid the ~50% false positive: (1) confirm port 3210 AND the Next.js app shell, (2) require the vendor-unique /webapi/ route family (no other app namespaces chat under /webapi/chat/[provider]) or the XOR-obfuscated X-lobe-chat-auth request header — this header string is unique to LobeHub's runtime, (3) /manifest.webmanifest must return short_name \"LobeChat\". A bare \"LobeChat\" title with no /webapi/ surface is likely a static clone or a reverse-proxied marketing page, not a live instance. Distinguish editions: client-side image is fully open at \"/\"; database edition redirects \"/\" to a Better-Auth/Casdoor login — the presence of /api/auth (Better-Auth) vs only ACCESS_CODE gating tells the edition apart."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"LobeChat\" port:3210",
+    "strict": "http.html:\"x-lobe-chat-auth\" http.title:\"LobeChat\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Port 3210 (default; classic client-side image binds container :3210)",
+    "Next.js app shell: _next/static chunks, self.__next_f bootstrap, /manifest.webmanifest served at root",
+    "/webapi/* route namespace (vendor-unique to LobeHub)",
+    "X-lobe-chat-auth request header on chat calls (XOR-obfuscated payload)",
+    "Two editions: lobehub/lobe-chat (client-side, ACCESS_CODE, default-off) vs lobehub/lobe-chat-database (Postgres+pgvector+MinIO+Casdoor, Better-Auth)",
+    "setup.sh bootstrap from lobe.li/setup.sh + docker compose up -d for the database edition",
+    "Casdoor login screen (database edition) or bare chat UI with no login (client-side, open)"
+  ],
+  "pivot_paths": [
+    "GET / — open client-side instance loads straight into the chat UI with no login; confirms unauth read access without sending any chat",
+    "GET /manifest.webmanifest — confirm LobeChat identity (read-only, no auth)",
+    "POST /webapi/proxy {url:...} on <=2.1.56 — unauth SSRF to enumerate cloud metadata / internal services (read-only enumeration; do not exfiltrate)",
+    "Forge X-lobe-chat-auth on <=2.1.47 to read /webapi/models/[provider] and confirm which upstream providers are configured without spending tokens",
+    "Knowledge-base UI (open instance) — enumerate ingested document names to gauge data sensitivity (names ARE the finding; do not download)"
+  ],
+  "vulnerabilities": [
+    "GHSA-5mwj-v5jw-5c97 (Moderate) — Authentication bypass via forgeable X-lobe-chat-auth header (only XOR-obfuscated with a hardcoded repo key, not signed); unauth attacker forges {\"apiKey\":\"x\"} to reach /webapi/chat|models|create-image routes and spend server credentials; affects @lobehub/lobehub <= 2.1.47, patched 2.1.48",
+    "GHSA-xmwj-c75x-6346 (Moderate) — Unauthenticated SSRF in POST /webapi/proxy; route lacks checkAuth() so any user makes arbitrary server-side outbound requests, leak infra/Vercel details, inject Set-Cookie on lobehub.com; affects <= v2.1.56, patched 2.1.57",
+    "CVE-2024-47066 / GHSA-3fc8-2r3f-8wrg (Critical) — Insufficient fix for CVE-2024-32964; SSRF protection bypassable via HTTP redirect to internal resources on /api/proxy, unauthenticated; affects <= v1.19.12, patched 1.19.13",
+    "GHSA-4gpc-rhpj-9443 (Critical) — Stored XSS in chat messages escalating to RCE",
+    "GHSA-xq4x-622m-q8fq (Moderate) — XSS escalating to RCE",
+    "GHSA-m79r-r765-5f9j (Moderate) — RCE via XSS in desktop chat messages",
+    "GHSA-wrrr-8jcv-wjf5 (Moderate) — Authorization flaw in presigned upload with user-controlled object keys",
+    "GHSA-j7xp-4mg9-x28r (Low) — IDOR in knowledge-base file removal allows cross-user file deletion",
+    "GHSA-fgx4-p8xf-qhp9 (Low) — SSRF via native web-fetch module",
+    "GHSA-xph5-278p-26qx (Moderate) — Open redirect"
+  ],
+  "auth_evidence": "PRIMARY SOURCE — env-var reference (docs/self-hosting/environment-variables/basic.mdx, mirrored at deepwiki 7.1): ACCESS_CODE is described as \"Password to lock the application. Supports comma-separated values\" with default value shown as \"-\" (unset/empty). When ACCESS_CODE is empty/unset the instance is accessible without authentication. The classic client-side quickstart docker run command does NOT include it: `docker run -d -p 3210:3210 -e OPENAI_API_KEY=sk-xxxx --name lobe-chat lobehub/lobe-chat` yields a fully unauth UI+API; ACCESS_CODE is only added as an OPTIONAL `-e ACCESS_CODE=lobe66` flag in the \"add a password\" example. The repo .env.example ships no ACCESS_CODE and no admin password. Conclusion: auth exists (ACCESS_CODE / Better-Auth) but is OFF in the default client-side deployment unless an env var is set. The newer database edition (lobehub/lobe-chat-database) instead requires DATABASE_URL + AUTH_SECRET + KEY_VAULTS_SECRET and front-ends with Better-Auth/Casdoor, but the canonical single-container quickstart most operators run is the client-side image, which is default-off.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Anthropic/Gemini/Bedrock/Azure) — in client-side mode keys configured via ACCESS_CODE-gated UI proxy through /webapi/chat/[provider]; an open instance lets anyone spend them (LLMjacking)",
+    "Ingested RAG knowledge-base documents and their parsed chunks/embeddings (the file knowledge base feature) — potential PII/business docs",
+    "Conversation/session history and assistant (agent) definitions revealing prompts and business logic",
+    "In database edition: PostgreSQL/pgvector store contents and user-provided API keys encrypted with KEY_VAULTS_SECRET (exposure of secret + DB = key recovery)",
+    "MinIO/S3 object storage holding uploaded files and KB sources",
+    "Server-side fetch capability via /webapi/proxy usable as an SSRF pivot into cloud metadata / internal services"
+  ],
+  "sources": [
+    "https://github.com/lobehub/lobe-chat",
+    "https://hub.docker.com/r/lobehub/lobe-chat",
+    "https://lobehub.com/docs/self-hosting/environment-variables/basic",
+    "https://lobehub.com/docs/self-hosting/platform/docker",
+    "https://deepwiki.com/lobehub/lobe-chat/7.1-environment-variables-reference",
+    "https://github.com/lobehub/lobehub/security/advisories/GHSA-5mwj-v5jw-5c97",
+    "https://github.com/lobehub/lobehub/security/advisories/GHSA-xmwj-c75x-6346",
+    "https://github.com/lobehub/lobehub/security/advisories/GHSA-3fc8-2r3f-8wrg",
+    "https://github.com/lobehub/lobehub/security/advisories",
+    "https://raw.githubusercontent.com/lobehub/lobehub/main/index.html",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

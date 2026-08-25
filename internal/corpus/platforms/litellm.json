@@ -1,0 +1,73 @@
+{
+  "platform": "litellm",
+  "display_name": "LiteLLM Proxy",
+  "category": "gateway",
+  "default_ports": [4000],
+  "api_paths": ["/v1/chat/completions", "/v1/models", "/health/liveliness", "/ui", "/logs", "/key/list"],
+  "auth_default": "off",
+  "auth_config_env": [
+    "LITELLM_MASTER_KEY",
+    "LITELLM_SALT_KEY",
+    "UI_USERNAME",
+    "UI_PASSWORD",
+    "DATABASE_URL"
+  ],
+  "default_creds": [
+    {"user": "ishaan-litellm", "pass": "langchain", "context": "Admin UI example credentials from docs -- often copy-pasted as-is by operators"}
+  ],
+  "install_tell": "docker run -p 4000:4000 -v $(pwd)/litellm_config.yaml:/app/config.yaml docker.litellm.ai/berriai/litellm:main-latest --config /app/config.yaml",
+  "misconfig_patterns": [
+    "No LITELLM_MASTER_KEY set -- proxy is fully open, all routes unauthenticated",
+    "UI_USERNAME/UI_PASSWORD copied verbatim from docs (ishaan-litellm/langchain)",
+    "Database URL with default dbpassword9090 from docker-compose example",
+    "Prometheus metrics endpoint :9090 exposed without auth",
+    "LITELLM_SALT_KEY not set -- provider keys stored unencrypted in DB"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"LiteLLM\" port:4000",
+      "\"litellm\" port:4000",
+      "http.html:\"litellm\" port:4000"
+    ],
+    "active_probe": {
+      "path": "/health/liveliness",
+      "method": "GET",
+      "response_markers": ["litellm_version", "healthy"],
+      "false_positive_check": "response body must contain litellm_version field"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"LiteLLM\" port:4000",
+    "strict": "\"litellm_version\" port:4000",
+    "version": "\"litellm_version\" port:4000 http.html:\"LiteLLM\""
+  },
+  "deployment_tells": [
+    "Port 4000 with /health/liveliness returning litellm_version JSON",
+    "Admin UI at /ui -- prompts for username/password when master_key is set",
+    "PostgreSQL on 5432 (docker-compose default)",
+    "Prometheus on 9090 in docker-compose deployments"
+  ],
+  "pivot_paths": [
+    "GET /v1/models -- lists all configured upstream providers and model names (no auth if no master_key)",
+    "GET /key/list -- all virtual keys and their associated provider credentials",
+    "GET /logs -- full prompt/response history for all proxied calls",
+    "POST /chat/completions with crafted Authorization header -- CVE-2026-42208 SQLi reads key table on unpatched <1.83.7",
+    "Host header injection -- CVE-2026-49468 auth bypass on <1.84.0"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-42208 CVSS 9.3 CISA-KEV: pre-auth SQLi via Authorization header in key verification path; reads proxy key DB; affected 1.81.16-1.83.6; fixed 1.83.7",
+    "CVE-2026-49468 CVSS 9.5: auth bypass via Host header injection; auth layer evaluates wrong route; affected <1.84.0; fixed 1.84.0",
+    "CVE-2026-35030 CVSS 9.4: OIDC JWT cache key collision (first 20 chars used as key); unauthenticated attacker gains legitimate user session; affected <1.83.0; fixed 1.83.0",
+    "CVE-2025-0330: Langfuse API key leakage via team settings parse; affected v1.52.1"
+  ],
+  "sources": [
+    "https://docs.litellm.ai/docs/proxy/docker_quick_start",
+    "https://docs.litellm.ai/docs/proxy/ui",
+    "https://github.com/BerriAI/litellm/security/advisories/GHSA-r75f-5x8p-qvmc",
+    "https://github.com/BerriAI/litellm/security/advisories/GHSA-4xpc-pv4p-pm3w",
+    "https://github.com/BerriAI/litellm/security/advisories/GHSA-jjhc-v7c2-5hh6",
+    "https://docs.litellm.ai/blog/cve-2026-42208-litellm-proxy-sql-injection",
+    "https://www.runzero.com/blog/litellm/",
+    "https://github.com/BerriAI/litellm/blob/main/docker-compose.yml"
+  ]
+}

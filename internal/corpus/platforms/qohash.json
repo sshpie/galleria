@@ -1,0 +1,68 @@
+{
+  "platform": "qohash",
+  "display_name": "Qohash (Qostodian Nexus)",
+  "category": "ai-guardrails-dlp",
+  "apex": "qohash.com",
+  "api_apex": "self-hosted (Nexus on-prem appliance)",
+  "api_endpoint": "configurable; default http://nexus:8800 (in-cluster DNS)",
+  "default_ports": [
+    8800
+  ],
+  "auth_default": "on (operator-deployed)",
+  "auth_config_env": [
+    "QOSTODIAN_NEXUS_API_BASE",
+    "QOSTODIAN_NEXUS_API_KEY"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL \u2014 established Canadian DLP/data-discovery vendor; Quebec City; founded 2018; product Qostodian Nexus; pivoted into AI-DLP / guardrails space; uses LiteLLM generic_guardrail_api wrapper (lean 81-line shim)",
+  "install_tell": "On-prem Nexus appliance; default base http://nexus:8800 (Kubernetes service DNS); not a SaaS apex",
+  "misconfig_patterns": [
+    "Operators forgetting TLS termination in front of nexus:8800 -> guardrail decisions in cleartext",
+    "Nexus appliance exposed beyond cluster boundary (NodePort/LoadBalancer drift)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"nexus.*\" + qohash brand",
+      "ssl.cert.subject.cn:\"*.qohash.com\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/",
+      "method": "GET",
+      "response_markers": [
+        "qohash",
+        "Qostodian",
+        "nexus"
+      ],
+      "false_positive_check": "Generic /nexus paths exist; require Qostodian brand"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"qohash.com\"",
+    "strict": "http.html:\"Qostodian\"",
+    "version": "http.html:\"Qostodian Nexus\" port:8800"
+  },
+  "dmarc_posture": "p=reject (strongest); rua to mailsec.ca (Canadian DMARC processor); Google MX + HubSpot + Greenhouse (mature ops + hiring)",
+  "deployment_tells": [
+    "http://nexus:8800 default",
+    "Kubernetes in-cluster DNS",
+    "generic_guardrail_api shim path"
+  ],
+  "pivot_paths": [
+    "QOSTODIAN_NEXUS_API_KEY -> DLP policy + scanned data inventory in operator cluster"
+  ],
+  "vulnerabilities": [
+    "Default scheme is plaintext http:// (not https://) \u2014 appliance assumes in-cluster trust"
+  ],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/qohash/qohash.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "_dmarc.qohash.com",
+      "status": "CONFIRMED"
+    }
+  ]
+}

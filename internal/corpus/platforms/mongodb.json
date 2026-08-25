@@ -1,0 +1,62 @@
+{
+  "platform": "mongodb",
+  "display_name": "MongoDB",
+  "category": "vector_feature",
+  "default_ports": [
+    27017
+  ],
+  "api_paths": [],
+  "auth_default": "none",
+  "auth_config_env": [
+    "MONGO_INITDB_ROOT_USERNAME",
+    "MONGO_INITDB_ROOT_PASSWORD"
+  ],
+  "default_creds": [
+    {
+      "user": "admin",
+      "pass": "",
+      "context": "when --auth flag not set"
+    }
+  ],
+  "install_tell": "docker run -p 27017:27017 mongo:latest",
+  "misconfig_patterns": [
+    "No --auth flag in default deployment — wire protocol open without credentials",
+    "bindIp 0.0.0.0 in some configs exposes MongoDB to all interfaces",
+    "$vectorSearch (Atlas Search, 7.0+) — listSearchIndexes requires auth but collection may be open"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:27017"
+    ],
+    "active_probe": {
+      "path": "",
+      "method": "TCP-MongoDB",
+      "response_markers": [
+        "hello",
+        "buildInfo",
+        "ismaster"
+      ],
+      "false_positive_check": "MongoDB wire handshake must return ismaster or hello document — port 27017 has very high FP risk"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:27017",
+    "strict": "port:27017 \"MongoDB\"",
+    "version": "port:27017 \"version\" \"MongoDB\""
+  },
+  "deployment_tells": [
+    "MongoDB wire hello/isMaster handshake on :27017",
+    "buildInfo command returns version without auth when --auth not set",
+    "listCollections → find collections with embedding or vector in name"
+  ],
+  "pivot_paths": [
+    "mongo host:27017 --eval 'db.adminCommand({listDatabases:1})' → database list without auth",
+    "db.runCommand({listCollections:1}) → find vector/embedding collection names",
+    "db.collection.aggregate([{$vectorSearch:{...}}]) requires Atlas Search config"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://www.mongodb.com/docs/manual/reference/operator/aggregation/vectorSearch/",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

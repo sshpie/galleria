@@ -1,0 +1,82 @@
+{
+  "name": "whisper.cpp server",
+  "slug": "whisper-cpp-server",
+  "category": "voice-tts-conversational",
+  "description": "The `server` example binary from ggml-org/whisper.cpp — a self-contained C++ HTTP transcription server built on the bundled cpp-httplib (httplib.h). Serves a small built-in HTML web UI at GET / and a JSON transcription API at POST /inference, with POST /load to hot-swap the ggml/gguf model and GET /health for liveness. Emits a hard-coded `Server: whisper.cpp` response header on every route — the single most vendor-unique passive signal for this platform. No authentication.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "Zero authentication in the server example. The default header set even advertises 'Access-Control-Allow-Headers: content-type, authorization' and 'Access-Control-Allow-Origin: *', but no Authorization header is ever checked — CORS is wide open and any origin can POST audio. There is no auth env var or flag. The only accidental exposure control is that the server BINDS TO 127.0.0.1 by default (--host 127.0.0.1); reaching the internet requires the operator to explicitly pass --host 0.0.0.0, so an internet-exposed instance is always a deliberate (if unauthenticated) choice.",
+  "default_ports": [
+    8080
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8080 \"Server: whisper.cpp\"",
+      "rationale": "The server calls set_default_headers({{\"Server\", \"whisper.cpp\"}, ...}) so EVERY response carries `Server: whisper.cpp`. This banner text is stored in Shodan's full HTTP banner and matched by a plain-string search. This is the cleanest, near-zero-FP signal for the platform. Note: the http.headers: FILTER specifically returns 0 on the Shodan web UI, so use the bare quoted banner string (or Censys services.http.response.headers.Server) rather than http.headers:\"Server: whisper.cpp\"."
+    },
+    {
+      "tier": "basic",
+      "query": "port:8080 http.title:\"Whisper.cpp Server\"",
+      "rationale": "GET / returns an inline HTML page with a literal <title>Whisper.cpp Server</title> (embedded as a C++ raw string in server.cpp). HTML-body/title signal, Shodan-usable, very low FP. Present whenever the operator did not disable the root page."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8080 \"Server: whisper.cpp\" http.html:\"Whisper.cpp Server\"",
+      "rationale": "Conjunction of the Server header and the web-UI title — eliminates any coincidental reuse of the 'whisper.cpp' string and confirms the running HTTP server (not just a repo mirror or proxy). Highest precision."
+    },
+    {
+      "tier": "strict",
+      "query": "\"Server: whisper.cpp\" http.html:\"/inference\"",
+      "rationale": "Server header plus the /inference route path surfaced in the web-UI form action. Port-agnostic variant to catch relocated deployments (some operators move off 8080). /inference + /load is the unique route pair for this binary."
+    },
+    {
+      "tier": "version",
+      "query": "port:8080 \"Server: whisper.cpp\" http.html:\"whisper\" http.html:\"model\"",
+      "rationale": "The server binary does NOT emit a numeric version in the header — version disclosure is weak. Best available: the web UI exposes the loaded model name (default models/ggml-base.en.bin) and /load reflects the model path, which proxies build/model recency. For true build version, an active GET /health or the model string is required; flag this as a version-signal gap on the passive layer."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8080,
+    "http_path": "/",
+    "title_contains": "Whisper.cpp Server",
+    "response_body_contains": [
+      "Whisper.cpp Server",
+      "/inference",
+      "/load"
+    ],
+    "http_header": "server: whisper.cpp"
+  },
+  "api_paths": [
+    "GET /",
+    "POST /inference",
+    "POST /load",
+    "GET /health"
+  ],
+  "known_vulns": [
+    "No auth + CORS '*' — unauthenticated POST /inference transcribes arbitrary uploaded audio for any origin (compute theft + audio PII)",
+    "POST /load takes an operator-supplied model path and loads it — an exposed /load lets a remote caller force-load an arbitrary local file as a model (model-swap DoS / local-file reference / crash via malformed ggml)",
+    "ggml/gguf model-parsing memory-corruption class (shared lineage with llama.cpp): a maliciously crafted model fed to /load exercises the same tensor/metadata deserialization surface that has produced multiple heap-overflow issues in the ggml ecosystem",
+    "ffmpeg-backed format conversion on uploaded audio — the upstream README explicitly warns to sandbox the server because /inference accepts user file uploads and shells out to ffmpeg for conversion (decode/parse attack surface)",
+    "No rate limiting — GPU/CPU compute exhaustion trivially automated at operator cost",
+    "Wide-open CORS (Access-Control-Allow-Origin: *) enables drive-by browser-based abuse from any web page"
+  ],
+  "default_creds": [],
+  "risk_notes": "Attack vectors: (1) Compute theft — /inference on a GPU/Apple-Silicon host is free ASR at operator cost, no attribution. (2) /load abuse — the model-load endpoint is the sharpest primitive: a remote model path/file reference plus the ggml parsing surface turns 'transcription server' into a memory-corruption target and a DoS lever (force-load a huge or malformed file). (3) Audio PII exfiltration — transcripts returned with no auth, no logging. (4) Malicious-media path — ffmpeg conversion on attacker-supplied containers; the upstream project itself flags this as the reason to sandbox. (5) Wide CORS means any website a victim operator visits can silently drive their exposed server. Because the binary binds loopback by default, an internet-reachable instance is an intentional --host 0.0.0.0 exposure and should be treated as an operator misconfiguration, not a default-open accident.",
+  "deployment_notes": "Single static C++ binary (examples/server, built via CMake), or via community Docker images (e.g. EvilFreelancer/docker-whisper-server, ghcr community builds) that add an OpenAI-like wrapper. Default bind 127.0.0.1:8080; internet exposure requires --host 0.0.0.0. Uses the vendored cpp-httplib (httplib.h) — no external web framework, no Server-header override other than the hard-coded 'whisper.cpp'. Root path serves an inline HTML form (title 'Whisper.cpp Server'); some minimal builds pass --public to serve a static dir but the current tree ships the page inline in server.cpp. Common on Apple Silicon (Metal), CPU homelab, and small GPU boxes. Distinct from whisper-asr-webservice (Python/FastAPI, port 9000) and whisperx — this is the C++ /inference + /load shape with the 'Server: whisper.cpp' tell.",
+  "docker_images": [
+    "ghcr.io/ggml-org/whisper.cpp",
+    "evilfreelancer/whisper-server"
+  ],
+  "github_repos": [
+    "ggml-org/whisper.cpp",
+    "ggerganov/whisper.cpp",
+    "EvilFreelancer/docker-whisper-server"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

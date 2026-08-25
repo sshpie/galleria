@@ -1,0 +1,60 @@
+{
+  "platform": "sub2api",
+  "display_name": "Sub2API (subscription-to-API AI gateway frontend)",
+  "category": "llm_jacking_proxy",
+  "default_ports": [8080, 80, 443],
+  "api_paths": [
+    "/",
+    "/login",
+    "/register",
+    "/dashboard",
+    "/admin",
+    "/api/auth/login"
+  ],
+  "auth_default": "registration_open_in_some_deployments",
+  "auth_config_env": [
+    "STRIPE_SECRET_KEY",
+    "CLOUDFLARE_TURNSTILE_SITEKEY",
+    "REGISTRATION_ENABLED",
+    "PAYMENT_ENABLED"
+  ],
+  "default_creds": [],
+  "install_tell": "Vue SPA frontend, site_name \"Sub2API - AI API Gateway\", typically co-located with Grok2API or similar credential-proxy backend",
+  "misconfig_patterns": [
+    "registration_enabled=true with payment_enabled=false = free signup against operator-funded backend (attribution laundering)",
+    "Co-located admin + payment scaffolding = proxy-SaaS-colocation pattern (per Insight #39)",
+    "Cloudflare Turnstile present but disabled bypasses anti-automation"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Sub2API\"",
+      "http.html:\"Sub2API - AI API Gateway\"",
+      "http.html:\"site_name\":\"Sub2API\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["Sub2API - AI API Gateway", "\"site_name\":\"Sub2API\""],
+      "false_positive_check": "HTML body must include Sub2API brand string plus Vue SPA bootstrap markers"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"Sub2API\"",
+    "strict": "http.html:\"Sub2API - AI API Gateway\"",
+    "version": "http.html:\"Sub2API\" http.html:\"site_name\""
+  },
+  "deployment_tells": [
+    "Vue SPA + Cloudflare Turnstile + Stripe hooks",
+    "Co-located with Grok2API or OpenAI-compat backend on adjacent port",
+    "Chinese-language site copy common in observed instances"
+  ],
+  "pivot_paths": [
+    "Read site_name and payment_enabled flag from initial HTML bundle",
+    "Backend credential proxy identifier (Grok2API / other) co-located on adjacent port"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "syllabus wandb-sweep follow-up 2026-06-09 (137.184.42.189)",
+    "CANDIDATE — drafted from single-host observation; population-verification pending"
+  ]
+}

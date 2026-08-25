@@ -1,0 +1,59 @@
+{
+  "platform": "kafka-broker",
+  "display_name": "Apache Kafka Broker",
+  "category": "event_streaming",
+  "default_ports": [
+    9092,
+    9093
+  ],
+  "api_paths": [],
+  "auth_default": "none",
+  "auth_config_env": [
+    "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP",
+    "KAFKA_OPTS"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 9092:9092 apache/kafka:latest (or bitnami/kafka, confluentinc/cp-kafka) \u2014 PLAINTEXT listener with no authorizer.class.name set",
+  "misconfig_patterns": [
+    "listener.security.protocol.map=PLAINTEXT with no SASL/SSL configured",
+    "authorizer.class.name unset \u2014 no ACL enforcement even if SASL is on",
+    "ApiVersionsRequest answered before any auth handshake completes"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:\"Kafka\"",
+      "product:\"Kafka\" port:9092"
+    ],
+    "active_probe": {
+      "path": "",
+      "method": "kafka-binary",
+      "response_markers": [
+        "ApiVersionsResponse api_key=18",
+        "correlation_id echo"
+      ],
+      "false_positive_check": "response must decode as valid Kafka wire-protocol ApiVersionsResponse, not an HTTP banner"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "product:\"Kafka\"",
+    "strict": "product:\"Kafka\" port:9092",
+    "version": "product:\"Kafka\" version:\"3\""
+  },
+  "deployment_tells": [
+    "port 9092/9093 open with binary (non-HTTP) banner",
+    "ApiVersionsResponse succeeds pre-auth even when SASL configured downstream"
+  ],
+  "pivot_paths": [
+    "unauth ApiVersionsRequest -> broker version -> CVE scoping",
+    "unauth Metadata request -> full broker/topic/partition-leader list",
+    "unauth Fetch/Produce on PLAINTEXT listener -> read/write every topic",
+    "unauth AdminClient over same connection -> list/describe consumer groups (offsets/lag = business-process visibility)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://kafka.apache.org/documentation/#security",
+    "https://kafka.apache.org/protocol#The_Messages_ApiVersions",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] PRIMARY-SOURCE CONFIRMED 2026-07-14: no published Shodan dork exists for unauth Kafka broker discovery in any security research literature (WebSearch swept CVE lists, dork repos, 2026 dork-bible blogs \u2014 zero hits). Live-tested product:\"Kafka\" on Shodan: 1 hit, and it is a FALSE FRIEND (AMQP product 'kafka-bridge', not real Kafka). port:9092 alone = 399,787 catch-all noise, not usable. CONFIRMED Shodan-HTML/product-dark by construction \u2014 binary protocol, no vendor probe module. Route entirely to Censys + active ApiVersionsRequest probe (scanner phase), not Shodan dorking."
+  ]
+}

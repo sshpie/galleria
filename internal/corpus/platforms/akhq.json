@@ -1,0 +1,55 @@
+{
+  "platform": "akhq",
+  "display_name": "AKHQ",
+  "category": "event_streaming_webui",
+  "default_ports": [
+    8080
+  ],
+  "api_paths": [
+    "/",
+    "/api"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "micronaut.security.enabled"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 tchiotludo/akhq \u2014 auth is an opt-in YAML block (basic-auth/LDAP/OIDC), disabled unless operator adds it",
+  "misconfig_patterns": [
+    "micronaut.security block absent from application config"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"AKHQ\"",
+      "http.title:\"AKHQ\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Angular app shell with AKHQ branding"
+      ],
+      "false_positive_check": "verify Angular app-shell body content, not title alone \u2014 watch for unrelated acronym collisions on 8080"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"AKHQ\"",
+    "strict": "http.title:\"AKHQ\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "can proxy Schema Registry and Kafka Connect management through itself \u2014 one unauth surface reaches three platforms at once"
+  ],
+  "pivot_paths": [
+    "built-in PRODUCE MESSAGE form -> unauth write, not just read",
+    "live-tail consumer in UI -> real-time message interception",
+    "ACL view + connector management -> operator-grade console access unauth",
+    "Schema Registry subjects / Kafka Connect connector configs if proxied"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://akhq.io/docs/configuration/security.html",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] SOURCE-CONFIRMED 2026-07-14 (github.com/tchiotludo/akhq client/index.html): title tag is the exact literal string \"AKHQ\", no prefix/suffix. http.title:\"AKHQ\" exact-match is correct and high-confidence."
+  ]
+}

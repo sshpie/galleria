@@ -1,0 +1,78 @@
+{
+  "platform": "chromadb",
+  "display_name": "ChromaDB",
+  "category": "vector_db",
+  "default_ports": [
+    8000
+  ],
+  "api_paths": [
+    "/api/v1",
+    "/api/v1/collections",
+    "/api/v1/query"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CHROMA_SERVER_AUTH_CREDENTIALS_FILE"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8000:8000 ghcr.io/chroma-core/chroma:latest",
+  "misconfig_patterns": [
+    "No auth in server mode \u2014 all collections publicly readable",
+    "Collection metadata may contain sensitive data class information",
+    "Persistent storage world-readable on host filesystem"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:Chroma",
+      "port:8000 http.html:\"chromadb\"",
+      "http.html:\"/api/v1/collections\""
+    ],
+    "active_probe": {
+      "path": "/api/v1",
+      "method": "GET",
+      "response_markers": [
+        "nanosecond heartbeat"
+      ],
+      "false_positive_check": "response must include nanosecond heartbeat field \u2014 uniquely identifies ChromaDB"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"chromadb\" port:8000",
+    "strict": "port:8000 http.html:\"/api/v1/collections\"",
+    "version": "port:8000 http.html:\"nanosecond heartbeat\""
+  },
+  "deployment_tells": [
+    "/api/v1 heartbeat with nanosecond heartbeat field \u2014 uniquely identifies ChromaDB",
+    "JSON collection list at /api/v1/collections",
+    "Error messages reveal storage backend type"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/collections \u2192 collection names \u2192 query embeddings without auth",
+    "GET /api/v1/collections/<name>/count \u2192 record count immediately",
+    "Collection metadata \u2192 infer data type (medical, financial, personal) and organization"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-45829 (ChromaToast, CVSS 10.0, UNPATCHED): pre-auth code injection via POST /api/v2/tenants/{t}/databases/{d}/collections with HuggingFace model ref trust_remote_code=true; arbitrary Python exec before any auth check; Python FastAPI server only (Rust server NOT affected); GHSA-f4j7-r4q5-qw2c; ITW confirmed (HiddenLayer 2026-05-18)"
+  ],
+  "sources": [
+    "Learning LangChain (9781098167271) ch02",
+    "Agentic AI for Offensive Cybersecurity (9781806114474) ch04",
+    "[CONFIRMED \u2014  Cat-02 survey 2026-06-05; live population observed]"
+  ],
+  "cve_observed": [
+    {
+      "id": "cve-2026-45829-mass-canary-campaign",
+      "first_observed": "2026-06-02T00:02:06Z",
+      "verified_observed": "2026-06-08T14:00:00Z",
+      "scale_at_verification": "201 of 307 unauth hosts (65%) carry canaries 6d post-burst",
+      "detection_signature": {
+        "collection_name_regex": "probe-(base|ef)-(\\d{19})",
+        "embedding_model_name_regex": "(?:/nonexistent/cve\\d{5}|cve\\d{8}_)\\w+",
+        "kwargs_marker": "trust_remote_code: true",
+        "pair_match_rule": "for each timestamp T, a host is campaign-touched if BOTH probe-base-T and probe-ef-T exist in /api/v1/collections"
+      },
+      "exploit_class": "CVE-2026-45829 \u2014 Chroma trust_remote_code RCE via embedding_function.config.model_name passed to transformers.AutoConfig.from_pretrained()",
+      "case_study": "case-studies/commercial/chromadb-cve45829-campaign-2026-06-08.md"
+    }
+  ]
+}

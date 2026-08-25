@@ -1,0 +1,61 @@
+{
+  "platform": "cassandra",
+  "display_name": "Apache Cassandra",
+  "category": "vector_feature",
+  "default_ports": [
+    9042
+  ],
+  "api_paths": [],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CASSANDRA_AUTHENTICATOR",
+    "CASSANDRA_AUTHORIZER"
+  ],
+  "default_creds": [
+    {
+      "user": "cassandra",
+      "pass": "cassandra",
+      "context": "when PasswordAuthenticator enabled"
+    }
+  ],
+  "install_tell": "docker run -p 9042:9042 cassandra:latest",
+  "misconfig_patterns": [
+    "AllowAllAuthenticator in default deployment — CQL wire fully open",
+    "CQL OPTIONS handshake returns SUPPORTED without authentication challenge",
+    "Vector<float,N> column type (Cassandra 5.0+) detectable via DESCRIBE TABLE"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9042 \"Cassandra\""
+    ],
+    "active_probe": {
+      "path": "",
+      "method": "TCP-CQL",
+      "response_markers": [
+        "SUPPORTED",
+        "CQL_VERSION"
+      ],
+      "false_positive_check": "CQL OPTIONS response must include CQL_VERSION in SUPPORTED map — distinguishes from generic TCP"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9042 \"Cassandra\"",
+    "strict": "port:9042 \"Cassandra\"",
+    "version": "port:9042 \"cassandra\" \"version\""
+  },
+  "deployment_tells": [
+    "CQL wire at :9042 — cqlsh host 9042 connects without credentials with AllowAllAuthenticator",
+    "CQL OPTIONS response contains SUPPORTED map with CQL_VERSION",
+    "DESCRIBE TABLE {t} reveals vector<float,N> type for AI workload detection"
+  ],
+  "pivot_paths": [
+    "cqlsh host 9042 → DESCRIBE KEYSPACES; → keyspace list",
+    "DESCRIBE TABLE {t} → detect vector<float,N> columns (Cassandra 5.0+)",
+    "SELECT * FROM system.local → cluster name + release_version"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://cassandra.apache.org/doc/latest/",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "platform": "akto",
+  "display_name": "Akto (AI Guardrail / API Security)",
+  "category": "ai-guardrail-operator-hosted",
+  "default_ports": [443, 9090],
+  "api_paths": ["/api/http-proxy"],
+  "auth_default": "operator-supplied",
+  "auth_config_env": ["AKTO_GUARDRAIL_API_BASE"],
+  "default_creds": [],
+  "install_tell": "No vendor SaaS endpoint in LiteLLM hook; akto_base_url is REQUIRED, operator-supplied. Akto is primarily an API-security vendor whose guardrail product is operator-hosted (often on the same cluster as the upstream LiteLLM proxy). HTTP_PROXY_PATH is the constant '/api/http-proxy' and the hook mirrors the LLM request as a flat payload.",
+  "misconfig_patterns": [
+    "Operator-hosted: typical pattern is in-cluster service exposed via Ingress; if Ingress allows external access without service-mesh auth, the proxy mirroring endpoint is reachable",
+    "AKTO_GUARDRAIL_API_BASE env var leak in operator config repos"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"akto.io\" (vendor SaaS dashboard, not the guardrail proxy)",
+      "http.path:\"/api/http-proxy\""
+    ],
+    "active_probe": {
+      "path": "/api/http-proxy",
+      "method": "POST",
+      "port": 443,
+      "host_header": "any-operator-host",
+      "response_markers": ["TBD -- requires live operator host"],
+      "false_positive_check": "deferred to first live operator find"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"akto.io\"",
+    "strict": "ssl.cert.subject.cn:\"akto.io\"",
+    "version": "http.html:\"/api/http-proxy\" http.html:\"Akto\""
+  },
+  "deployment_tells": [
+    "Operator-hosted -- no canonical SaaS base URL",
+    "Distinguished from akto.io marketing site by /api/http-proxy path presence",
+    "DMARC pct=25 partial-rollout posture matches an ongoing SOC2 enforcement build-out"
+  ],
+  "pivot_paths": [
+    "Discovery via operator config leaks containing AKTO_GUARDRAIL_API_BASE",
+    "Path probe /api/http-proxy across LiteLLM-adjacent corpora",
+    "akto.io cert-CN dashboard pivot for customer attribution"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane D (commercial product but operator-hosted in the LiteLLM integration path).",
+  "disclosure_contact": {
+    "security_txt": "https://akto.io/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "dmarcreports@akto.io",
+    "channel_observed": "DMARC reports mailbox"
+  },
+  "dmarc_posture": {
+    "policy": "quarantine",
+    "pct": 25,
+    "rua": "dmarcreports@akto.io",
+    "mx_provider": "Google Workspace",
+    "insight_80_placement": "Series A/B with partial-rollout enforcement (pct=25); transitional state between p=none and p=quarantine 100%"
+  },
+  "insight_82_status": "N/A (no SaaS endpoint to probe; operator-hosted requires a live operator find first)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py",
+    "dig +short TXT _dmarc.akto.io 2026-06-07"
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "platform": "pangea",
+  "display_name": "Pangea (AI Guard / SecureByDesign)",
+  "category": "ai-guardrail-saas",
+  "default_ports": [443],
+  "api_paths": ["/v1beta/guard", "/v1/text/guard"],
+  "auth_default": "on",
+  "auth_config_env": ["PANGEA_API_BASE", "PANGEA_API_TOKEN"],
+  "default_creds": [],
+  "install_tell": "SaaS at ai-guard.{region}.{cloud}.pangea.cloud (default ai-guard.aws.us.pangea.cloud). Recipe-based config: pangea_input_recipe / pangea_output_recipe each map to a configured policy bundle. Pangea is the long-standing security-API vendor; AI Guard is the LLM-specific recipe set.",
+  "lane_d_delta": "Pangea was tagged in Lane B 2026-06-06 as Lakera-Guard-adjacent at the marker-error pattern level. In Lane D usage via LiteLLM the contract is identical -- same /v1beta/guard endpoint, same Bearer token, same recipe model. Lane D = Lane B with a LiteLLM-pre-hook wrapper. No new platform discovery; the Lane D usage is the same Pangea infrastructure routed via the LiteLLM proxy instead of a direct SDK call.",
+  "misconfig_patterns": [
+    "Operator PANGEA_API_TOKEN leak in operator-side LiteLLM YAML",
+    "Recipe selection per call -- if operator hard-codes a permissive recipe, the guardrail becomes a passthrough"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"pangea.cloud\"",
+      "ssl.cert.subject.cn:\"*.pangea.cloud\""
+    ],
+    "active_probe": {
+      "path": "/v1beta/guard",
+      "method": "POST",
+      "port": 443,
+      "host_header": "ai-guard.aws.us.pangea.cloud",
+      "response_markers": ["request_id\":\"prq_", "Not authorized to access this resource", "Unauthorized"],
+      "false_positive_check": "JSON body must contain request_id prefix 'prq_' (Pangea Request ID schema)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"pangea.cloud\"",
+    "strict": "ssl.cert.subject.cn:\"*.pangea.cloud\"",
+    "version": "http.html:\"prq_\" http.html:\"request_id\""
+  },
+  "deployment_tells": [
+    "Multi-region multi-cloud host pattern: ai-guard.{region}.{cloud}.pangea.cloud",
+    "Proofpoint inbound MX (gslb.pphosted.com) -- enterprise email security stack",
+    "DMARC p=reject -- mature Series C+ posture"
+  ],
+  "pivot_paths": [
+    "POST /v1beta/guard with empty body -- HTTP 403 with branded request_id prefix prq_",
+    "Cert-CN pivot via *.pangea.cloud",
+    "Per-region host enumeration: ai-guard.{aws|gcp}.{us|eu}.pangea.cloud"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane B (originally) + Lane D (same surface, LiteLLM wrapper).",
+  "disclosure_contact": {
+    "security_txt": "https://pangea.cloud/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "dmarc.reports@pangea.cloud",
+    "channel_observed": "DMARC reports + Proofpoint-fronted security@"
+  },
+  "dmarc_posture": {
+    "policy": "reject",
+    "rua": "dmarc.reports@pangea.cloud",
+    "ruf": "dmarc.reports@pangea.cloud",
+    "mx_provider": "Proofpoint",
+    "insight_80_placement": "Series C+ (p=reject + ruf forensic reports + Proofpoint MX is the mature-org tell triangle)"
+  },
+  "insight_82_status": "CONFIRMED (HTTP 403 with Pangea-branded request_id 'prq_' prefix and structured response shape; distinctive vendor banner)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py",
+    "POST ai-guard.aws.us.pangea.cloud/v1beta/guard marker probe 2026-06-07",
+    "dig +short TXT _dmarc.pangea.cloud 2026-06-07",
+    "data/platform-intel/cat33-lane-b-vendors-2026-06-07.md (Lakera-adjacency note)"
+  ]
+}

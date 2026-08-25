@@ -1,0 +1,78 @@
+{
+  "name": "MaryTTS",
+  "slug": "marytts",
+  "category": "voice-tts-conversational",
+  "description": "MaryTTS (marytts/marytts) - the long-standing open-source Java client-server TTS platform. Runs a self-hosted HTTP REST server with the MARY Web Client UI on port 59125, no authentication. The classic cleanly Shodan http.html-visible TTS server and the historical engine behind Mycroft's early Mimic lineage.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication. MaryTTS is a Java client-server system; the server exposes an HTTP REST API and the MARY Web Client on port 59125 with no access control. Port and bind address are configurable via -Dsocket.port= and -Dsocket.addr=0.0.0.0 (many deployments bind all interfaces). The exact build is retrievable unauthenticated via GET /version, and voices/datatypes/audioformats are freely enumerable. No API key, token, or basic auth is provided by the platform.",
+  "default_ports": [
+    59125
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:59125 http.html:\"MARY Web Client\"",
+      "rationale": "The server-rendered index title and heading are 'MARY Web Client' verbatim in the HTML body; direct high-signal match on the canonical MaryTTS port."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"MARY Web Client\"",
+      "rationale": "Port-agnostic body match for MaryTTS servers moved off 59125 via -Dsocket.port=; the 'MARY Web Client' string is specific to the MaryTTS index and rare elsewhere."
+    },
+    {
+      "tier": "strict",
+      "query": "port:59125 http.html:\"MARY Web Client\" http.html:\"maryWebClient\"",
+      "rationale": "Conjunctive: the visible heading plus the form id 'maryWebClient' and mary.js script reference in the index pin the MaryTTS server specifically and exclude Mimic 3 (which reuses the same 59125 port with different body strings)."
+    },
+    {
+      "tier": "version",
+      "query": "port:59125 http.html:\"MARY TTS\" http.html:\"HTTP interface\"",
+      "rationale": "The index links to 'Interactive documentation of the HTTP interface to MARY TTS'; pair with a GET /version read (unauthenticated build string) for CVE scoping."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 59125,
+    "http_path": "/",
+    "title_contains": "MARY Web Client",
+    "response_body_contains": [
+      "MARY Web Client",
+      "maryWebClient",
+      "mary.js",
+      "MARY TTS",
+      "HTTP interface"
+    ],
+    "http_header": "server: apache-httpcore"
+  },
+  "api_paths": [
+    "/process",
+    "/voices",
+    "/audioformats",
+    "/version",
+    "/datatypes",
+    "/"
+  ],
+  "known_vulns": [
+    "No authentication - unauthenticated synthesis via /process and free enumeration via /voices, /datatypes, /audioformats",
+    "GET /version leaks the exact build unauthenticated, aiding CVE scoping and targeted exploitation",
+    "SSML/XML input path to /process is a plausible XXE surface (Java XML processing) - unconfirmed publicly, worth verifying per build",
+    "Java HTTP server (Apache HttpCore/NHttpServer) with no request hardening or rate limiting by default",
+    "Binds a well-known port with no access control; -Dsocket.addr=0.0.0.0 exposes all interfaces"
+  ],
+  "default_creds": [],
+  "risk_notes": "Vectors on an exposed instance: (1) Unauthenticated synthesis / compute abuse via GET/POST /process; (2) Build fingerprinting via /version (exact version string, unauthenticated) enabling precise CVE scoping; (3) Free enumeration via /voices, /datatypes, and /audioformats; (4) SSML/XML input to /process is a Java XML-processing surface and a plausible (unconfirmed) XXE vector worth verifying per deployment. MaryTTS is the cleanest Shodan http.html-visible member of this cohort - the server-rendered index carries 'MARY Web Client' as both title and heading, the maryWebClient form id, the mary.js script, and a link to the MARY TTS HTTP-interface docs, so a title or body dork harvests it directly. CVE hygiene: no MaryTTS-specific published CVE is confirmed; CVE-2022-24261 / CVE-2022-24262 map to Voipmonitor, NOT MaryTTS - do not attribute them here. The concrete, verifiable risk is the no-auth REST surface, not a named CVE. MaryTTS shares port 59125 with Mimic 3 (which uses it for MaryTTS compatibility) - disambiguate on the 'MARY Web Client' body strings.",
+  "deployment_notes": "Pure Java (LGPL-3), ~2.6k stars, mature/low-velocity but maintained (last code push 2025-01-17, CI active). Not archived. The server exposes REST on port 59125; the UI source lives at marytts-runtime/src/main/resources/marytts/server/http/index.html (sibling repo marytts/marytts-html-frontend). Server is a custom Java HTTP server built on Apache HttpCore (NHttpServer) - there is no CDN or reverse-proxy Server header by default, so pivot on the body strings and /version rather than a header. No official first-party Docker image in-repo; community images exist (e.g. synesthesiam/marytts), and MaryTTS was historically the TTS engine bundled into Mycroft's early Mimic lineage - the same server-exposure shape. Maven coordinate de.dfki.mary:marytts (5.2.1). No TLS in the default configuration.",
+  "docker_images": [
+    "synesthesiam/marytts"
+  ],
+  "github_repos": [
+    "marytts/marytts",
+    "marytts/marytts-html-frontend"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

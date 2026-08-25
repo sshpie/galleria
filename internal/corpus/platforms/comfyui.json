@@ -1,0 +1,76 @@
+{
+  "platform": "comfyui",
+  "display_name": "ComfyUI",
+  "category": "generative_ai_workflow_ui",
+  "default_ports": [
+    8188
+  ],
+  "api_paths": [
+    "/",
+    "/system_stats",
+    "/queue",
+    "/history",
+    "/object_info",
+    "/prompt",
+    "/upload/image",
+    "/view"
+  ],
+  "auth_default": "none-by-design",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "python main.py --listen 0.0.0.0 --port 8188",
+  "misconfig_patterns": [
+    "Framework has NO authentication concept — no auth flags, no master key, no basic-auth built in",
+    "Operators expose --listen 0.0.0.0 by following the standard public-access recipe",
+    "Auth only achievable via an external reverse proxy (nginx + basic-auth, Cloudflare Access, Tailscale)",
+    "GET /system_stats exposes full GPU + RAM topology to anyone",
+    "POST /prompt accepts arbitrary workflow JSON for execution (compute theft)",
+    "GET /history exposes completed-job workflow JSON + prompt text + output filenames",
+    "POST /upload/image writes arbitrary files to the input dir",
+    "GET /view/<filename> reads any file referenced by past jobs"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"ComfyUI\"",
+      "port:8188 \"ComfyUI\""
+    ],
+    "active_probe": {
+      "path": "/system_stats",
+      "method": "GET",
+      "response_markers": [
+        "\"system\"",
+        "\"devices\""
+      ],
+      "false_positive_check": "Response must be JSON with BOTH top-level \"system\" AND \"devices\" keys — confirmed marker per 2026-05-04 and 2026-06-08 surveys"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"ComfyUI\"",
+    "strict": "http.title:\"ComfyUI\" port:8188",
+    "version": "http.title:\"ComfyUI\" \"comfyui_version\""
+  },
+  "deployment_tells": [
+    "Default port 8188, but 176k of 176k+ ComfyUI hits run on alt ports (cloud GPU rental proxies: RunPod, Vast.ai, Modal, Replicate)",
+    "GPU operators expose enterprise-tier hardware on residential ISPs (Comcast, Telecom Italia FTTx, China Telecom, KORNET) with no firewall",
+    "Two GH200 480GB hosts observed on Lambda Labs commercial GPU cloud, unauth (operator-side decision)",
+    "Custom-node loadout in /object_info fingerprints operator's workflow library"
+  ],
+  "pivot_paths": [
+    "GET /system_stats → GPU model, VRAM, RAM, OS, ComfyUI version (identity + compute-class)",
+    "GET /queue → current + pending job IDs (operator activity)",
+    "GET /history → workflow JSON + prompt text + output filenames (product-IP class disclosure)",
+    "GET /object_info → installed custom nodes (RCE-class chain target)",
+    "POST /prompt → arbitrary workflow execution on operator GPU (compute theft, output writes)",
+    "POST /upload/image → arbitrary file write to input dir",
+    "GET /view/<filename> → read any past-job output file"
+  ],
+  "vulnerabilities": [
+    "No-auth-by-design — there is no upstream CVE, the platform never offered auth"
+  ],
+  "sources": [
+    "https://github.com/comfyanonymous/ComfyUI",
+    "case-studies/commercial/comfyui-cloud-survey-2026-05.md (6 unauth, masscan-tier-2)",
+    "case-studies/commercial/comfyui-population-survey-2026-06-08.md (186 unauth on default port, Shodan)",
+    "[CONFIRMED —  population survey 2026-06-08; 186 live unauth observed]"
+  ]
+}

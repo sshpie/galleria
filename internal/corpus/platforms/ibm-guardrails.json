@@ -1,0 +1,62 @@
+{
+  "platform": "ibm-guardrails",
+  "display_name": "IBM FMS Guardrails (detector server + orchestrator)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_OSS_SELFHOSTED",
+  "vendor_parent": "IBM Corporation (foundation-model-stack OSS, watsonx.governance commercial)",
+  "apex": "ibm.com",
+  "default_ports": [443, 8033, 8080],
+  "api_paths": [
+    "/api/v1/text/contents",
+    "/api/v2/text/detection/content"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "Bearer (IBM_GUARDRAILS_AUTH_TOKEN); base_url is operator-supplied (NO default) -- IBM FMS Guardrails is operator-deployed",
+  "auth_config_env": ["IBM_GUARDRAILS_AUTH_TOKEN"],
+  "default_creds": [],
+  "default_api_base": null,
+  "install_tell": "Two modes: detector-server (/api/v1/text/contents, batch-capable per-message), orchestrator (/api/v2/text/detection/content). Operator picks via is_detector_server flag. detector_id selects PII / jailbreak / content-safety models.",
+  "misconfig_patterns": [
+    "verify_ssl=False is documented as configurable; operators self-signing on internal infra disable TLS verification and expose token-in-transit.",
+    "OSS detector server can be deployed flat with no auth bearer enforced if operator ships with empty IBM_GUARDRAILS_AUTH_TOKEN -- detector ingestion endpoint then becomes unauthenticated text-content scanner (DoS amplifier + free model inference).",
+    "Per-model HuggingFace weights pulled at deploy time; supply-chain surface on first run."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"FMS Guardrails\"",
+      "http.html:\"detector-server\"",
+      "http.title:\"FMS Guardrails Orchestrator\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/text/contents",
+      "method": "POST",
+      "port": 8033,
+      "body": "{}",
+      "response_markers": ["detection", "score", "detector_id"],
+      "notes": "Operator deployment; identity-fingerprint, do not exfiltrate"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"FMS Guardrails\"",
+    "strict": "http.html:\"fms-guardrails-orchestrator\"",
+    "version": "http.html:\"/api/v2/text/detection/content\""
+  },
+  "deployment_tells": [
+    "Upstream OSS: github.com/foundation-model-stack/fms-guardrails-orchestrator",
+    "Companion repos: github.com/foundation-model-stack/fms-guardrails-detector-* (HAP, PII, prompt-injection)",
+    "Commercial: watsonx.governance lives on cloud.ibm.com; not the same surface as the OSS detector server",
+    "No vendor-baked apex; operator-deployed -- threat surface is in customer deployments"
+  ],
+  "dmarc": "p=reject sp=none fo=1 rua=proofpoint",
+  "mx_provider": "Proofpoint (mx0a/mx0b-001b2d05.pphosted.com)",
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.ibm.com/.well-known/security.txt",
+    "psirt": "psirt@us.ibm.com (IBM PSIRT)"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py",
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/README.md",
+    "DNS dig 2026-06-07"
+  ]
+}

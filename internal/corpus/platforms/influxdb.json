@@ -1,0 +1,131 @@
+{
+  "platform": "influxdb",
+  "display_name": "InfluxDB",
+  "category": "time_series_db",
+  "default_ports": [8086, 8088, 8089, 2003, 8181, 8083],
+  "default_port_notes": {
+    "8086": "PRIMARY HTTP API — all lines (v1 /query+/write, v2 /api/v2/*, v3 default /api/v3/* unless --http-bind overrides to 8181). The single dominant exposed port.",
+    "8088": "v1.x RPC/backup-restore service (internal; sometimes exposed)",
+    "8089": "v1.x UDP listener for line-protocol ingestion (config-enabled)",
+    "2003": "v1.x Graphite input plugin (config-enabled, opt-in)",
+    "8181": "v3 Core/Enterprise documented HTTP API bind in some quickstarts; 8086 remains the conventional default",
+    "8083": "v1.0/0.x legacy admin web UI (removed in 1.3+; relevant only for very old hosts)"
+  },
+  "api_paths": [
+    "/ping",
+    "/query",
+    "/write",
+    "/debug/vars",
+    "/debug/pprof/",
+    "/metrics",
+    "/health",
+    "/api/v2/setup",
+    "/api/v2/query",
+    "/api/v2/write",
+    "/api/v2/buckets",
+    "/api/v2/orgs",
+    "/api/v2/authorizations",
+    "/api/v3/query_sql",
+    "/api/v3/configure/token"
+  ],
+  "auth_default": "VERSION-SPLIT — v1.x: auth-enabled=false default (OFF). v2.x: setup wizard mints operator token, auth ON. v3 Core/Enterprise: token auth ON by default.",
+  "auth_config_env": [
+    "v1: [http] auth-enabled = true (influxdb.conf; default false)",
+    "v2: onboarding /api/v2/setup mints operator token; no opt-out of token auth",
+    "v3: --without-auth flag explicitly disables (auth ON otherwise); INFLUXDB3_ENABLE_NO_AUTH"
+  ],
+  "default_creds": [],
+  "install_tell": "v1: docker run -p 8086:8086 influxdb:1.8  |  v2: docker run -p 8086:8086 influxdb:2  |  v3: docker run -p 8181:8181 influxdb:3-core",
+  "misconfig_patterns": [
+    "v1.x auth-enabled=false (factory default): /query accepts SHOW DATABASES, SHOW MEASUREMENTS, SELECT * with no credentials — full read AND write surface open",
+    "v1.x silently ignores supplied credentials when auth disabled — operators believe they are authenticated when they are not",
+    "v1 < 1.7.6: CVE-2019-20933 JWT empty-SharedSecret auth bypass — forge admin JWT even when auth-enabled=true if [http] shared-secret left blank",
+    "v2 <= 2.7.5: /debug/pprof and /metrics reachable unauthenticated — runtime/info leak (issue #24576 class)",
+    "v2 2.x-2.7.11: CVE-2024-30896 operator token retrievable by any allAccess token holder via /api/v2/authorizations — priv-esc to operator",
+    "v1: /debug/vars exposes full runtime config incl. bind addresses, DB names, build branch — unauth on legacy",
+    "/ping returns X-Influxdb-Version + X-Influxdb-Build headers WITHOUT auth on every line — free version disclosure for CVE scoping",
+    "v1 UDP :8089 and Graphite :2003 accept unauthenticated line-protocol writes when enabled — metric injection with zero handshake",
+    "v3 --without-auth deployments (CI/dev shortcuts leaked to prod) reopen the full v1-style open posture on a modern build"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8086 \"X-Influxdb-Version\"",
+      "port:8086 \"InfluxDB\"",
+      "http.html:\"InfluxDB is up and running\"",
+      "http.title:\"InfluxDB\""
+    ],
+    "active_probe": {
+      "path": "/ping",
+      "method": "GET",
+      "response_markers": [
+        "X-Influxdb-Version response header",
+        "X-Influxdb-Build response header (OSS|ENT)",
+        "204 No Content with empty body"
+      ],
+      "false_positive_check": "GET /ping returns HTTP 204 with EMPTY body but X-Influxdb-Version header present. The header is the unique positive marker (no other TSDB emits X-Influxdb-Version). Version-string parse routes the line: starts '1.' => v1 line (auth likely OFF); starts '2.' => v2 (token auth); starts '3.' or build 'Enterprise' => v3."
+    },
+    "version_router": {
+      "v1": "X-Influxdb-Version: 1.x  => probe GET /query?q=SHOW+DATABASES (auth-off-default line). 200 JSON {results:[{series:[{name:databases...}]}]} = UNAUTH READ confirmed.",
+      "v2": "X-Influxdb-Version: 2.x  => GET /api/v2/query needs Token auth; UNAUTH probe is GET /api/v2/setup -> {\"allowed\":true} means onboarding NOT done (claimable-admin: attacker can POST /api/v2/setup to mint the operator token).",
+      "v3": "X-Influxdb-Version: 3.x or X-Influxdb-Build: Enterprise/Core => token auth ON; apiv3_-prefixed token format; /api/v3/query_sql 401 unless --without-auth."
+    }
+  },
+  "shodan_dorks": {
+    "basic_all_lines": "port:8086 \"X-Influxdb-Version\"",
+    "v1_line_strict": "port:8086 \"X-Influxdb-Version: 1.\"",
+    "v2_line_strict": "port:8086 \"X-Influxdb-Version: 2.\"",
+    "legacy_admin_ui": "port:8083 \"InfluxDB\"",
+    "build_enterprise": "\"X-Influxdb-Build: ENT\"",
+    "html_banner": "http.html:\"InfluxDB is up and running\""
+  },
+  "engine_routing": {
+    "shodan_visible": "http.html banner 'InfluxDB is up and running' (HTML-body); X-Influxdb-Version appears in Shodan's stored http.headers banner so port:8086 \"X-Influxdb-Version\" works on Shodan because Shodan captures full response headers in the banner text.",
+    "censys_only": "Strict header-field filtering (services.http.response.headers['X-Influxdb-Version']: '1.*' vs '2.*') and JSON-body discrimination from /query and /api/v2/setup responses — version-precise population split lives on Censys, not the Shodan web UI's html-only filters."
+  },
+  "deployment_tells": [
+    "X-Influxdb-Version header on /ping is the single canonical fingerprint — unique string, no look-alike emits it",
+    "X-Influxdb-Build header: 'OSS' vs 'ENT' separates open-source from Enterprise on the wire",
+    "v1 /query SHOW DATABASES JSON envelope: {\"results\":[{\"statement_id\":0,\"series\":[{\"name\":\"databases\",\"columns\":[\"name\"],\"values\":[...]}]}]}",
+    "v2 root / serves the InfluxDB UI SPA (Clockface) with 'InfluxDB' title; /api/v2/setup gates onboarding",
+    "Request IDs: v2 emits X-Influxdb-Request-ID / Request-Id headers"
+  ],
+  "pivot_paths": [
+    "GET /ping -> X-Influxdb-Version -> exact CVE scoping (1.7.6 boundary for CVE-2019-20933; 2.7.11 for CVE-2024-30896)",
+    "v1 GET /query?q=SHOW+DATABASES -> database catalog -> operator workload inference (db names: 'telegraf','home_assistant','k8s','grafana' reveal the monitoring stack)",
+    "v1 GET /query?db=X&q=SHOW+MEASUREMENTS -> measurement (schema) list per DB -> sensitivity classification from field names, no record read",
+    "v1 GET /query?db=X&q=SHOW+SERIES -> tag/host cardinality -> internal hostname + instance disclosure",
+    "v1 GET /debug/vars -> full runtime config + bind addrs + build branch",
+    "v2 GET /api/v2/setup -> {\"allowed\":true} -> claimable-admin: POST setup to mint operator token on an un-onboarded instance",
+    "v2 (CVE-2024-30896) GET /api/v2/authorizations with any allAccess token -> operator token -> full cross-org admin"
+  ],
+  "vulnerabilities": [
+    "CVE-2019-20933: InfluxDB < 1.7.6 JWT auth bypass — empty SharedSecret lets attacker forge admin JWT (HS256, username:admin) and bypass auth-enabled=true. Public exploit (LorenzoTullini), vulhub lab, nuclei template. HIGH exploitability against legacy hosts.",
+    "CVE-2024-30896: InfluxDB OSS 2.x through 2.7.11 stores operator token under default org; any allAccess-token holder retrieves it via /api/v2/authorizations -> operator priv-esc (CVSS 9.1). EDB-ID 52142 (2025-04-08). Fixed 2.8.0. Requires an existing valid token (post-auth) — not pure unauth.",
+    "Issue #24576 class (<= 2.7.5): /debug/pprof + /metrics unauthenticated info leak.",
+    "Disputed/historical: InfluxDB before 1.8.10 'no authentication mechanism' framed as command-exec — vendor disputes CVE since auth-off is documented default-operator-responsibility (same posture class as VictoriaMetrics/Prometheus auth-off-default).",
+    "CVE-2019-20933 PoC chains: auth bypass -> CREATE USER admin / arbitrary InfluxQL -> data read+write+delete."
+  ],
+  "auth_default_thesis": "VERSION-SPLIT IS THE FINDING. The exposed-population thesis prediction: the v1.x line DOMINATES the internet-exposed, unauthenticated InfluxDB population despite v2/v3 shipping token-auth-ON. Three compounding reasons: (1) v1.x ships auth-enabled=false by factory default — the open posture is the path of least resistance and survives untouched; (2) v1.x has the longest install base (Telegraf/Grafana/home-automation stacks pinned to 1.8 LTS, the terminal v1 release) and those deployments are rarely re-architected; (3) v2/v3's mandatory setup wizard forces a token at first boot, so a correctly-onboarded v2/v3 host is auth-ON and NOT in the unauth population — the only unauth v2 hosts are un-onboarded (/api/v2/setup allowed:true, a claimable-admin state) or deliberately --without-auth v3. Net: auth-on-default is TRUE for v2/v3 by design but the EXPOSED population is skewed to the one line where it was never true. This is the inverse of the VictoriaMetrics story (VM is uniformly auth-off); InfluxDB is a natural experiment in auth-default drift across OSS generations (Insight #40 corroborator: auth-on-default strengthens across generations, but legacy-line persistence keeps the exposed unauth tail alive).",
+  "research_questions": [
+    "Population split: what fraction of exposed :8086 hosts report X-Influxdb-Version 1.* vs 2.* vs 3.*? (Censys header-field facet)",
+    "Of v1.* hosts, what fraction return 200 to GET /query?q=SHOW+DATABASES (true unauth read vs auth-enabled=true)?",
+    "Of v2.* hosts, what fraction return /api/v2/setup allowed:true (claimable-admin un-onboarded state)?",
+    "How many legacy hosts sit below the 1.7.6 boundary (CVE-2019-20933 exploitable) — the JWT-bypass tail?",
+    "Does the v1-dominates-exposed-population prediction hold, and by what ratio?"
+  ],
+  "anti_markers": [
+    "EXCLUDES VictoriaMetrics/Prometheus/Thanos/Cortex/Mimir: InfluxDB speaks InfluxQL/Flux/SQL via /query|/api/v2/query|/api/v3/query_sql, NOT PromQL via /api/v1/query. No /api/v1/status/buildinfo on InfluxDB.",
+    "EXCLUDES the Prometheus-API family by the X-Influxdb-Version header — no Prom-family server emits it.",
+    "EXCLUDES generic /metrics-only servers: /ping returning 204 + X-Influxdb-Version is required; a bare /metrics 200 is identity-ambiguous (almost every Go server exposes /metrics)."
+  ],
+  "sources": [
+    "[CANDIDATE —  Cat Time-Series-DB Squad B build 2026-06-19; doc-grounded, host-unverified]",
+    "InfluxDB OSS v1 docs: auth-enabled=false default (docs.influxdata.com/influxdb/v1/administration/authentication_and_authorization/)",
+    "InfluxDB OSS v2 docs: token auth + /api/v2/setup onboarding (docs.influxdata.com/influxdb/v2/)",
+    "InfluxDB 3 Core/Enterprise docs: token auth ON by default, apiv3_ token, --without-auth opt-out (docs.influxdata.com/influxdb3/)",
+    "CVE-2019-20933 (cvedetails / Snyk / vulhub / LorenzoTullini exploit / nuclei template #3788)",
+    "CVE-2024-30896 (SentinelOne vuln DB / EDB-ID 52142 / cvedetails) — operator token priv-esc, fixed 2.8.0",
+    "Issue #24576 (<=2.7.5 /debug/pprof info leak)",
+    "HackTricks 8086-pentesting-influxdb (port/endpoint reference)"
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "platform": "presidio",
+  "display_name": "Microsoft Presidio (OSS PII analyzer/anonymizer, framework-not-deployment)",
+  "category": "guardrail",
+  "entry_type": "framework",
+  "default_ports": [5001, 5002, 3000],
+  "api_paths": ["/analyze", "/anonymize", "/health"],
+  "auth_default": "off",
+  "auth_config_env": ["PRESIDIO_ANALYZER_API_BASE", "PRESIDIO_ANONYMIZER_API_BASE"],
+  "default_creds": [],
+  "install_tell": "Two-service OSS stack: presidio-analyzer (NER + recognizers) and presidio-anonymizer (redact/replace/hash). Python pip install presidio-analyzer / presidio-anonymizer OR docker images mcr.microsoft.com/presidio-analyzer and mcr.microsoft.com/presidio-anonymizer. Ships with NO authentication.",
+  "misconfig_patterns": [
+    "PRESIDIO_ANALYZER_API_BASE defaults to plain http:// if no scheme provided (litellm/proxy/guardrails/guardrail_hooks/presidio.py line ~187): unencrypted PII in transit between LiteLLM proxy and Presidio backends. Catastrophic default on any non-loopback deployment.",
+    "Anonymizer ships with no auth layer. Anyone reaching :5001/anonymize can submit text and receive redacted output (and infer original text via differential reconstruction with multiple operator templates).",
+    "Operators run Presidio docker images on flat networks intending 'internal only,' but Docker bind 0.0.0.0 default exposes both services to LAN.",
+    "ad_hoc_recognizers config can be a JSON file path OR an environment-loaded string; a writable ad_hoc_recognizers path is a regex-injection foothold (custom recognizers run regex against every input)."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"presidio\"",
+      "http.title:\"Presidio Analyzer\"",
+      "http.html:\"presidio-analyzer\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "port": 5001,
+      "body": "",
+      "response_markers": ["Presidio Analyzer service is up", "Presidio Anonymizer service is up"],
+      "false_positive_check": "Both services return distinctive health strings; do NOT call /analyze or /anonymize with real text -- those are PII-processing endpoints."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"Presidio Analyzer service is up\"",
+    "strict": "http.title:\"Presidio\" port:5001,5002",
+    "version": "http.html:\"presidio-analyzer\" http.html:\"presidio-anonymizer\""
+  },
+  "deployment_tells": [
+    "Two-service signature: :5001 (analyzer) + :5002 (anonymizer) on the same host is the Presidio tell",
+    "Docker images mcr.microsoft.com/presidio-analyzer / mcr.microsoft.com/presidio-anonymizer",
+    "spaCy / NLP model bundle presence (~500MB) in associated containers",
+    "LiteLLM proxy upstream: PRESIDIO_*_API_BASE env vars in .env"
+  ],
+  "pivot_paths": [
+    "An exposed Presidio analyzer that an operator forwards their inference traffic through IS a passive PII sniffer for any attacker who finds it: send same text Presidio sees, observe entity types it returns, infer the operator's data classes.",
+    "Multi-service docker-compose pattern: Presidio rarely runs alone; co-located with the upstream LLM stack. Finding Presidio means finding the LLM proxy and the model backend nearby."
+  ],
+  "vulnerabilities": [],
+  "framework_vs_deployment": {
+    "framework": "github.com/microsoft/presidio (MIT, ~5k stars), arxiv research lineage; canonical OSS PII library.",
+    "deployment_risk": "Lives in the OPERATOR. Microsoft ships the library; operators ship it as an internal service. No CVE backs this category yet; risk is policy (auth-not-shipped) not code.",
+    "discipline": "Treat the same as LlamaFirewall / OpenGuardrails per Lane D summary: framework count, not deployment count, when reasoning about population. Dork measures operators who chose to expose; library-mode invisible."
+  },
+  "dork_population_substitution_risk": "HIGH. Same shape as Lane D summary. The Shodan-visible Presidio population is operators who shipped the docker-compose stack on a routable host without an auth shim. The much larger population imports presidio-analyzer as a Python library inside their own service; that population is invisible to passive enumeration.",
+  "litellm_wrapper_delta": {
+    "transparent_passthrough": false,
+    "added_surface": [
+      "LiteLLM defaults presidio_*_api_base to http:// (not https://) when scheme is missing; PII travels unencrypted by default.",
+      "mock_testing path uses static mock_redacted_text; an operator who left mock_testing=True in production silently bypasses Presidio.",
+      "output_parse_pii expands the event_hook to include post_call; the unmask logic stores a pii_tokens mapping in proxy memory (token -> original PII). The mapping is per-instance memory; a memory-disclosing CVE in LiteLLM would dump the un-anonymization table.",
+      "ad_hoc_recognizers loaded from operator-supplied path is a config-tampering primitive for anyone with proxy filesystem write."
+    ],
+    "verdict": "NOT a transparent passthrough. LiteLLM adds a pii_tokens in-memory de-anonymization table, a mock-testing bypass, and a plain-HTTP default. The Presidio OSS library itself is unchanged; the wrapper introduces meaningful new attack surface beyond the OSS framework."
+  },
+  "disclosure_contact": {
+    "security_txt": "https://github.com/microsoft/presidio/security/policy",
+    "channel_observed": "secure@microsoft.com (Microsoft OSS security)"
+  },
+  "sources": [
+    "LiteLLM litellm/proxy/guardrails/guardrail_hooks/presidio.py (1396 lines, 2026-06-07)",
+    "github.com/microsoft/presidio README + docs"
+  ]
+}

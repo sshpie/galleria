@@ -1,0 +1,88 @@
+{
+  "name": "pyAnnote Diarization API",
+  "slug": "pyannote",
+  "category": "voice-tts-conversational",
+  "description": "Speaker diarization and audio segmentation HTTP API. Core pyannote.audio library wrapped in community FastAPI/Flask HTTP servers; no built-in auth in any self-hosted variant.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "pyannote.audio core library ships with zero authentication layer. All known self-hosted HTTP wrappers — pyannote/server (Flask, port 5000), lintoai/linto-diarization-pyannote (FastAPI-adjacent, configurable port), and community FastAPI wrappers (port 8000) — expose inference endpoints unauthenticated by default. No API key, no token, no middleware enforced. pyannoteAI cloud (api.pyannote.ai) uses Bearer token but that is SaaS-only and not present in self-hosted deployments. HuggingFace gated model access requires an HF_TOKEN env var in the container; this token is frequently exposed via /docs environment display or adjacent misconfigured services on the same host. LinTO variant adds optional AMQP broker mode but HTTP mode remains unauthenticated.",
+  "default_ports": [
+    8000,
+    5000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "http.html:\"pyannote\" port:8000",
+      "rationale": "Finds FastAPI uvicorn servers with pyannote library reference in Swagger UI HTML on default FastAPI port"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"diarization\" port:5000",
+      "rationale": "Catches pyannote/server Flask Docker image on its default port 5000 with diarization in response body"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"pyannote\" http.html:\"speakers\" port:8000",
+      "rationale": "Conjunctive match requiring both pyannote library name and speakers JSON key visible in rendered docs body — reduces false positives from generic FastAPI services"
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"FastAPI\" http.html:\"diarize\" port:8000",
+      "rationale": "FastAPI default Swagger page title plus diarize operation name; strongly indicates a diarization inference server with unauthenticated /docs visible"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"pyannote.audio\" port:5000",
+      "rationale": "Exact pyannote.audio library string on port 5000 — specific to the legacy pyannote/server Docker image lineage"
+    }
+  ],
+  "fingerprint_markers": {
+    "http_path": "/docs",
+    "response_body_contains": [
+      "diarization",
+      "speakers",
+      "segments",
+      "pyannote"
+    ],
+    "title_contains": "FastAPI",
+    "port": 8000,
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/health",
+    "/healthcheck",
+    "/diarize",
+    "/diarization",
+    "/transcribe",
+    "/parser/",
+    "/parser/{format}",
+    "/metric/",
+    "/metric/{name}"
+  ],
+  "known_vulns": [],
+  "default_creds": [],
+  "risk_notes": "Unauthenticated diarization endpoints accept arbitrary audio uploads with no ACL. Risk chain: (1) GPU compute theft — inference is expensive (T4/A10G class); unbounded POST /diarize requests drain quota and destabilize host; (2) biometric data exfiltration — pyannote extracts speaker embeddings (d-vectors/x-vectors) which are biometric identifiers under GDPR Art.9 and CCPA sensitive category; embeddings and diarized audio segments returned in API responses constitute biometric PII without consent controls; (3) voice cloning input — diarized speaker segments are direct pipeline input for TTS voice cloning systems; attacker can submit a target audio file, receive clean per-speaker segments, and feed to XTTS/VALL-E; (4) PII in audio — call recordings, medical consultations, interviews often fed to self-hosted diarization to avoid cloud data residency concerns; unauth access exposes this content in transit; (5) HF_TOKEN harvest — if container exposes /env or runs adjacent to Spring Boot actuator, the HuggingFace token used to pull gated models is recoverable, enabling model-access abuse under operator identity.",
+  "deployment_notes": "Deployed as single-container service on GPU-equipped hosts. Requires NVIDIA GPU for practical inference speed; CPU-only mode is available but impractical at scale. HuggingFace gated models (pyannote/speaker-diarization-3.1, pyannote/segmentation-3.0) require HF_TOKEN at container launch — this token scoped to HF model access is a secondary credential exposed in many deployments. LinTO variant (lintoai/linto-diarization-pyannote) configures via env vars: SERVING_MODE (http or task), CONCURRENCY (worker count), DEVICE (cpu/cuda). Common cloud substrates: RunPod, Lambda Labs, vast.ai, self-managed Kubernetes GPU nodes. OpenTranscribe bundles pyannote with Whisper and a Svelte frontend and does include application-level auth, making it an outlier. Most bare-wrapper deployments found on port 8000 (uvicorn default) or 5000 (Flask). Some HuggingFace Inference Endpoint containers (KIFF/pyannote-speaker-diarization-endpoint) add HF Inference API auth at the edge, but the model server itself inside the container is unauthenticated.",
+  "docker_images": [
+    "pyannote/server",
+    "lintoai/linto-diarization-pyannote"
+  ],
+  "github_repos": [
+    "pyannote/pyannote-audio",
+    "linto-ai/linto-diarization",
+    "harvmaster/PyAnnote.audio-Webservice-Docker",
+    "inferless/pyannote-speaker-diarization-3.1",
+    "attevon-llc/OpenTranscribe"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

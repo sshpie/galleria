@@ -1,0 +1,154 @@
+{
+  "platform": "nav2-moveit",
+  "display_name": "Nav2 + MoveIt (ROS2 navigation + motion planning stack)",
+  "category": "robotics_mission_control",
+  "default_ports": [
+    9090,
+    9091,
+    8765,
+    11311,
+    7400,
+    7401
+  ],
+  "api_paths": [
+    "/",
+    "/topics",
+    "/services",
+    "/nodes",
+    "/params",
+    "/move_base_simple/goal",
+    "/navigate_to_pose",
+    "/follow_path",
+    "/spin",
+    "/wait",
+    "/move_group/goal",
+    "/execute_trajectory",
+    "/compute_ik",
+    "/compute_fk",
+    "/compute_cartesian_path"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ROS_DOMAIN_ID",
+    "ROS_SECURITY_ENABLE",
+    "ROS_SECURITY_STRATEGY",
+    "ROS_SECURITY_KEYSTORE"
+  ],
+  "default_creds": [],
+  "install_tell": "ros2 launch nav2_bringup tb3_simulation_launch.py; ros2 launch moveit2_tutorials demo.launch.py; ros2 launch rosbridge_server rosbridge_websocket_launch.xml",
+  "misconfig_patterns": [
+    "Nav2 + MoveIt action servers have NO native authentication — any caller on the ROS graph can send a goal that moves the robot",
+    "rosbridge_server (port 9090) bridges all ROS topics/services to JSON-over-WebSocket with NO auth by default — the standard way Nav2/MoveIt reach the internet",
+    "rosbridge_server /topics endpoint enumerates every topic name — reveals robot capability surface without subscribing",
+    "DDS discovery on UDP 7400+ allows direct ROS graph join from any IP that can reach those ports — bypasses rosbridge entirely",
+    "SROS2 / DDS-Security is opt-in and rarely enabled — ROS_SECURITY_ENABLE=false is the default",
+    "/move_base_simple/goal is a legacy ROS1-bridged topic some deployments retain — single PoseStamped publish moves the robot",
+    "Co-deployed web_video_server (port 8080) on the same host provides live camera feedback, completing the teleop loop",
+    "ROS_DOMAIN_ID 0 is the default — multiple unrelated robots on the same network segment can see each other's traffic",
+    "rosapi service exposes service-list / param-list introspection without subscription (read-only enumeration channel)",
+    "rosbridge_server has no rate-limiting or per-client quota by default"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"/move_base\"",
+      "http.html:\"/move_group\"",
+      "http.html:\"/navigate_to_pose\"",
+      "\"rosbridge\" \"/move_base_simple/goal\"",
+      "port:9090 \"rosbridge\""
+    ],
+    "active_probe": {
+      "path": "/topics",
+      "method": "GET",
+      "response_markers": [
+        "/move_base",
+        "/move_group",
+        "/navigate_to_pose",
+        "/follow_path",
+        "/spin",
+        "/execute_trajectory",
+        "/compute_ik"
+      ],
+      "false_positive_check": "rosbridge_server /topics returns a JSON object with a 'topics' array of topic names. Nav2 confirmation: presence of at least one of /navigate_to_pose, /follow_path, /spin, /wait, or /move_base in the topic list. MoveIt confirmation: presence of /move_group/goal or /compute_ik or /compute_fk. Reject if /topics is missing or returns non-JSON — likely an unrelated websocket service. Reject Foxglove handshakes that lack the rosbridge JSON contract."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"rosbridge\"",
+    "strict": "port:9090 \"rosbridge\" -product:\"Windows\"",
+    "version": "http.html:\"/move_base\" \"rosbridge\"",
+    "notes": "Nav2 and MoveIt themselves do not expose HTTP — they are reachable through rosbridge_server (port 9090, JSON-over-WS) or DDS (UDP 7400+). Per Insight #93, one variant has no port: constraint to catch reverse-proxied / non-default-port deployments. Population is bounded above by the rosbridge population; expect a single-digit-percent fraction expose Nav2 or MoveIt topics specifically. Body markers /move_base and /move_group are the cleanest identity signal because they appear in the rosbridge /topics HTTP response."
+  },
+  "deployment_tells": [
+    "Docker image osrf/ros:humble-desktop or ros:jazzy-ros-base as the base layer",
+    "Launch file references nav2_bringup, moveit2_tutorials, rosbridge_server",
+    "Co-deployed siblings on same IP (shadow-sweep priorities): foxglove_bridge :8765, web_video_server :8080, rosapi :9091, DDS discovery UDP :7400+",
+    "Warehouse robot deployments: Locus Robotics, 6 River Systems, Fetch Robotics, OTTO Motors",
+    "Agricultural: Naio Technologies, FarmWise, Carbon Robotics",
+    "Delivery: Starship Technologies, Nuro, Cartken",
+    "Collaborative arm integrators (MoveIt): Universal Robots UR5/UR10/UR16, Franka Emika Panda, Kuka iiwa, ABB GoFa",
+    "Academic / demo: PAL Robotics TIAGo, Clearpath Husky / Jackal, Isaac ROS reference stacks",
+    "Cert subject-CN patterns: robot.<org>, fleet.<org>, ros.<org>, nav.<org>, teleop.<org>",
+    "ROS_DOMAIN_ID env var visible in process listings is the per-fleet partition key",
+    "tf2 transform tree topics (/tf, /tf_static) co-publish with Nav2/MoveIt — secondary identity confirmation"
+  ],
+  "pivot_paths": [
+    "GET /topics via rosbridge → capability fingerprint (which Nav2/MoveIt actions are running)",
+    "GET /services via rosbridge → service-list enumeration (planner type, controller type)",
+    "GET /nodes via rosbridge → node-list including planner_server, controller_server, behavior_server, move_group",
+    "GET /params via rosbridge → frequently leaks robot model, map filename, costmap parameters",
+    "Foxglove bridge :8765 channel list → same enumeration over Foxglove WebSocket protocol",
+    "Shadow-sweep on same IP: 8080 (web_video_server camera), 8765 (foxglove_bridge), 9091 (rosapi), UDP 7400+ (DDS)",
+    "tf2 topic /tf via rosbridge → reveals robot kinematic chain (link names, joint names) without moving anything",
+    "TLS cert subject-CN on :443 → VisorGraph operator-portfolio pivot (fleet operator attribution)"
+  ],
+  "vulnerabilities": [],
+  "do_not_call": [
+    "POST/publish to /navigate_to_pose/_action/send_goal — commands the robot to drive to a pose",
+    "POST/publish to /follow_path/_action/send_goal — commands path-following",
+    "POST/publish to /spin/_action/send_goal — commands rotation",
+    "POST/publish to /move_base_simple/goal — legacy ROS1 single-publish goal — moves the robot",
+    "POST/publish to /move_group/_action/send_goal — commands arm motion planning + execution",
+    "POST/publish to /execute_trajectory/_action/send_goal — executes a planned arm trajectory",
+    "POST/publish to /cmd_vel — direct velocity command, bypasses planners",
+    "POST/publish to /joint_trajectory_controller/* — direct joint command, bypasses MoveIt",
+    "rosbridge advertise + publish on any control topic — lets caller advertise a new publisher and command the robot",
+    "Service call /clear_costmap — wipes safety map state",
+    "Service call /reinitialize_global_localization — destroys AMCL pose belief"
+  ],
+  "data_class": "robot capability surface + kinematic chain + real-time sensor stream when subscribed; primary harm is unauthenticated motion command (kinetic-impact safety hazard), not user PII; map data and joint names can reveal facility layout and machine identity",
+  "restraint_notes": [
+    "Identity probe = GET /topics on rosbridge only (read-only schema enumeration)",
+    "Secondary confirmation = GET /nodes and /services (read-only)",
+    "Capability list (/navigate_to_pose, /follow_path, /move_group/goal in /topics) is the finding — sending a goal is the harm",
+    "Subscribing to camera, lidar, joint-state topics pulls live bandwidth and is operator-visible — channel list is sufficient at Stage 0c",
+    "/clear_costmap and /reinitialize_global_localization are read-named but state-changing — never call",
+    "DDS direct-graph join (UDP 7400+) is a possible probe channel — keep behind discipline: subscribing joins the graph and is visible to ros2 node list on the host",
+    "Insight #40 (auth-on-default shifts rightward): ROS2 has added SROS2 / DDS-Security across recent releases but adoption is the slow part — track production deployments adopting ROS_SECURITY_ENABLE=true",
+    "Severity rationale: a confirmed exposed Nav2 stack is remote-robot-control on the public internet — the open state is the finding, calling is unacceptable harm"
+  ],
+  "version_history_auth_relevant": {
+    "ROS1 (Kinetic/Melodic/Noetic, 2016-2025)": "no native auth; rosmaster on 11311 was the single coordinator; legacy systems still deployed",
+    "ROS2 Foxy (2020)": "DDS replaces rosmaster; SROS2 / DDS-Security available but opt-in",
+    "ROS2 Humble (2022)": "Nav2 1.x stable; MoveIt2 1.x stable; rosbridge_server ports forward to ROS2",
+    "ROS2 Iron / Jazzy (2023-2024)": "improved SROS2 tooling but default-off remains the rule",
+    "rosbridge_suite v2.0.0+ (2024)": "ROS2 support consolidated; no auth added by default",
+    "ROS2 Rolling (continuous)": "SROS2 documentation expanded; field adoption lags docs"
+  },
+  "sources": [
+    "https://docs.nav2.org/",
+    "https://docs.nav2.org/concepts/index.html",
+    "https://moveit.picknik.ai/main/index.html",
+    "https://moveit.picknik.ai/main/doc/concepts/concepts.html",
+    "https://github.com/ros-planning/moveit2",
+    "https://github.com/ros-navigation/navigation2",
+    "https://github.com/RobotWebTools/rosbridge_suite",
+    "https://docs.ros.org/en/rolling/Tutorials/Advanced/Security/Introducing-ros2-security.html",
+    "https://design.ros2.org/articles/ros2_dds_security.html",
+    "https://www.trendmicro.com/vinfo/us/security/news/internet-of-things/robot-operating-system-security-analysis",
+    "https://github.com/aliasrobotics/RVD",
+    "Quarta et al., S&P 2017, 'An Experimental Security Analysis of an Industrial Robot Controller'",
+    "Mayoral-Vilches et al., 'ExploitFlow' 2023 — ROS2 attack-chain research",
+    "[CANDIDATE —  Cat-X-ROS-Robotics OSINT Platoon Squad 4, 2026-06-09; doc-grounded, host-unverified]",
+    "AI-LLM-Infrastructure-OSINT/data/platform-intel/cat-x-ros-nav2-moveit-osint-2026-06-09.md"
+  ],
+  "status": "CANDIDATE"
+}

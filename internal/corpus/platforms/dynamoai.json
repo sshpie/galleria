@@ -1,0 +1,66 @@
+{
+  "platform": "dynamoai",
+  "display_name": "DynamoAI (Dynamo Guardrails)",
+  "category": "ai-guardrails",
+  "apex": "dynamo.ai",
+  "api_apex": "api.dynamo.ai",
+  "api_endpoint": "/v1/moderation/analyze/",
+  "default_ports": [
+    443
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "DYNAMOAI_API_KEY",
+    "DYNAMOAI_API_BASE",
+    "DYNAMOAI_PROJECT_ID"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL \u2014 commercial AI safety/guardrails vendor; Boston-based; founder Dr. Vinod Iyengar (ex-H2O.ai); model risk + compliance for enterprise LLM deployments",
+  "install_tell": "SaaS API at api.dynamo.ai; LiteLLM proxy integration via guardrail hook",
+  "misconfig_patterns": [
+    "DYNAMOAI_API_KEY leaked in proxy config or env files",
+    "Custom api_base pointing to self-hosted Dynamo evaluator without TLS"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"*.dynamo.ai\"",
+      "ssl.cert.subject.cn:\"api.dynamo.ai\""
+    ],
+    "active_probe": {
+      "path": "/v1/moderation/analyze/",
+      "method": "POST",
+      "response_markers": [
+        "dynamo",
+        "moderation",
+        "policy"
+      ],
+      "false_positive_check": "Generic /moderation endpoints exist; require vendor brand in cert SAN"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"dynamo.ai\"",
+    "strict": "ssl.cert.subject.cn:\"dynamo.ai\" http.status:200",
+    "version": "ssl.cert.subject.cn:\"dynamo.ai\" http.html:\"dynamoai\""
+  },
+  "dmarc_posture": "p=quarantine; rua+ruf to dmarc@dynamo.ai; Google Workspace MX",
+  "deployment_tells": [
+    "api.dynamo.ai is the canonical guardrail endpoint",
+    "LiteLLM hook posts JSON moderation requests"
+  ],
+  "pivot_paths": [
+    "DYNAMOAI_API_KEY -> full guardrail policy read/write per project"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "_dmarc.dynamo.ai",
+      "status": "CONFIRMED"
+    }
+  ]
+}

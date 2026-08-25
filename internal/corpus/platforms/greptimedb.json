@@ -1,0 +1,60 @@
+{
+  "platform": "greptimedb",
+  "display_name": "GreptimeDB",
+  "category": "vector_db",
+  "default_ports": [
+    4000,
+    4002
+  ],
+  "api_paths": [
+    "/v1/sql",
+    "/v1/health",
+    "/v1/status"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "GREPTIME_USER_PROVIDER"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 4000:4000 greptime/greptimedb:latest standalone start",
+  "misconfig_patterns": [
+    "No --user-provider flag in default deployment — HTTP and MySQL wire both open",
+    "GET /v1/sql?sql=SELECT+1 returns query results without auth",
+    "MySQL wire at :4002 open without password by default"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:4000 \"greptime\"",
+      "http.html:\"greptime\""
+    ],
+    "active_probe": {
+      "path": "/v1/sql?sql=SELECT+1",
+      "method": "GET",
+      "response_markers": [
+        "\"records\"",
+        "\"schema\""
+      ],
+      "false_positive_check": "response must include records and schema fields — unique to GreptimeDB SQL API response format"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:4000 \"greptime\"",
+    "strict": "port:4000 \"greptime\"",
+    "version": "port:4000 \"greptimedb\""
+  },
+  "deployment_tells": [
+    "GET /v1/sql?sql=SELECT+1 returns {records:..., schema:...} without auth",
+    "Port 4000 is GreptimeDB-specific",
+    "MySQL wire at :4002 — mysql -h host -P 4002 -u greptime (no password)"
+  ],
+  "pivot_paths": [
+    "GET /v1/sql?sql=SHOW+DATABASES → database list without auth",
+    "GET /v1/sql?sql=SHOW+TABLES → table list without auth",
+    "GET /v1/status → build info + version"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.greptime.com",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

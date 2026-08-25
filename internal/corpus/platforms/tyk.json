@@ -1,0 +1,63 @@
+{
+  "platform": "tyk",
+  "display_name": "Tyk Gateway (AI routing mode)",
+  "category": "gateway",
+  "default_ports": [8080],
+  "api_paths": ["/hello", "/tyk/apis", "/tyk/keys", "/tyk/policies"],
+  "auth_default": "default_creds",
+  "auth_config_env": [
+    "TYK_GW_SECRET",
+    "TYK_GW_LISTENPORT",
+    "TYK_GW_STORAGE_HOST"
+  ],
+  "default_creds": [
+    {"user": "", "pass": "foo", "context": "TYK_GW_SECRET default value in official docker-compose; passed as X-Tyk-Authorization: foo header to Gateway API"}
+  ],
+  "install_tell": "docker run -d --name tyk_gateway -p 8080:8080 -e TYK_GW_SECRET=foo -v $(pwd)/tyk.conf:/opt/tyk-gateway/tyk.conf docker.tyk.io/tyk-gateway/tyk-gateway:latest",
+  "misconfig_patterns": [
+    "TYK_GW_SECRET=foo from official docker-compose not changed -- X-Tyk-Authorization: foo grants full Gateway API access",
+    "Gateway API at :8080/tyk/ exposed without rate limiting or network restriction",
+    "AI Studio at :8080 with LLM provider API keys in configuration readable via REST API",
+    "Edge Gateway at :9091 in Tyk AI Studio deployments -- additional surface",
+    "Documentation states to change secret immediately; operators who copy-paste docker-compose example retain foo"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"X-Tyk-Authorization\" port:8080",
+      "\"tyk\" port:8080 http.html:\"gateway\"",
+      "http.html:\"tyk-gateway\" port:8080"
+    ],
+    "active_probe": {
+      "path": "/hello",
+      "method": "GET",
+      "port": 8080,
+      "response_markers": ["Tyk GW", "status", "pass"],
+      "false_positive_check": "JSON response description field must contain 'Tyk GW'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"Tyk GW\" port:8080",
+    "strict": "\"Tyk GW\" port:8080 http.html:\"pass\"",
+    "version": "\"Tyk GW\" port:8080 http.html:\"version\""
+  },
+  "deployment_tells": [
+    "Port 8080 /hello returning JSON with description:'Tyk GW'",
+    "X-Tyk-Authorization header required for Gateway API operations",
+    "Redis on 6379 (docker-compose dependency)",
+    "Tyk AI Studio: ports 8080 (admin), 9090 (embedded gateway), 9091 (edge gateway)"
+  ],
+  "pivot_paths": [
+    "GET :8080/hello -- health check, no auth, returns version and status",
+    "GET :8080/tyk/apis -H 'X-Tyk-Authorization: foo' -- list all API definitions if default secret active",
+    "GET :8080/tyk/keys -H 'X-Tyk-Authorization: foo' -- enumerate all consumer keys",
+    "POST :8080/tyk/apis -H 'X-Tyk-Authorization: foo' -- inject new API route (SSRF/proxy abuse)",
+    "Tyk AI Studio :8080 -- LLM provider API keys in configuration visible via REST"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://tyk.io/docs/tyk-oss-gateway/configuration",
+    "https://github.com/TykTechnologies/tyk-gateway-docker/blob/master/docker-compose.yml",
+    "https://github.com/TykTechnologies/tyk-gateway-docker/blob/master/get-started/docker-run.md",
+    "https://tyk.io/docs/ai-management/ai-studio/quickstart"
+  ]
+}

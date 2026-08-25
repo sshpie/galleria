@@ -1,0 +1,120 @@
+{
+  "platform": "sourcegraph-cody",
+  "display_name": "Sourcegraph (self-hosted) + Cody",
+  "category": "ai_code_assistant",
+  "default_ports": [
+    7080,
+    80,
+    443,
+    3080
+  ],
+  "api_paths": [
+    "/.api/graphql",
+    "/.api/completions/stream",
+    "/.api/cody/context",
+    "/.api/sg/embeddings",
+    "/.api/llm/v1/chat/completions",
+    "/.api/registry/extensions",
+    "/.api/src-cli-version",
+    "/sign-in",
+    "/site-admin",
+    "/search"
+  ],
+  "auth_default": "required",
+  "auth_config_env": [
+    "auth.providers (site config; no default — must be explicitly set)",
+    "auth.public (site config; default false — anonymous browse toggle)",
+    "authz.enforceForSiteAdmins (site config; default true)",
+    "SOURCEGRAPH_LICENSE_KEY (env)"
+  ],
+  "default_creds": [
+    "first-admin-wins on fresh install — admin account created by whoever reaches port 7080 first after docker run",
+    "Grafana sidecar (port 3000) — admin/admin pre-bootstrap on legacy stacks"
+  ],
+  "install_tell": "docker run --publish 7080:7080 --publish 127.0.0.1:3370:3370 --rm --volume ~/.sourcegraph/config:/etc/sourcegraph --volume ~/.sourcegraph/data:/var/opt/sourcegraph sourcegraph/server:<ver> (single-container REMOVED in 7.0.0; Helm + docker-compose are current)",
+  "misconfig_patterns": [
+    "auth.public: true — anonymous repository / user / search read",
+    "first-admin race window between docker run and admin creation",
+    "authz.enforceForSiteAdmins: false — admin tokens bypass per-repo permission checks",
+    "Prometheus sidecar (:9090) exposed host-side — /api/v1/targets leaks entire Sourcegraph service inventory (Insight #11)",
+    "Direct IP exposure of internal services (pgsql 5432, redis 6379, zoekt 6070, gitserver 3178, blobstore 9000) when --network host or bad firewall (Insight #12)",
+    "gitserver (port 3178) reachable from internet — CVE-2022-23642 surface still relevant on stale installs",
+    "Schema introspection enabled by default on /.api/graphql — surface-area leak even when resolvers are auth-gated",
+    "Cody endpoints reachable without access token on misconfigured installs — LLM-billing-theft + indexed-content disclosure (2023-08 incident class)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Sourcegraph\"",
+      "http.html:\"/.api/graphql\"",
+      "http.html:\"/.assets/scripts/\"",
+      "http.headers.x-trace:",
+      "port:7080 http.title:\"Sourcegraph\""
+    ],
+    "active_probe": {
+      "path": "/.api/graphql",
+      "method": "POST",
+      "body": "{\"query\":\"{ site { productVersion } }\"}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "response_markers": [
+        "data.site.productVersion present as semver string (e.g. 6.x or 7.x)",
+        "X-Trace response header (Jaeger trace id)",
+        "errors[].message references 'site' resolver when unauth gated"
+      ],
+      "false_positive_check": "X-Trace header alone is not unique; pair with productVersion semver pattern AND title 'Sourcegraph' AND /.api/graphql 200 path. Cody-only fingerprints must additionally match /.api/cody/context or /.api/completions/stream OPTIONS reflection (do NOT POST)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Sourcegraph\"",
+    "strict": "http.html:\"/.api/graphql\" http.title:\"Sourcegraph\"",
+    "version": "http.html:\"productVersion\" http.html:\"/.assets/scripts/\""
+  },
+  "deployment_tells": [
+    "Caddy reverse proxy in front (compose default; Server: Caddy header)",
+    "X-Trace response header on /.api/graphql (Jaeger trace id, always set)",
+    "X-Trace-Url response header when X-Sourcegraph-Should-Trace: true request header sent",
+    "Webpack bundle path /.assets/scripts/ with hashed filenames",
+    "Sign-in route /sign-in, admin route /site-admin",
+    "License-key-tied OV certs on Caddy with *.sourcegraph.* CN patterns",
+    "Sourcegraph K8s namespace 'sourcegraph' (Helm chart default)"
+  ],
+  "pivot_paths": [
+    "GET / → SPA shell + productVersion in webpack manifest → CVE scoping",
+    "POST /.api/graphql {site{productVersion}} → unauth version (verify-rung)",
+    "POST /.api/graphql introspection query → resolver surface area without exercising any resolver",
+    "POST /.api/graphql {repositories(first:5){nodes{name}}} → only succeeds if auth.public:true → repo-name disclosure (private IP)",
+    "POST /.api/graphql {users{nodes{username,emails{email}}}} → user PII when auth.public:true",
+    "Prometheus :9090 /api/v1/targets (Insight #11) → full Sourcegraph service inventory + internal hostnames",
+    "Direct IP scan for 5432/6379/6070/3178/9000 on same host (Insight #12) → DB / cache / index / git / blob shadow surface",
+    "gitserver :3178 + CVE-2022-23642 core.sshCommand on stale (<3.37) installs → RCE",
+    "Leaked site-admin access token → LLM-billing-theft via Cody endpoints (2023-08 incident class) — DISCLOSE, do not exercise"
+  ],
+  "vulnerabilities": [
+    "CVE-2022-23642 (gitserver RCE pre-3.37, High): core.sshCommand git-config injection via HTTP args; public PoC (Altelus1) + ExploitDB 50964; only exploitable if gitserver exposed",
+    "Pre-3.38 gitserver RCE residual fixes (High)",
+    "Pre-3.41 saved-search overwrite (Medium): authz check bug; write-only, no read",
+    "Cody VSCode extension <0.14.1 (Critical, low exploitability): malicious repo + /explain or /doc → arbitrary code exec on client host — CLIENT not server",
+    "2023-08 sourcegraph.com admin-token leak (incident, not CVE): leaked site-admin token from PR weaponized to mint admin account + LLM-proxy abuse; license-key + PII exposure for paid users",
+    "Bundled Redis CVE-2025-49844 / 46817 / 46818 / 46819 (mixed, dep updates)",
+    "CVE-2026-25121 / 25122 / 26958 (low-med, apko + edwards25519 dep updates)",
+    "CVE-2026-34986 (Medium, go-jose JWE DoS dep update)"
+  ],
+  "sources": [
+    "https://sourcegraph.com/docs/admin/auth",
+    "https://docs.sourcegraph.com/admin/config/site_config (auth.public)",
+    "https://sourcegraph.com/docs/admin/deploy/docker-single-container",
+    "https://sourcegraph.com/docs/api/graphql",
+    "https://sourcegraph.com/docs/admin/observability/tracing (X-Trace)",
+    "https://sourcegraph.com/docs/admin/deploy",
+    "https://github.com/sourcegraph/deploy-sourcegraph-docker/blob/main/docker-compose/docker-compose.yaml",
+    "https://github.com/Altelus1/CVE-2022-23642",
+    "https://sourcegraph.com/blog/security-update-august-2023",
+    "https://goauthentik.io/blog/2023-08-11-sourcegraph-security-incident/",
+    "https://www.cvedetails.com/vulnerability-list/vendor_id-23337/Sourcegraph.html",
+    "https://sourcegraph.com/docs/technical-changelog",
+    "https://docs.sourcegraph.com/cody/core-concepts/cody-gateway",
+    "[CANDIDATE —  Cat-Tabby Stage -1 brief 2026-06-09; no operator probe; no aimap fingerprint yet (Stage 0d debt); no nuclei template upstream (verified gh search 0 hits)]"
+  ],
+  "cve_observed": []
+}

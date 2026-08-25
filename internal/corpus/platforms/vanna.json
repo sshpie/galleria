@@ -1,0 +1,118 @@
+{
+  "platform": "vanna",
+  "display_name": "Vanna (Vanna.AI)",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8084,
+    5000
+  ],
+  "api_paths": [
+    "/api/v0/get_config",
+    "/api/v0/generate_sql",
+    "/api/v0/run_sql",
+    "/api/v0/get_training_data",
+    "/api/v0/train",
+    "/api/v0/remove_training_data",
+    "/api/v0/generate_plotly_figure",
+    "/api/v0/get_question_history",
+    "/api/v0/download_csv",
+    "/api/v0/create_function",
+    "/api/v0/generate_questions",
+    "/api/vanna/v2/chat_sse",
+    "/api/vanna/v2/chat_poll"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "VANNA_MODEL",
+    "VANNA_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install vanna ; then VannaFlaskApp(vn).run()  — or clone vanna-ai/vanna-flask, set VANNA_MODEL/VANNA_API_KEY + DB env vars in .env, pip install -r requirements.txt, python app.py (Flask debug server on :5000). Legacy built-in app binds 0.0.0.0:8084.",
+  "misconfig_patterns": [
+    "VannaFlaskApp(vn) instantiated without auth= -> NoAuth() default -> entire /api/v0 surface unauthenticated and internet-exposed on :8084",
+    "debug=True default -> Werkzeug interactive debugger / verbose tracebacks leaking paths, env, and stack on errors",
+    "allow_llm_to_see_data=True set by operators for usability -> reopens the CVE-2024-5565 prompt-injection-to-RCE chain",
+    "v2 server bound 0.0.0.0:5000 with permissive CORS and no UserResolver -> unauth POST /api/vanna/v2/chat_sse drives the agent (SQL execution) anonymously",
+    "Database credential connected with broad/write privileges -> unauth /api/v0/run_sql becomes direct DB read/write, not just SELECT",
+    "Hosting app calls vn.ask() (default visualize=True) on untrusted input -> exec() of LLM-generated Plotly code"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"img.vanna.ai/vanna-components.js\"",
+      "http.html:\"Your AI-powered copilot for SQL queries\"",
+      "http.title:\"Welcome to Vanna.AI\"",
+      "http.html:\"img.vanna.ai/vanna-flask.svg\""
+    ],
+    "active_probe": {
+      "path": "/api/v0/get_config",
+      "method": "GET",
+      "response_markers": [
+        "\"type\": \"config\"",
+        "\"version\"",
+        "\"title\": \"Welcome to Vanna.AI\"",
+        "\"subtitle\": \"Your AI-powered copilot for SQL queries.\"",
+        "\"logo\": \"https://img.vanna.ai/vanna-flask.svg\""
+      ],
+      "false_positive_check": "The legacy default title \"Welcome to Vanna.AI\" and subtitle \"Your AI-powered copilot for SQL queries.\" are operator-overridable (VannaFlaskApp accepts title/subtitle/logo kwargs), so a host that rebrands the UI evades the http.title/html dorks. To avoid the ~50%-rule false positive (generic \"SQL\" / \"copilot\" / \"chat\" pages collide with thousands of unrelated apps): never fingerprint on generic terms. Confirm Vanna specifically by an unauth GET /api/v0/get_config returning JSON {\"type\":\"config\", ...} — that exact route + the \"type\":\"config\" envelope is vendor-unique to the legacy VannaFlaskApp and is NOT title-dependent. For v2, confirm via the literal script src \"img.vanna.ai/vanna-components.js\" in the served HTML or the POST-only /api/vanna/v2/chat_sse SSE route. Do not confuse Vanna's /api/v0/run_sql with generic /api/v0 prefixes used by other Flask apps; require the get_config JSON envelope before labeling."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"img.vanna.ai\"",
+    "strict": "http.html:\"img.vanna.ai/vanna-components.js\" \"Your AI-powered copilot for SQL queries\"",
+    "version": "http.html:\"img.vanna.ai/vanna-flask.svg\" http.title:\"Welcome to Vanna.AI\""
+  },
+  "deployment_tells": [
+    "HTML head references https://img.vanna.ai/vanna-components.js (v2) or https://img.vanna.ai/vanna-flask.svg logo (legacy)",
+    "Werkzeug/Flask dev server banner (Server: Werkzeug) with debug=True default — Werkzeug interactive debugger reachable on exceptions",
+    "Listens on 0.0.0.0:8084 (legacy VannaFlaskApp) or 0.0.0.0:5000 (vanna-flask quickstart / v2 VannaFlaskServer)",
+    "CORS Access-Control-Allow-Origin permissive by default on v2 server (flask_cors enabled, no origin restriction set)",
+    "GET /health returns {\"status\":\"healthy\",\"service\":\"vanna\"} on v2",
+    "Often co-located with a database driver banner (Snowflake/Postgres) since requirements.txt pins vanna[snowflake]"
+  ],
+  "pivot_paths": [
+    "GET /api/v0/get_config -> confirm platform + read version/title without touching data",
+    "GET /api/v0/get_training_data -> enumerate DDL schema, documentation, and question->SQL pairs (business-logic + data-model disclosure, read-only)",
+    "GET /api/v0/get_question_history -> recover prior analyst questions (intent/operator-attribution signal, read-only)",
+    "GET /api/v0/generate_sql?question=... -> observe what SQL the model emits for a benign schema-discovery question (no execution if run_sql not called) to map table/column names",
+    "GET /health (v2) -> liveness without auth",
+    "Werkzeug debug page (trigger a benign 500 only on an authorized engagement) -> framework/version + potential console PIN surface — observe, do not exploit"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-5565 (GHSA, CVSS 8.1 NVD / 9.2 GHSA): prompt-injection-to-RCE in vanna ask()/generate_plotly_code() — LLM-generated Plotly Python is run via exec() without a sandbox; gated by allow_llm_to_see_data but reachable in default visualize=True flows; affects vanna <= 0.5.5 (fixed via hardening guidance / sandbox warning)",
+    "CVE-2024-5826: remote code execution via prompt injection in vanna.ask (no sandbox on LLM-generated code execution), full server takeover; affects vanna <= 0.5.5",
+    "CVE-2024-5753 (GHSA-mwxm-35f8-6vg2, CVSS 8.7): SQL injection in file-critical functions e.g. pg_read_file() allowing unauthenticated arbitrary local file read (e.g. /etc/passwd); affects vanna <= 0.3.4",
+    "CVE-2024-5827 (GHSA-c89v-fg7j-r5qj, CVSS 9.8 Critical): SQL injection in the DuckDB integration exposed through the Flask Web APIs, enabling arbitrary SQL/command execution; affects vanna v0.3.4",
+    "CVE-2026-4229: SQL injection in remove_training_data — the id parameter is improperly sanitized, allowing remote injection of arbitrary SQL; affects vanna 2.0.0 through 2.0.2",
+    "CVE-2026-4513: SQL injection in vanna-ai vanna (per SentinelOne vuln DB) — improper SQL sanitization in a training-data/SQL path"
+  ],
+  "auth_evidence": "Legacy built-in web app: src/vanna/legacy/flask/__init__.py declares VannaFlaskApp.__init__(... auth: AuthInterface = NoAuth() ...). src/vanna/legacy/flask/auth.py defines class NoAuth(AuthInterface) whose is_logged_in(self, user) -> bool: returns True unconditionally and login_form() returns \"\". The quickstart instantiates VannaFlaskApp(vn) without passing auth, so every /api/v0/* route (generate_sql, run_sql, get_training_data, train, remove_training_data) answers fully unauthenticated; run() binds host=\"0.0.0.0\", port=8084, debug=self.debug with debug defaulting to True. The canonical vanna-flask quickstart repo (vanna-ai/vanna-flask/app.py) is even more explicit: NO auth decorator on any of its 14 @app.route('/api/v0/...') handlers, ending with app.run(debug=True) (Flask default port 5000). v2 (src/vanna/servers/flask/app.py VannaFlaskServer.run) sets defaults host=\"0.0.0.0\", port=5000, debug=False, enables CORS by default (cors_config.get(\"enabled\", True)) and registers /api/vanna/v2/chat_sse + /api/vanna/v2/chat_poll with NO auth layer in the server factory (authentication is opt-in via a custom UserResolver the developer must wire up). All three primary-source paths converge: a documented quickstart yields a fully unauth UI + REST API.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Live read/write access to the connected production database via unauth GET /api/v0/run_sql (text-to-SQL executes attacker-supplied or LLM-generated SQL against Snowflake/Postgres/MySQL/BigQuery/etc.)",
+    "Ingested RAG training corpus via unauth GET /api/v0/get_training_data: DDL schemas, business documentation, and curated question->SQL pairs that reveal internal data model and business logic",
+    "Database connection context and schema (table/column names exposing PII/PHI/financial columns) leaked through training data and generated SQL",
+    "Conversation/question history via /api/v0/get_question_history (every prior analyst query against the DB)",
+    "Ability to poison the RAG store via unauth POST /api/v0/train (inject malicious DDL/documentation/SQL that the LLM will reuse)",
+    "Upstream LLM provider keys NOT exposed by the API by default (server-side env), but the model/endpoint identity is inferable; the bigger exposure is the downstream database, not the LLM key",
+    "Werkzeug debugger surface when debug=True (default), risking interactive console/PIN on unhandled exceptions"
+  ],
+  "sources": [
+    "https://github.com/vanna-ai/vanna",
+    "https://github.com/vanna-ai/vanna/blob/main/src/vanna/legacy/flask/auth.py",
+    "https://github.com/vanna-ai/vanna/blob/main/src/vanna/legacy/flask/__init__.py",
+    "https://github.com/vanna-ai/vanna/blob/main/src/vanna/servers/flask/app.py",
+    "https://github.com/vanna-ai/vanna/blob/main/src/vanna/servers/flask/routes.py",
+    "https://github.com/vanna-ai/vanna-flask/blob/main/app.py",
+    "https://github.com/vanna-ai/vanna-flask/blob/main/requirements.txt",
+    "https://vanna.ai/docs/web-app-auth/",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-5565",
+    "https://github.com/advisories/GHSA-mwxm-35f8-6vg2",
+    "https://github.com/advisories/GHSA-c89v-fg7j-r5qj",
+    "https://jfrog.com/blog/prompt-injection-attack-code-execution-in-vanna-ai-cve-2024-5565/",
+    "https://advisories.gitlab.com/pkg/pypi/vanna/",
+    "https://www.sentinelone.com/vulnerability-database/cve-2026-4513/",
+    "https://radar.offseq.com/threat/cve-2026-4229-sql-injection-in-vanna-ai-vanna-f50509b5",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

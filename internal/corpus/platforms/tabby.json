@@ -1,0 +1,167 @@
+{
+  "platform": "tabby",
+  "display_name": "Tabby (TabbyML/tabby)",
+  "category": "ai_code_completion",
+  "default_ports": [
+    9090,
+    8080,
+    8000,
+    443,
+    80,
+    9000,
+    9999,
+    8443
+  ],
+  "api_paths": [
+    "/",
+    "/v1/health",
+    "/v1beta/models",
+    "/v1beta/server_setting",
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v1beta/chat/completions",
+    "/v1/events",
+    "/graphql",
+    "/swagger-ui/",
+    "/favicon.ico"
+  ],
+  "auth_default": "mixed",
+  "auth_config_env": [
+    "TABBY_WEBSERVER_JWT_TOKEN_SECRET",
+    "TABBY_OWNER_IMPERSONATE_OVERRIDE",
+    "TABBY_DISABLE_USAGE_COLLECTION"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d --gpus all -p 8080:8080 -v $HOME/.tabby:/data tabbyml/tabby serve --model StarCoder-1B --chat-model Qwen2-1.5B-Instruct --device cuda",
+  "misconfig_patterns": [
+    "GET /v1/health is always unauthenticated \u2014 leaks model id, chat_model id, device, version, webserver-enabled flag",
+    "GET /v1beta/models is always unauthenticated \u2014 enumerates available models",
+    "GET /v1beta/server_setting unauthenticated in OSS builds (always) and in EE builds when --no-webserver \u2014 leaks indexed repo URLs (git_url), completion/chat config, disable_client_side_telemetry flag",
+    "POST /v1/completions accepts optional Bearer \u2014 when operator never set a token, endpoint is open compute (LLM-jacking primitive)",
+    "POST /v1/chat/completions accepts optional Bearer \u2014 same compute-exfil exposure",
+    "POST /v1beta/chat/completions legacy alias of /v1/chat/completions (kept since v0.11.0 for backward compat) \u2014 same exposure",
+    "First-visit admin-account creation on EE webserver \u2014 if uninitialized + reachable, anyone can claim admin",
+    "--no-webserver flag strips JWT/admin/team layer and reverts to pre-v0.11 open-API mode",
+    "TABBY_OWNER_IMPERSONATE_OVERRIDE env var present = maintainer testing backdoor active",
+    "config.toml at ~/.tabby/config.toml often contains plaintext upstream API keys (OpenAI, Anthropic, Mistral, OpenRouter)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8080 \"Tabby\"",
+      "port:8080 http.html:\"Tabby\" http.html:\"AI coding\"",
+      "http.html:\"swagger-ui\" http.html:\"tabby\""
+    ],
+    "active_probe": {
+      "path": "/v1/health",
+      "method": "GET",
+      "response_markers": [
+        "\"model\":",
+        "\"chat_model\":",
+        "\"device\":",
+        "\"webserver\":"
+      ],
+      "false_positive_check": "HealthState JSON contract is Tabby-unique: object with model, chat_model, device, and webserver keys together. /v1beta/server_setting GET returning a JSON object with completion/chat/disable_client_side_telemetry keys is the secondary confirmation. Reject if title=='Tabby' but /v1/health returns non-JSON or 404 (likely Eugeny/tabby terminal product or HackTheBox CTF box, both unrelated)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Tabby\"",
+    "strict": "http.title:\"Tabby\" -product:\"Windows\"",
+    "version": "http.title:\"Tabby\" http.html:\"swagger-ui\"",
+    "notes": "2026-06-09 correction: original squad-1 dorks were all port:8080-constrained (2-3 hits). http.title:\"Tabby\" returns 97 (94 dedup) \u2014 30x population expansion. Real port distribution: 9090 dominates (40/94), 8000 (11), 443 (8), 80 (7), 9000 (6), 8080 (5), long-tail. 71.3% Python+gunicorn = real-Tabby signal. Eugeny terminal CVE-2024-55950 product cross-attributes on basic dork via IIS/Windows hosts; use strict with -product:\"Windows\" to eliminate."
+  },
+  "deployment_tells": [
+    "Docker image registry.tabbyml.com/tabbyml/tabby or tabbyml/tabby on dockerhub \u2014 100K+ pulls",
+    "Volume bind /data => $HOME/.tabby on host",
+    "GPU-pass-through --gpus all + --device cuda common; ROCm and CPU variants exist",
+    "docker-compose service names: tabby, tabbyml, tabby-server, ai-coding",
+    "Reverse-proxy patterns: Caddy reverse_proxy localhost:8080, Traefik label-based, Nginx proxy_pass \u2014 often surfaces shadow :8080 reachable IP-direct without SNI",
+    "Railway template = hardened pattern (JWT default + persistent volume + admin first-visit)",
+    "SkyPilot example = UNHARDENED (port 8080 publicly exposed)",
+    "HuggingFace Spaces Docker SDK template = sandboxed",
+    "Cert subject-CN patterns: tabby.<org>, code.<org>, ai.<org>, copilot.<org>",
+    "Local llama-cpp-server subprocess bound loopback \u2014 no external port",
+    "Tantivy embedded full-text index \u2014 no external vector DB by default",
+    "SQLite at ~/.tabby/ee/db.sqlite for EE state \u2014 no external DBMS standard",
+    "Co-deployed siblings (shadow-sweep priorities): Ollama :11434, vLLM/LocalAI :8000, Qdrant :6333, Triton :8001"
+  ],
+  "pivot_paths": [
+    "GET /v1/health \u2192 identity + version + device + webserver-enabled flag",
+    "GET /v1beta/models \u2192 model registry enumeration",
+    "GET /v1beta/server_setting \u2192 indexed-repo URLs (internal source-control leak) + telemetry config",
+    "GET /swagger-ui/ \u2192 OpenAPI spec confirms identity + version + endpoint surface (\u2265 v0.29)",
+    "GET /favicon.ico \u2192 MMH3 hash for Shodan favicon-pinned facet sweep (zero-FP harvest)",
+    "GET / HTML \u2192 check for admin-creation modal (first-visit-claim land-grab condition)",
+    "TLS cert subject-CN on :443 \u2192 VisorGraph operator-portfolio pivot",
+    "Shadow-sweep on same IP: 8080, 11434 (Ollama), 8000 (vLLM/LocalAI), 6333 (Qdrant) \u2014 Insight #12"
+  ],
+  "vulnerabilities": [],
+  "do_not_call": [
+    "POST /v1/completions \u2014 compute-exfil primitive, LLM-jacking, costs operator GPU-seconds",
+    "POST /v1/chat/completions \u2014 compute-exfil primitive, SSE-stream",
+    "POST /v1beta/chat/completions \u2014 legacy alias of above, same exposure",
+    "POST /v1/events \u2014 pollutes operator telemetry",
+    "POST /graphql with mutations \u2014 state-changing",
+    "POST / admin-creation on first visit \u2014 claims the admin account, host takeover"
+  ],
+  "data_class": "config + indexed-repo-URL leak + compute resource; not user PII directly, but indexed-repo URLs often leak internal source-control hostnames",
+  "restraint_notes": [
+    "Identity probe = GET /v1/health only",
+    "Config probe = GET /v1beta/server_setting only (read; never POST)",
+    "Compute endpoints (/v1/completions, /v1/chat/completions, /v1beta/chat/completions) are LLM-jacking primitives \u2014 NEVER call against operator hosts; the open-state is the finding, calling is the harm",
+    "Admin-claim path on uninitialized EE webserver \u2014 never POST the admin-creation form; presence of first-visit modal is the finding",
+    "Insight #40 (auth-on-default shifts rightward): pre-v0.11.0 was open, v0.11+ default-webserver-on hardened the platform \u2014 track which release fraction of population still runs"
+  ],
+  "version_history_auth_relevant": {
+    "\u2264 v0.6.x": "no built-in auth; /v1beta/* was live namespace; serve fully open",
+    "v0.7.0 (2023-12-15)": "--webserver flag introduced as opt-in",
+    "v0.11.0 (2024-05-10)": "--webserver becomes default; /v1beta/chat/completions moved to /v1/chat/completions (legacy alias kept)",
+    "v0.12.0": "HTTP API leaves experimental",
+    "v0.24.0 (2025-01-23)": "LDAP integration",
+    "v0.27.0 (2025-03-29)": "option to hide password-login form in frontend",
+    "v0.29.0 (2025-05-20)": "Swagger UI / OpenAPI integration",
+    "v0.32.0 (2026-01-25)": "latest at brief time"
+  },
+  "sources": [
+    "https://github.com/TabbyML/tabby",
+    "https://github.com/TabbyML/tabby/security/advisories",
+    "https://raw.githubusercontent.com/TabbyML/tabby/main/README.md",
+    "https://raw.githubusercontent.com/TabbyML/tabby/main/CHANGELOG.md",
+    "https://raw.githubusercontent.com/TabbyML/tabby/main/MODEL_SPEC.md",
+    "https://github.com/TabbyML/tabby/blob/main/ee/tabby-webserver/src/service/auth.rs",
+    "https://github.com/TabbyML/tabby/issues/1159",
+    "https://tabby.tabbyml.com/docs/welcome/",
+    "https://tabby.tabbyml.com/docs/quick-start/installation/docker/",
+    "https://tabby.tabbyml.com/api/chat-completions/",
+    "https://hub.docker.com/r/tabbyml/tabby",
+    "https://deepwiki.com/TabbyML/tabby",
+    "https://deepwiki.com/TabbyML/tabby/3.1-server-implementation-and-http-apis",
+    "https://docs.skypilot.co/en/latest/examples/applications/tabby.html",
+    "https://railway.com/deploy/tabby",
+    "https://huggingface.co/docs/hub/spaces-sdks-docker-tabby",
+    "https://ramnode.com/guides/tabby",
+    "https://docs.clore.ai/guides/ai-coding-tools/tabby",
+    "[CANDIDATE \u2014  Cat-Tabby OSINT Platoon Squad 1, 2026-06-09; doc-grounded, host-unverified]",
+    "AI-LLM-Infrastructure-OSINT/shodan/cat-tabby-2026-06-09/  (2026-06-09  survey)"
+  ],
+  "status": "CANDIDATE",
+  "port_distribution_2026_06_09": {
+    "9090": 40,
+    "8000": 11,
+    "443": 8,
+    "80": 7,
+    "9000": 6,
+    "8080": 5,
+    "3000": 3,
+    "_long_tail": 14
+  },
+  "population_observed_2026_06_09": 94,
+  "identity_marker_2026_06_09": {
+    "probe": "GET /v1/health",
+    "json_field_required": [
+      "chat_model",
+      "webserver"
+    ],
+    "status_code": 200,
+    "alt_probe": "GET /auth/signin (v0.11.0+) \u2192 200 + body_contains \"<title>Tabby\""
+  }
+}

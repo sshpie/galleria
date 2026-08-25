@@ -1,0 +1,56 @@
+{
+  "platform": "crowdstrike-aidr",
+  "display_name": "CrowdStrike Falcon AI Detection & Response (AIDR)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "CrowdStrike Holdings (NASDAQ: CRWD)",
+  "apex": "crowdstrike.com",
+  "default_ports": [443],
+  "api_paths": [
+    "/v1/guard_chat_completions"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "Bearer token (CS_AIDR_TOKEN); api_base is NOT defaulted (operator must set CS_AIDR_BASE_URL) -- regional Falcon cloud (us-1, us-2, eu-1)",
+  "auth_config_env": ["CS_AIDR_TOKEN", "CS_AIDR_BASE_URL"],
+  "default_creds": [],
+  "default_api_base": null,
+  "install_tell": "LiteLLM guardrail_hooks/crowdstrike_aidr calls /v1/guard_chat_completions with Bearer CS_AIDR_TOKEN; reuses Falcon platform OAuth tokens",
+  "misconfig_patterns": [
+    "Falcon API tokens scoped overly broadly (AIDR endpoint shares OAuth surface with full Falcon platform).",
+    "Operator pins api_base to a regional cloud; misrouting between us-1 / us-2 / eu-1 is a data-residency exposure."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"crowdstrike.com\"",
+      "ssl.cert.subject.cn:\"api.crowdstrike.com\"",
+      "ssl.cert.subject.cn:\"api.us-2.crowdstrike.com\"",
+      "ssl.cert.subject.cn:\"api.eu-1.crowdstrike.com\""
+    ],
+    "active_probe": {
+      "path": "/v1/guard_chat_completions",
+      "method": "POST",
+      "port": 443,
+      "notes": "Customer-Falcon-tenant edge; do not probe production"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"crowdstrike.com\"",
+    "strict": "ssl.cert.subject.cn:\"api.crowdstrike.com\"",
+    "version": "ssl.cert.subject.cn:\"api.us-2.crowdstrike.com\""
+  },
+  "deployment_tells": [
+    "Regional Falcon API edges: api.crowdstrike.com, api.us-2.crowdstrike.com, api.eu-1.crowdstrike.com, api.laggar.gcw.crowdstrike.com",
+    "AIDR is a Falcon platform module, not a standalone surface; cert-pivot covers Falcon infra broadly"
+  ],
+  "dmarc": "p=reject rua=proofpoint+agari ruf=proofpoint+agari (strongest of the 8)",
+  "mx_provider": "Proofpoint (mxa/mxb-00206402.gslb.pphosted.com)",
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.crowdstrike.com/.well-known/security.txt",
+    "psirt": "psirt@crowdstrike.com (per public PSIRT page)"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py",
+    "DNS dig 2026-06-07"
+  ]
+}

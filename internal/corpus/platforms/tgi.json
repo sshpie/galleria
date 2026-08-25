@@ -1,0 +1,48 @@
+{
+  "platform": "tgi",
+  "display_name": "Text Generation Inference (TGI)",
+  "category": "inference_serving",
+  "default_ports": [8080],
+  "api_paths": ["/generate_stream", "/v1/chat/completions", "/health", "/info"],
+  "auth_default": "none",
+  "auth_config_env": ["HF_TOKEN", "MAX_BATCH_TOTAL_TOKENS", "SM_NUM_GPUS"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 ghcr.io/huggingface/text-generation-inference:latest",
+  "misconfig_patterns": [
+    "No authentication on REST API or SSE stream endpoint",
+    "HF_TOKEN in Kubernetes pod spec",
+    "/info endpoint exposes model_id and max_concurrent_requests unauthenticated"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"generate_stream\"",
+      "port:8080 http.html:\"text-generation\"",
+      "\"text-generation-launcher\""
+    ],
+    "active_probe": {
+      "path": "/info",
+      "method": "GET",
+      "response_markers": ["\"model_id\"", "\"max_concurrent_requests\""],
+      "false_positive_check": "response must include model_id as non-empty string — field is TGI-specific"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"text-generation-launcher\" port:8080",
+    "strict": "port:8080 http.html:\"generate_stream\"",
+    "version": "port:8080 http.html:\"generate_stream\" http.html:\"model_id\""
+  },
+  "deployment_tells": [
+    "/generate_stream SSE endpoint on port 8080",
+    "/info returns model_id, max_batch_size, max_concurrent_requests unauthenticated",
+    "Flash Attention backend selection in startup banner"
+  ],
+  "pivot_paths": [
+    "GET /info → model_id → identify Hugging Face model source and owner",
+    "HF_TOKEN exposure → Hugging Face account pivot → private model access",
+    "MAX_BATCH_TOTAL_TOKENS env → infer GPU VRAM capacity"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01"
+  ]
+}

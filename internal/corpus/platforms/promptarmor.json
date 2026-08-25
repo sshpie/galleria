@@ -1,0 +1,65 @@
+{
+  "platform": "promptarmor",
+  "display_name": "PromptArmor (LLM/agent guardrail + prompt-injection defense)",
+  "category": "ai-email-guardrail",
+  "subcategory": "policy-and-injection-defense",
+  "default_ports": [443],
+  "api_paths": ["/", "/api", "/v1"],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "SaaS guardrail API for LLM/agent applications (prompt-injection, jailbreak, data-exfil detection). Deployed on AWS EKS behind an ingress controller; origin not directly reachable. Auth fronted by PropelAuth (managed B2B auth) at the edge. No exposed data plane.",
+  "misconfig_patterns": [
+    "Host-header probe to EKS origin returns ingress default-backend, not app -- no exposure",
+    "TLS SNI mismatch surfaces 'Kubernetes Ingress Controller Fake Certificate' / ingress.local (default-backend tell, not a finding)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"promptarmor.com\"",
+      "EKS ingress default-backend on SNI miss (Fake Certificate / ingress.local)",
+      "PropelAuth edge redirect on auth paths"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 443,
+      "host_header": "api.promptarmor.com",
+      "response_markers": ["Kubernetes Ingress Controller Fake Certificate (default-backend on SNI/Host miss)", "PropelAuth redirect on app paths", "no unauth JSON data"],
+      "false_positive_check": "default-backend 404 / fake-cert is NOT a finding; require correct Host + authenticated JSON read for any exposure claim"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"promptarmor.com\"",
+    "strict": "ssl.cert.subject.cn:\"promptarmor.com\" -http.title:\"Just a moment\"",
+    "version": "http.html:\"PropelAuth\" ssl:\"promptarmor.com\""
+  },
+  "deployment_tells": [
+    "AWS EKS ingress controller; origin hidden behind default-backend on Host/SNI mismatch",
+    "PropelAuth managed auth at the edge (B2B SSO)",
+    "No raw data-plane endpoint exposed in cert-pivot sweep"
+  ],
+  "pivot_paths": [
+    "Cert-CN pivot via promptarmor.com",
+    "PropelAuth tenant enumeration (edge auth, no backend leak observed)"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane B (policy / prompt-injection defense for agent actions).",
+  "validation_status": {
+    "verdict": "CLEAN (no exposure)",
+    "depth": "shodan -> VERIFY (Host-header origin probe)",
+    "coverage": "EKS origins probed with correct + incorrect Host; default-backend only, PropelAuth at edge",
+    "date": "2026-06-23",
+    "note": "Architecturally dark by design (EKS default-backend + managed edge auth). Verified negative."
+  },
+  "competitive_lane": {
+    "lane": "Lane B (policy/injection defense)",
+    "differentiator": "Prompt-injection / jailbreak / exfil detection as a guardrail API for agent apps",
+    "siblings_in_lane": ["Guardrails AI", "NeMo Guardrails"],
+    "siblings_adjacent": ["Lakera", "Robust Intelligence"]
+  },
+  "sources": [
+    "Cat-33 validation 2026-06-23: Host-header origin probe, EKS default-backend confirmed, PropelAuth edge",
+    "findings-breakdown.txt (Cat-33 validation/ -- PromptArmor verified clean)",
+    "COVERAGE-AUDIT.md G-matrix (PromptArmor = CLEAN, no exposure)"
+  ]
+}

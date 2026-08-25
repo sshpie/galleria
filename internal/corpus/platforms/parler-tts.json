@@ -1,0 +1,84 @@
+{
+  "name": "Parler-TTS",
+  "slug": "parler-tts",
+  "category": "voice-tts-conversational",
+  "description": "Lightweight text-prompt-controllable TTS from HuggingFace (huggingface/parler-tts) where a natural-language description ('a female speaker with a slightly expressive... voice, very clear audio') steers speaker, tone, and recording conditions. Parler-TTS is an inference/training LIBRARY with no official standalone server — exposure is via a Gradio demo (the parler-tts/parler_tts Space pattern, Gradio SDK ~4.29, port 7860) or a custom FastAPI wrapper. No authentication by default. Minimal-exposure platform.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication. Parler-TTS is a library (ParlerTTSForConditionalGeneration / model.generate) with no network listener of its own. The canonical exposure is a Gradio app duplicated from the parler-tts/parler_tts Space, which launches with no auth tuple; --share opens an unauthenticated public tunnel. Any custom FastAPI wrapper inherits no auth unless the operator adds it. Because there is no standard server, the exposed population is smaller and more heterogeneous than the Gradio-native platforms.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"Parler-TTS\"",
+      "rationale": "Gradio demo title/markdown contains 'Parler-TTS' / 'Parler TTS'; HTML-body match. Low volume (few standardized deployments) but high precision when present."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"parler\" http.html:\"gradio\"",
+      "rationale": "Broader recall on the Gradio SPA + parler token. FP-risk: 'parler' is also a brand/word — pair with gradio and confirm with a description-prompt label (below)."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"parler\" http.html:\"Description\"",
+      "rationale": "Parler-TTS's defining UI element is a free-text 'Description' prompt controlling voice characteristics (unique among these six — it is prompt-steered, not preset/clone). 'Description' + parler on 7860 is the strongest available discriminator. Some content is JSON-body (/config) -> verify via /config."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"parler_tts\" http.html:\"config\"",
+      "rationale": "Match parler_tts inside the rendered Gradio /config JSON to confirm the app identity beyond a bare title. JSON-body -> active /config fetch or Censys route if Shodan HTML misses it."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"parler\" http.html:\"gradio\" http.html:\"version\"",
+      "rationale": "Gradio framework version (from page/config) scopes the Gradio-CVE surface for the demo. Model checkpoint (parler-tts-mini-v1 / parler-tts-large-v1) is a separate identity signal, not a CVE version."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "Parler-TTS",
+    "response_body_contains": [
+      "parler",
+      "Description",
+      "parler_tts",
+      "gradio",
+      "parler-tts-mini"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET / (Gradio SPA demo)",
+    "GET /config (Gradio app config JSON — title, components, version)",
+    "POST /api/predict (Gradio inference)",
+    "POST /run/predict",
+    "POST /queue/join (Gradio queued inference)",
+    "POST /component_server (Gradio internal — CVE-2024-1561 surface)",
+    "GET /file= (Gradio file route — CVE-2023-51449 surface)",
+    "POST /v1/audio/speech (only if wrapped in a custom OpenAI-compat FastAPI — non-canonical)"
+  ],
+  "known_vulns": [
+    "No authentication on the Gradio demo — unauthenticated prompt-steered synthesis",
+    "Gradio CVE-2024-1561: arbitrary local file read via /component_server on Gradio 3.47-4.12 (the demo Space uses Gradio ~4.29 by default, but duplicated/older Spaces and self-hosts may run vulnerable versions) — env-secret exfiltration",
+    "Gradio CVE-2023-51449: /file path traversal / SSRF on Gradio 4.0-4.10 — /proc/self/environ read",
+    "Gradio CVE-2024-1728 / CVE-2024-1727: UploadButton LFI and CSRF on Gradio <4.19.2",
+    "No rate limiting — GPU compute-theft; Parler is lighter than Bark/Orpheus but unauth generation is still free operator compute",
+    "No content filtering — prompt-controllable voice characteristics can be steered toward impersonation-flavored or disinformation audio",
+    "Library-only core means exposed instances are ad-hoc wrappers of varying (often stale) Gradio versions — inconsistent patch posture across the population"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Gradio file-read chain — the realistic risk on an exposed Parler demo is the framework, not the model: CVE-2024-1561 / 2023-51449 / 2024-1728 turn port 7860 into /proc/self/environ + arbitrary-file read (HF tokens, cloud creds) when Gradio is unpatched; ad-hoc self-hosts frequently run stale Gradio. (2) GPU compute-theft — unauth generation at operator cost, though Parler-mini is comparatively light. (3) TTS-abuse — prompt-steered voice control (accent, tone, recording quality via natural-language description) enables tailored scam/disinformation audio; no cloning of a specific target, so impersonation risk is lower than F5-TTS. Data-sensitivity is low. This is a MINIMAL-EXPOSURE platform: no standard server pattern exists, so the exposed population is small, heterogeneous, and dominated by duplicated HF Spaces / hand-rolled Gradio demos rather than a canonical Docker image. Population discovery should expect low volume and high per-host variance.",
+  "deployment_notes": "Parler-TTS ships as a pip/library (parler_tts) with training + inference code and no bundled production server — MINIMAL standard exposed-server pattern. The reference public deployment is the parler-tts/parler_tts HuggingFace Space (Gradio SDK ~4.29.0) plus per-model Spaces (parler-tts-expresso, mini/large v1); self-hosters typically duplicate a Space or wrap the library in their own Gradio/FastAPI app. Checkpoints: parler-tts-mini-v1, parler-tts-large-v1, parler-tts-mini-expresso. GPU recommended but mini runs on modest hardware. Because there is no canonical server, fingerprinting relies on the Gradio demo identity (title 'Parler-TTS' + the free-text 'Description' prompt component) and CVE scoping tracks the wrapper's Gradio version, which varies widely across the small exposed population.",
+  "docker_images": [],
+  "github_repos": [
+    "huggingface/parler-tts"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

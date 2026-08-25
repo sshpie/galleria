@@ -1,0 +1,94 @@
+{
+  "platform": "graphrag",
+  "display_name": "Microsoft GraphRAG (accelerator FastAPI + community wrappers; core is CLI-only)",
+  "category": "rag-framework-server",
+  "default_ports": [
+    443,
+    80,
+    8000,
+    8080,
+    8501
+  ],
+  "api_paths": [
+    "/manpage/openapi.json",
+    "/manpage/docs",
+    "/query/global",
+    "/query/local",
+    "/source/text",
+    "/source/report",
+    "/source/entity",
+    "/graph/graphml",
+    "/data",
+    "/index",
+    "/index/config/prompts",
+    "/health"
+  ],
+  "auth_default": "gateway",
+  "auth_config_env": [
+    "KUBERNETES_SERVICE_HOST",
+    "GRAPHRAG_API_KEY",
+    "STORAGE_CONNECTION_STRING",
+    "GRAPHRAG_VERSION"
+  ],
+  "default_creds": [],
+  "install_tell": "Server-surface reality is SPLIT. microsoft/graphrag CORE = CLI/library only (no HTTP server, no FastAPI -- publishable negative, like Aider/BabyAGI). Real HTTP surface = Azure-Samples/graphrag-accelerator (FastAPI title='GraphRAG' on AKS behind APIM) + community wrappers (ms-graphrag-api uvicorn :8000 no-auth). Tier-B as-designed: auth is APIM Ocp-Apim-Subscription-Key at the GATEWAY, the FastAPI app enforces NO app-layer auth on data routes (subscription_key_check is a documented no-op placeholder), CORS '*'. Direct-to-ingress exposure (APIM not Internal VNet) collapses to Tier-C fully-unauth.",
+  "misconfig_patterns": [
+    "AKS internal LoadBalancer/nginx ingress exposed directly, bypassing APIM -> full unauth (the theorized critical misdeploy, no host evidence yet)",
+    "community wrappers (ms-graphrag-api) on raw :8000, no auth, CORS '*' -- the actual exposure tier",
+    "STORAGE_CONNECTION_STRING in env -> Azure storage leak vector",
+    "settings.yaml references Azure OpenAI key + endpoint from .env"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"/manpage/openapi.json\"",
+      "http.html:\"Ocp-Apim-Subscription-Key required\""
+    ],
+    "active_probe": {
+      "path": "/manpage/openapi.json",
+      "method": "GET",
+      "port": 443,
+      "response_markers": [
+        "\"title\":\"GraphRAG\"",
+        "/graph/graphml/",
+        "/source/report/"
+      ],
+      "false_positive_check": "json_field info.title=='GraphRAG' EXACT (not substring 'graphrag' -> catches LightRAG) AND paths contains /graph/graphml/{index_name} OR /source/report/{index_name}/{report_id}. EXCLUDE if title contains 'LightRAG' or /webui/ route or default /docs path present."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"/manpage/openapi.json\"",
+    "strict": "http.html:\"/source/report/\" http.html:\"/graph/graphml/\"",
+    "version": "http.html:\"Ocp-Apim-Subscription-Key required\""
+  },
+  "deployment_tells": [
+    "accelerator: AKS + APIM + Azure OpenAI + ACR + Azure AI Search (vector) + Cosmos DB (graphrag db: jobs + container-store) + Blob (parquet artifacts)",
+    "443 APIM front, 80/8080 AKS ingress/pod, 8000 community wrapper uvicorn, 8501 Streamlit unified-search-app",
+    "TLS = Azure-managed wildcard *.azure-api.net (weak attribution); pivot on APIM subdomain + resource-group naming",
+    "openapi.json reports version v0.0.0; runtime version from GRAPHRAG_VERSION env -> banner CVE-scoping reads undefined_version unless set"
+  ],
+  "pivot_paths": [
+    "GET /manpage/openapi.json -> title GraphRAG + /graph/graphml route confirms MS-accelerator (NOT LightRAG)",
+    "GET /graph/graphml/{index_name} = whole knowledge-graph exfil in one call",
+    "POST /query/global = corpus exfil + Azure-OpenAI LLMjacking",
+    "INVERSE dork http.title:\"LightRAG Server API\" to subtract LightRAG and keep count honest"
+  ],
+  "vulnerabilities": [
+    "None found -- no GHSA/CVE/CISA-KEV for microsoft/graphrag or graphrag-accelerator",
+    "bypass-APIM direct-to-ingress misconfig class is unpublished -- open ground",
+    "no nuclei template (the /manpage/openapi.json + title detector is unwritten)"
+  ],
+  "category_lane_classification": "RAG framework server -- CENTRAL FP TRAP with LightRAG. 'graphrag' token catches LightRAG (self-brands as GraphRAG server), MS wrappers, marketing pages. Survey MUST run exclusion dork + subtract (Insight #15 ~50% rule, Insight #102 dork-stage schema anchor). Live test of #102 on a third platform class. aimap FP for server forms only; core CLI gets no fingerprint.",
+  "disclosure_contact": {
+    "security_txt": "unknown",
+    "channel_observed": "microsoft/graphrag + Azure-Samples/graphrag-accelerator GitHub; accelerator is 'demo, not officially supported'"
+  },
+  "sources": [
+    "CONFIRMED-NEGATIVE 2026-06-18 (Cat-RAG-Framework-Servers): Microsoft GraphRAG accelerator = 0 direct exposure (/manpage Shodan-dark; APIM gateway-auth-default => thesis-confirming). Core CLI-only confirmed.",
+    "INSIGHT #102 (3rd confirmation): title:'GraphRAG'=46 hosts ALL non-Microsoft (Youtu-GraphRAG/Tencent x5, ProtonX, ManGAI, univ chatbots). Namespace collision; dork-stage schema anchor required.",
+    "CANDIDATE 2026-06-17 -- Stage -1 OSINT, no host verified",
+    "Azure-Samples/graphrag-accelerator backend/graphrag_app/main.py + utils/common.py",
+    "microsoft/graphrag (CLI/library, no server)",
+    "eric050828/ms-graphrag-api (community wrapper)",
+    "data/platform-intel/rag-framework-servers-osint-2026-06-17.md"
+  ]
+}

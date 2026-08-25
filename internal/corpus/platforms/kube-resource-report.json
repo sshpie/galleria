@@ -1,0 +1,54 @@
+{
+  "platform": "kube-resource-report",
+  "display_name": "Kubernetes Resource Report (hjacobs)",
+  "category": "cost-allocation",
+  "default_ports": [8080],
+  "api_paths": [
+    "/index.html",
+    "/clusters.html",
+    "/pods.html",
+    "/pods.tsv",
+    "/slack.tsv",
+    "/ingresses.tsv"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "helm chart / container (hjacobs/kube-resource-report); nginx sidecar serves generated static HTML",
+  "misconfig_patterns": [
+    "README concedes verbatim: does NOT provide any access control to the generated HTML report",
+    "Static dump — no JSON API, no auth layer at all",
+    "TSV siblings (pods.tsv etc.) expose raw data even if HTML is not browsed"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Kubernetes Resource Report\" port:8080"
+    ],
+    "active_probe": {
+      "path": "/index.html",
+      "method": "GET",
+      "response_markers": ["Kubernetes Resource Report"],
+      "false_positive_check": "static HTML titled 'Kubernetes Resource Report' with Bootstrap tables + .tsv siblings present"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"Kubernetes Resource Report\"",
+    "strict": "http.html:\"Kubernetes Resource Report\" port:8080",
+    "version": "http.html:\"Kubernetes Resource Report\""
+  },
+  "deployment_tells": [
+    "static HTML report, no live API",
+    "presence of pods.tsv / slack.tsv / ingresses.tsv siblings",
+    "nginx server header",
+    "UNVERIFIED — fingerprints from memory not source read; confirm before harvest"
+  ],
+  "pivot_paths": [
+    "GET /pods.html -> per-pod CPU/mem requests vs usage + estimated cost -> cluster inventory",
+    "GET /pods.tsv -> machine-readable full pod list",
+    "GET /clusters.html -> multi-cluster names + aggregate cost"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

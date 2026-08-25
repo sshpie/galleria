@@ -1,0 +1,79 @@
+{
+  "platform": "grafana-tempo",
+  "display_name": "Grafana Tempo (distributed tracing backend)",
+  "category": "observability/distributed-tracing",
+  "default_ports": [3200, 3100, 9095, 4317, 4318],
+  "api_paths": [
+    "/api/echo",
+    "/api/search",
+    "/api/search/tags",
+    "/api/search/tag/{tag}/values",
+    "/api/traces/{trace_id}",
+    "/status/version",
+    "/status/config",
+    "/status/services",
+    "/status/runtime_config",
+    "/status/overrides",
+    "/ready",
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "External reverse proxy (HAProxy/NGINX/OAuth2-proxy/Pomerium) — documented pattern",
+    "multitenancy_enabled (NOT authentication — routing label only via X-Scope-OrgID)"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 3200:3200 grafana/tempo -config.file=/etc/tempo.yaml (single-binary mode)",
+  "misconfig_patterns": [
+    "Tempo NodePort'd to internet on 3200",
+    "Single-binary docker -p 3200:3200 left running as production",
+    "Ingress without auth annotation (chart ships ingress.enabled:false but operators flip it)",
+    "multitenancy_enabled:false (default) = no tenant separation",
+    "/status/config dumps S3 SSE-C key plaintext pre-2.10.3 (CVE-2026-28377)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"echo\" port:3200 http.status:200",
+      "http.html:\"tempo_ingester\" port:3200",
+      "port:3200 http.html:\"query-frontend\" http.html:\"compactor\"",
+      "port:3200,3100,9009,3000 http.html:\"tempo\""
+    ],
+    "active_probe": {
+      "path": "/api/echo",
+      "method": "GET",
+      "response_markers": ["echo"],
+      "false_positive_check": "body_exact 'echo' (4 bytes); Content-Type text/plain; header_absent Server. Confirm with /api/search/tags returning {tagNames:[...]}"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"echo\" port:3200 http.status:200",
+    "strict": "port:3200 http.html:\"tempo_ingester\" http.html:\"tempo_distributor\"",
+    "version": "port:3200 http.html:\"query-frontend\" http.html:\"compactor\" http.html:\"ingester\""
+  },
+  "deployment_tells": [
+    "GET /api/echo returns literal 'echo' (4 bytes) on 3200",
+    "/status/services lists query-frontend+ingester+compactor+distributor+metrics-generator",
+    "Helm tempo-distributed pre-1.41 uses 3100; post-1.41 uses 3200",
+    "LGTM rosette: 3000+3100+3200+9009 = Loki+Tempo+Mimir+Grafana co-location"
+  ],
+  "pivot_paths": [
+    "/api/search/tags → schema disclosure (attr keys: user.email, llm.prompt, db.statement)",
+    "/api/search/tag/{tag}/values → direct PII path per attr",
+    "/api/traces/{id} → full span tree with gen_ai.prompt/completion when LLM-instrumented",
+    "/status/config → S3/GCS bucket names + (pre-2.10.3) SSE-C key plaintext",
+    "/status/overrides → tenant ID enumeration when multitenancy on",
+    "Shadow ports 3000/3100/9009 → Grafana+Loki+Mimir LGTM stack adjacency"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-28377 (CVSS 7.5, PR:N) — S3 SSE-C key exposed plaintext via /status/config (pre-2.10.3)",
+    "GHSA-fx6q-qhch-hxgp — Transitive Alpine apk-tools in tempo-memcached image"
+  ],
+  "sources": [
+    "CANDIDATE — grafana.com/docs/tempo/latest/operations/authentication/ (\"does not come with any included authentication layer\")",
+    "CANDIDATE — grafana.com/docs/tempo/latest/configuration/",
+    "CANDIDATE — grafana.com/docs/tempo/latest/api_docs/",
+    "CANDIDATE — grafana.com/security/security-advisories/cve-2026-28377/",
+    "CANDIDATE — artifacthub.io/packages/helm/grafana/tempo-distributed",
+    " pre-assessment OSINT 2026-06-09 (cat-54-otel-collector)"
+  ]
+}

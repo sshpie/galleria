@@ -1,0 +1,66 @@
+{
+  "platform": "databend",
+  "display_name": "Databend",
+  "category": "vector_db",
+  "default_ports": [
+    8000,
+    3307
+  ],
+  "api_paths": [
+    "/v1/health",
+    "/v1/query",
+    "/v1/session/login"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "QUERY_DEFAULT_USER",
+    "QUERY_DEFAULT_PASSWORD"
+  ],
+  "default_creds": [
+    {
+      "user": "root",
+      "pass": "",
+      "context": "default deployment"
+    }
+  ],
+  "install_tell": "docker run -p 8000:8000 -p 3307:3307 datafuselabs/databend:latest",
+  "misconfig_patterns": [
+    "root user with empty password in default deployment",
+    "MySQL wire protocol at :3307 — connects without password",
+    "VECTOR type columns (Databend 1.2.x+) enumerable via SHOW CREATE TABLE"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8000 \"databend\"",
+      "http.html:\"databend\""
+    ],
+    "active_probe": {
+      "path": "/v1/health",
+      "method": "GET",
+      "response_markers": [
+        "databend"
+      ],
+      "false_positive_check": "response or headers must include databend string — port 8000 has high collision risk"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8000 \"databend\"",
+    "strict": "port:8000 \"databend\"",
+    "version": "port:8000 \"databend\" \"version\""
+  },
+  "deployment_tells": [
+    "GET /v1/health returns Databend version info without auth",
+    "MySQL :3307 — mysql -h host -P 3307 -u root (no password)",
+    "Databend vector type: ARRAY(FLOAT32 NOT NULL) in schema"
+  ],
+  "pivot_paths": [
+    "GET /v1/health → version string for CVE matching",
+    "POST /v1/query with SQL SHOW DATABASES → list all databases",
+    "MySQL :3307 → SHOW TABLES; DESCRIBE {table} → detect vector columns"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.databend.com",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

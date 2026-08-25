@@ -1,0 +1,62 @@
+{
+  "platform": "vespa",
+  "display_name": "Vespa",
+  "category": "vector_db",
+  "default_ports": [
+    8080,
+    19071
+  ],
+  "api_paths": [
+    "/ApplicationStatus",
+    "/config/v1/",
+    "/search/",
+    "/document/v1/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "VESPA_TLS_CA_CERT",
+    "VESPA_TLS_CERT",
+    "VESPA_TLS_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 -p 19071:19071 vespaengine/vespa:latest",
+  "misconfig_patterns": [
+    "No auth in default deployment — search and document APIs fully open",
+    "Config server at :19071 exposes full application topology without auth",
+    "/ApplicationStatus leaks cluster composition and Vespa version"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"com.yahoo.vespa\"",
+      "http.html:\"com.yahoo.vespa\""
+    ],
+    "active_probe": {
+      "path": "/ApplicationStatus",
+      "method": "GET",
+      "response_markers": [
+        "com.yahoo.vespa"
+      ],
+      "false_positive_check": "response must include com.yahoo.vespa — uniquely identifies Vespa config server"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"com.yahoo.vespa\"",
+    "strict": "http.html:\"com.yahoo.vespa\"",
+    "version": "\"com.yahoo.vespa\" \"version\""
+  },
+  "deployment_tells": [
+    "GET :19071/ApplicationStatus returns com.yahoo.vespa namespace — uniquely identifies Vespa",
+    "GET /config/v1/ exposes namespace and document types without auth",
+    "Search endpoint at :8080/search/ accepts queries without auth"
+  ],
+  "pivot_paths": [
+    "GET :19071/ApplicationStatus → version + cluster topology",
+    "GET :19071/config/v1/ → namespace list → document schema",
+    "GET :8080/search/?yql=select+*+from+sources+*+where+true+limit+5 → document sample"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.vespa.ai",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

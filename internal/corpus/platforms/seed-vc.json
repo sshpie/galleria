@@ -1,0 +1,84 @@
+{
+  "name": "Seed-VC",
+  "slug": "seed-vc",
+  "category": "voice-tts-conversational",
+  "description": "Zero-shot voice and singing-voice conversion toolkit (Plachtaa/seed-vc). Converts a source utterance to any target timbre from a short reference clip with no per-speaker training. Ships several Gradio web UIs — app.py (integrated V1/V2), app_vc.py (speech VC), app_svc.py (singing VC), app_vc_v2.py (V2) — served at http://localhost:7860/, plus a Tkinter real-time desktop GUI (real-time-gui.py, not a network service). Archived upstream (read-only Nov 2025) at ~3.9k stars; forks and HF-Space clones run the same Gradio surface.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in any of the app*.py Gradio launchers by default — launch() is called without auth=, so the conversion UI, reference-audio upload, and model selection are fully open on port 7860. Operators must bind to localhost or reverse-proxy for protection; the README instructs users to open http://localhost:7860 directly. Gradio share=True (gradio.live) tunnels are a frequent accidental public-exposure vector for the demo apps.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio_config\"",
+      "rationale": "Gradio's inline window.gradio_config JSON is the http.html-visible signal past the SPA shell; broad Gradio-on-7860 population to be narrowed by app-specific labels."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"Seed-VC\"",
+      "rationale": "Seed-VC app title / markdown header rendered into gradio_config on the index page; direct name match for unmodified deployments."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"Reference Audio\"",
+      "rationale": "Conjunctive match on the Gradio config blob plus the 'Reference Audio' input label characteristic of Seed-VC's zero-shot VC UI; separates it from generic Gradio apps and from training-based SVC UIs."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"Source Audio\" http.html:\"convert\"",
+      "rationale": "Source Audio + convert component labels co-occurring in the config blob; high precision for voice-conversion-family Gradio deployments."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"V2\"",
+      "rationale": "Seed-VC V1/V2 model-selector label surfaced in the UI; use to segment the newer V2 deployment population for version-targeted enumeration."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "Seed-VC",
+    "response_body_contains": [
+      "gradio_config",
+      "Seed-VC",
+      "Reference Audio",
+      "Source Audio",
+      "convert"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "POST /upload",
+    "GET /info",
+    "GET /gradio_api/info"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated access to zero-shot voice conversion, arbitrary reference/source audio upload, and model selection on port 7860",
+    "Gradio file-component path-traversal / arbitrary-file-read CVEs (CVE-2024-1561 and related) apply when the exposed instance runs a vulnerable Gradio version",
+    "Unrestricted audio upload — no size/MIME validation; GPU/VRAM and disk DoS via crafted or oversized clips",
+    "Zero-shot design lowers the bar for impersonation: a 3-10s reference clip is enough to clone an arbitrary voice with no training step",
+    "share=True gradio.live tunnels publish the UI publicly with no auth",
+    "gradio_config / /config disclose component structure and any local model/checkpoint filenames referenced by the app"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Turnkey non-consensual voice cloning — zero-shot means an attacker needs only a short reference clip of the target and produces impersonation audio instantly; a direct fraud (vishing), disinformation, and harassment surface. (2) Compute theft — open GPU conversion endpoint automatable via /run/predict at operator cost. (3) Gradio-version file read — chaining a Gradio path-traversal CVE against an exposed host yields arbitrary file read of weights and adjacent secrets. (4) Uploaded reference audio exfiltration — reference clips submitted by the operator/other users may contain identifiable voices and are retrievable from the upload cache. (5) share-tunnel exposure bypasses network controls.",
+  "deployment_notes": "Runs on CUDA GPU hosts; the Gradio apps (app.py / app_vc.py / app_svc.py / app_vc_v2.py) are the network surface, all defaulting to :7860. The real-time-gui.py is a local Tkinter app and does NOT open a network port — ignore it for external fingerprinting. SHODAN VISIBILITY CAVEAT: Gradio SPA — rendered UI text is JS-only and http.html-blind; pivot on the inline window.gradio_config JSON blob (indexed by Shodan/Censys) plus component labels ('Reference Audio', 'Source Audio'). Censys services.http.response.html_title 'Gradio' + body substring match on gradio_config is the reliable cross-source method. Upstream archived; forks and HF-Space redeployments constitute the live population.",
+  "docker_images": [],
+  "github_repos": [
+    "Plachtaa/seed-vc"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

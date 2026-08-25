@@ -1,0 +1,93 @@
+{
+  "name": "Fish Speech",
+  "slug": "fish-speech",
+  "category": "voice-tts-conversational",
+  "description": "Open-source SOTA TTS/voice-cloning server by fishaudio (OpenAudio S1/S2 models). REST + optional WebSocket. Accepts text and reference audio; returns synthesized speech via msgpack-framed streaming. Self-hosted deployments bind to 0.0.0.0:8080 with no authentication by default.",
+  "auth_tier": "A",
+  "default_auth": "none",
+  "auth_notes": "Authentication is off by default. The API server (tools/api_server.py) only enforces auth when launched with the optional --api-key CLI flag or equivalent env var. Without that flag, every REST endpoint — including /v1/tts, /v1/asr, and /v1/references/add — is fully unauthenticated. Official Docker images (fishaudio/fish-speech:latest-server-cuda / latest-server-cpu) do not set an API key in their default entrypoints. The Gradio WebUI on port 7860 similarly has no credential gate unless fronted by a reverse proxy. No default credentials exist because the system is auth-off rather than auth-on-with-defaults.",
+  "default_ports": [
+    8080,
+    8000,
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8080 http.html:\"fish-speech\"",
+      "rationale": "Catches servers where the FastAPI /docs Swagger page or any error body references the fish-speech package name; broadest signal for the API port."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8080 http.html:\"/v1/tts\"",
+      "rationale": "The /v1/tts path string appears in the Swagger UI rendered at /docs; uniquely identifies the TTS endpoint exposed on the default API port."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.title:\"Fish Audio\"",
+      "rationale": "Catches Gradio WebUI deployments on the default Gradio port; title is set by the fishaudio Gradio app and is distinct from generic Gradio deployments."
+    },
+    {
+      "tier": "version",
+      "query": "port:8080 http.html:\"OpenAudio\"",
+      "rationale": "OpenAudio S1/S2 branding appears in /docs and model info responses; narrows to newer model versions (S1/S2 era, post-2024) vs legacy fish-speech-1.x."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"fish-speech\" http.html:\"openaudio\"",
+      "rationale": "Port-agnostic sweep for deployments behind non-standard ports or reverse proxies where both fish-speech package name and OpenAudio model branding appear in the response body."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8080,
+    "http_path": "/v1/tts",
+    "response_body_contains": [
+      "/v1/tts",
+      "fish-speech",
+      "Fish Audio",
+      "ServeTTSRequest",
+      "OpenAudio"
+    ],
+    "title_contains": "Fish Speech",
+    "http_header": "application/msgpack"
+  },
+  "api_paths": [
+    "/v1/tts",
+    "/v1/health",
+    "/v1/asr",
+    "/v1/references/add",
+    "/v1/tts/stream/with-timestamp",
+    "/model",
+    "/models",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/ui"
+  ],
+  "known_vulns": [
+    "CVE-2024-39685 - RCE via command injection in fishaudio Bert-VITS2 webui_preprocess.py resample function (unauthenticated, versions 1.0-2.3; related fishaudio product, not fish-speech directly)",
+    "CVE-2024-39686 - Second RCE vector via command injection in Bert-VITS2 (same component/scope as CVE-2024-39685)",
+    "CVE-2026-8755 - Unauthenticated path traversal in fishaudio Bert-VITS2 hiyoriUI.py _get_all_models function allowing arbitrary file read (NVD published 2026-05-17; related fishaudio product)",
+    "No CVEs assigned to fish-speech core as of August 2026 — primary risk is the auth-off default design, not a patched bug"
+  ],
+  "default_creds": [],
+  "risk_notes": "1. UNRESTRICTED VOICE CLONING: /v1/tts accepts a reference_audio field (base64 or URL) requiring only 10-30 seconds of sample audio to clone any voice. An unauthenticated attacker can POST arbitrary reference audio and receive a high-fidelity clone — direct deepfake/fraud enablement. 13-language support broadens target pool. 2. GPU COMPUTE THEFT: TTS inference is GPU-bound (A100/H100 class hardware). Unauthenticated /v1/tts requests consume substantial GPU compute, enabling resource exhaustion or cost amplification against cloud-billed instances. 3. /v1/asr AUDIO EXFILTRATION SURFACE: The automatic speech recognition endpoint accepts audio upload without auth; can be abused as a transcription oracle or to probe for sensitive audio files if path traversal exists in reference handling. 4. PII IN SYNTHESIZED AUDIO: Operators may pre-load reference voices from employees, patients, or users — stored under /references/. If /v1/references/add and model-listing endpoints are open, enumeration of stored voice profiles is trivial. 5. DEEPFAKE PIPELINE ABUSE: Fish Speech is a preferred component in automated real-time voice-swap pipelines (LiveKit, Pipecat integrations). An unauthenticated instance can be silently inserted into an attacker-controlled pipeline for live call spoofing. 6. PATH TRAVERSAL RISK: The CVE-2026-8755 pattern (path traversal in _get_all_models for a fishaudio product) is architecturally plausible in fish-speech reference audio path handling if the same unsanitized path logic is reused.",
+  "deployment_notes": "Self-hosted via: (1) Python venv — python tools/api_server.py --listen 0.0.0.0:8080 --llama-checkpoint-path checkpoints/openaudio-s1-mini; (2) Docker — docker run -d --gpus all -p 8080:8080 fishaudio/fish-speech:latest-server-cuda; (3) Docker Compose with --profile api-server or --profile webui (port 7860 Gradio). Widely deployed on GPU cloud platforms (RunPod, Clore.ai, Spheron, GIGAGPU). Model weights (~3-5 GB) downloaded automatically on first run from Hugging Face. The --compile flag (torch.compile) is common in production for inference speedup. EvilFreelancer/docker-fish-speech-server provides an OpenAI-compatible /audio/speech wrapper around fish-speech-1.5 — this variant exposes port 8000 instead of 8080 and is common in LLM stack integrations (Dify, Home Assistant, LiteLLM).",
+  "docker_images": [
+    "fishaudio/fish-speech:latest-server-cuda",
+    "fishaudio/fish-speech:latest-server-cpu",
+    "fishaudio/fish-speech:latest",
+    "lengyue233/fish-speech"
+  ],
+  "github_repos": [
+    "https://github.com/fishaudio/fish-speech",
+    "https://github.com/fishaudio/fish-audio-python",
+    "https://github.com/EvilFreelancer/docker-fish-speech-server"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

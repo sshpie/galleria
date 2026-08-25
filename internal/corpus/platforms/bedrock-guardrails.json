@@ -1,0 +1,72 @@
+{
+  "platform": "bedrock-guardrails",
+  "display_name": "AWS Bedrock Guardrails (cloud-native, wrapped by LiteLLM)",
+  "category": "guardrail",
+  "entry_type": "cloud_native",
+  "default_ports": [443],
+  "api_paths": [
+    "/guardrail/{guardrailIdentifier}/version/{guardrailVersion}/apply"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_REGION_NAME",
+    "AWS_BEARER_TOKEN_BEDROCK"
+  ],
+  "default_creds": [],
+  "install_tell": "AWS-managed service on bedrock-runtime.{region}.amazonaws.com; SigV4 OR AWS_BEARER_TOKEN_BEDROCK bearer token. Caller addresses a specific guardrailIdentifier + guardrailVersion provisioned in the customer's AWS account.",
+  "misconfig_patterns": [
+    "guardrailIdentifier leakage: the identifier is not a secret per se, but pairs with leaked AWS creds for direct abuse. Verify-do-not-exercise.",
+    "AWS_BEARER_TOKEN_BEDROCK in LiteLLM config / .env on a public box: short-lived bearer that bypasses SigV4 signing. If exposed, grants direct ApplyGuardrail invoke quota until rotation.",
+    "Operators sometimes proxy LiteLLM Bedrock guardrails through the LiteLLM proxy at :4000 to centralize keys; this means CVE-2026-40217 (LiteLLM custom-code guardrail sandbox escape) and the Cat-05 LiteLLM CVE chain become reachable upstream of the cloud-native guardrail.",
+    "Disabled-by-default: the guardrail must be CONFIGURED with policy; an unconfigured guardrail returns NONE intervention. Operators sometimes ship 'guardrail enabled' with empty policy."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"bedrock-runtime.amazonaws.com\" (AWS-managed, no operator-distinct cert)"
+    ],
+    "active_probe": {
+      "path": "/guardrail/test/version/1/apply",
+      "method": "POST",
+      "port": 443,
+      "body": "{}",
+      "response_markers": ["__type", "AccessDenied", "MissingAuthenticationToken"],
+      "false_positive_check": "All AWS endpoints answer; identity is in SigV4 response, not status code. Not a discoverable surface from Shodan; lives in operator config files, not on the wire."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "n/a - AWS shared infrastructure, no operator-distinguishable fingerprint at the cloud edge",
+    "strict": "n/a",
+    "version": "n/a"
+  },
+  "deployment_tells": [
+    "Endpoint pattern: https://bedrock-runtime.{region}.amazonaws.com/guardrail/{id}/version/{version}/apply",
+    "guardrailIdentifier + guardrailVersion appear in LiteLLM YAML config and in customer Bedrock console",
+    "AWS_BEARER_TOKEN_BEDROCK or AWS SigV4 in Authorization header"
+  ],
+  "pivot_paths": [
+    "Leaked guardrailIdentifier in client SPA bundles or public GitHub configs is a content/policy disclosure, not direct access; pair with leaked AWS creds for invoke.",
+    "LiteLLM proxy that wraps Bedrock guardrails inherits the LiteLLM CVE chain (CVE-2026-40217, CVE-2026-49468, CVE-2026-42208, CVE-2026-42203). The wrapper IS the new attack surface."
+  ],
+  "vulnerabilities": [],
+  "litellm_wrapper_delta": {
+    "transparent_passthrough": false,
+    "added_surface": [
+      "LiteLLM-side credential storage (AWS keys land in proxy .env or DB).",
+      "LiteLLM /guardrails/* endpoints expose guardrail name + presence to anyone with proxy read.",
+      "LiteLLM custom-code guardrail CVE-2026-40217 lives in the same hook namespace; any operator running Bedrock guardrails via LiteLLM is one config line away from also enabling the vulnerable hook.",
+      "LiteLLM adds masking helpers (_redact_pii_matches) that re-process Bedrock JSON before returning to caller; an LiteLLM bug here would alter the apparent guardrail decision."
+    ],
+    "verdict": "NOT a transparent passthrough. LiteLLM adds credential surface, a control-plane endpoint, and an upstream wrapper subject to its own CVE chain. The cloud-native guardrail itself is unchanged; the operator's blast radius widens."
+  },
+  "disclosure_contact": {
+    "security_txt": "https://aws.amazon.com/.well-known/security.txt",
+    "channel_observed": "aws-security@amazon.com (cloud vendor disclosure; not the channel for LiteLLM-side wrapper bugs)"
+  },
+  "sources": [
+    "LiteLLM litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py (1650 lines, 2026-06-07)",
+    "AWS Bedrock ApplyGuardrail API docs"
+  ]
+}

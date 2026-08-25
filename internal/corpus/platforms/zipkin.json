@@ -1,0 +1,84 @@
+{
+  "platform": "zipkin",
+  "display_name": "Zipkin (distributed tracing — OpenZipkin, legacy)",
+  "category": "observability/distributed-tracing",
+  "default_ports": [9411, 9410],
+  "api_paths": [
+    "/api/v2/services",
+    "/api/v2/spans",
+    "/api/v2/traces",
+    "/api/v2/dependencies",
+    "/api/v2/trace/{traceId}",
+    "/config.json",
+    "/zipkin/config.json",
+    "/health",
+    "/info",
+    "/prometheus"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "External reverse proxy (documented, never shipped)",
+    "Armeria TLS keystore (opt-in, plain HTTP by default)",
+    "Storage-backend egress only: ES_USERNAME/ES_PASSWORD, CASSANDRA_*, MYSQL_*, RABBIT_*"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d -p 9411:9411 openzipkin/zipkin",
+  "misconfig_patterns": [
+    "STORAGE_TYPE=mem (default) — Docker quickstart left as production",
+    "9411 NodePort'd via stale firewall rule (legacy Spring Boot/Istio/Dapr deploys)",
+    "ES storage backend on same host unauth — full jaeger/zipkin index readable",
+    "Spring Boot Actuator co-exposed (/actuator/env, /actuator/heapdump pulls creds)",
+    "RabbitMQ 15672 management UI guest:guest perennial finding"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"webpackJsonpzipkin-lens\"",
+      "http.html:\"environment\" http.html:\"defaultLookback\" http.html:\"queryLimit\"",
+      "http.title:\"Zipkin\" http.html:\"id=\\\"root\\\"\"",
+      "port:9411 http.status:200"
+    ],
+    "active_probe": {
+      "path": "/api/v2/services",
+      "method": "GET",
+      "response_markers": [],
+      "false_positive_check": "Content-Type application/json + body is bare JSON array of strings (length>=1 = populated); body_not_contains '\"data\":' (Jaeger envelope) or '<html'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"webpackJsonpzipkin-lens\"",
+    "strict": "http.html:\"environment\" http.html:\"defaultLookback\" http.html:\"queryLimit\"",
+    "version": "http.title:\"Zipkin\" http.html:\"id=\\\"root\\\"\" http.html:\"/zipkin/\""
+  },
+  "deployment_tells": [
+    "webpackJsonpzipkin-lens global in Lens-era bundle",
+    "<base href=\"/zipkin/\"> + <title>Zipkin</title> Vite-era",
+    "/health JSON exposes storage backend class: InMemoryStorage{} | ElasticsearchStorage{...} | CassandraStorage{...} | MySQLStorage{...}",
+    "/api/v2/services returns bare JSON array (NOT {data:...} envelope — Jaeger discriminator)"
+  ],
+  "pivot_paths": [
+    "/api/v2/services → microservice catalog (names ARE the finding)",
+    "/api/v2/spans?serviceName=X → operation/endpoint inventory",
+    "/api/v2/traces → spans with http.url + db.statement + error tags (secrets-in-tags common)",
+    "/api/v2/dependencies → service call graph",
+    "Shadow port 9200 Elasticsearch → raw zipkin* index (the prize)",
+    "/actuator/heapdump → JVM dump with credentials",
+    "/actuator/env → environment variables incl. DB connection strings"
+  ],
+  "vulnerabilities": [
+    "Zipkin-product: ZERO published GHSAs (auth-on-default thesis — no auth to patch)",
+    "CVE-2022-25647 — bundled gson 2.8.6 DoS (CVSS 7.5)",
+    "CVE-2021-44228 Log4Shell — pre-2.23.16-rc1 via spring-boot-starter-log4j2",
+    "CVE-2021-37137 — Netty Snappy decoder mem-exhaustion",
+    "CVE-2021-38153 — bundled Kafka client timing attack",
+    "CVE-2019-14379 — jackson-databind deserialization"
+  ],
+  "sources": [
+    "CANDIDATE — zipkin.io/pages/architecture.html (\"no built-in authentication in the UI\")",
+    "CANDIDATE — github.com/openzipkin/zipkin zipkin-server-shared.yml",
+    "CANDIDATE — github.com/openzipkin/zipkin/security/advisories (none published)",
+    "CANDIDATE — nuclei-templates http/exposed-panels/zipkin-exposure.yaml",
+    "CANDIDATE — nuclei-templates http/misconfiguration/unauthenticated-zipkin.yaml",
+    "CANDIDATE — opentelemetry.io/blog/2025/deprecating-zipkin-exporters/",
+    " pre-assessment OSINT 2026-06-09 (cat-54-otel-collector)"
+  ]
+}

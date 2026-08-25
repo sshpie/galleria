@@ -1,0 +1,47 @@
+{
+  "platform": "kafka-connect",
+  "display_name": "Kafka Connect",
+  "category": "event_streaming",
+  "default_ports": [8083],
+  "api_paths": ["/connectors", "/connector-plugins", "/"],
+  "auth_default": "none",
+  "auth_config_env": ["CONNECT_REST_EXTENSION_CLASSES"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8083:8083 confluentinc/cp-kafka-connect:latest — REST API open by default, no auth block configured",
+  "misconfig_patterns": [
+    "GET /connectors unauthenticated returns connector names",
+    "GET /connectors/{name}/config unauthenticated exposes embedded DB/S3/creds",
+    "POST /connectors unauthenticated allows arbitrary data-pipeline creation"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"kafka_cluster_id\"",
+      "http.html:\"connector-plugins\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["\"version\"", "\"commit\"", "\"kafka_cluster_id\""],
+      "false_positive_check": "root JSON body must include kafka_cluster_id field — vendor-unique to Kafka Connect"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"kafka_cluster_id\"",
+    "strict": "http.html:\"kafka_cluster_id\" http.html:\"connector-plugins\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "GET / self-reports kafka_cluster_id, version, commit unauthenticated",
+    "installed connector-plugin classes visible at /connector-plugins (io.debezium.connector.* names confirm CDC use)"
+  ],
+  "pivot_paths": [
+    "GET /connectors/{name}/config -> source/sink JDBC URLs, S3 keys embedded in connector config",
+    "POST /connectors -> create arbitrary exfil sink pointed at attacker infra",
+    "connector-plugins enumeration -> fingerprints upstream CDC source systems (Debezium connector class names)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://kafka.apache.org/documentation/#connect_rest",
+    "[CANDIDATE —  cat-event-streaming Stage -1, 2026-07-14]"
+  ]
+}

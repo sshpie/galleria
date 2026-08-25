@@ -1,0 +1,113 @@
+{
+  "platform": "roboflow-inference",
+  "display_name": "Roboflow Inference Server",
+  "category": "cv_inference_serving",
+  "default_ports": [
+    9001
+  ],
+  "api_paths": [
+    "/",
+    "/info",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/healthz",
+    "/readiness",
+    "/metrics",
+    "/logs",
+    "/device/stats",
+    "/model/registry",
+    "/model/add",
+    "/model/remove",
+    "/model/clear",
+    "/infer/object_detection",
+    "/infer/instance_segmentation",
+    "/infer/semantic_segmentation",
+    "/infer/classification",
+    "/infer/keypoints_detection",
+    "/infer/lmm",
+    "/workflows/run",
+    "/workflows/describe_interface",
+    "/workflows/blocks/describe",
+    "/workflows/execution_engine/versions",
+    "/notebook/start"
+  ],
+  "auth_default": "none-by-design",
+  "auth_config_env": [
+    "ROBOFLOW_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 9001:9001 roboflow/roboflow-inference-server-cpu:latest",
+  "misconfig_patterns": [
+    "Self-hosted default posture ships with zero HTTP auth wall — ROBOFLOW_API_KEY only gates access to a workspace's private/fine-tuned models and metered cloud features, it does not lock down the HTTP surface itself: 'Without an API Key, you can access a wide range of pre-trained and foundational models and run public Workflows'",
+    "The check_authorization / check_authorization_serverless middleware that enforces api_key on POST routes is scoped to Roboflow's own GCP-serverless and AWS Lambda hosted deployments — dedicated/self-hosted Docker instances do not inherit that gate by default",
+    "GET /model/registry unauth-enumerates every model ID currently loaded in the operator's model manager — discloses workspace/project naming and which fine-tuned (possibly proprietary) checkpoints are active",
+    "POST /model/add lets an unauth caller force-load an arbitrary registered model ID into server memory — cache-eviction DoS against MAX_ACTIVE_MODELS (default 8) and a precursor to compute-theft chains",
+    "POST /infer/object_detection, /infer/instance_segmentation, /infer/semantic_segmentation, /infer/classification, /infer/keypoints_detection, /infer/lmm accept unauth POST on self-hosted deployments — free GPU/CPU inference compute theft against the operator's hardware",
+    "POST /workflows/run and /{workspace_name}/workflows/{workflow_id} execute the operator's full Workflow graph unauth — chains into any block-level primitive the workflow exposes (external image-URL fetch, downstream model calls)",
+    "Official quickstart docs show --net=host as a first-class example (`docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest`), collapsing container network isolation entirely",
+    "ENABLE_HTTPS defaults False — plaintext HTTP is the documented default; TLS is opt-in and requires operator-supplied cert/key paths",
+    "ALLOW_ORIGINS (CORS) defaults to wildcard '*' — any origin can drive the HTTP API from a victim operator's browser session",
+    "SSRF (CWE-918, Snyk SNYK-PYTHON-INFERENCE-7660503): pre-0.14.0 inference processed a malicious numpy-array-source filename not bound to an FQDN, letting a crafted image-source parameter make the server issue attacker-directed outbound requests (cloud IMDS pivot potential) — confirm patched status via the version string in GET /info"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Roboflow Inference Server\"",
+      "http.html:\"Roboflow Inference Server\"",
+      "port:9001 \"model/registry\"",
+      "http.html:\"/infer/object_detection\""
+    ],
+    "active_probe": {
+      "path": "/info",
+      "method": "GET",
+      "response_markers": [
+        "\"name\":\"Roboflow Inference Server\"",
+        "\"uuid\""
+      ],
+      "false_positive_check": "Response must be JSON with top-level name field exactly \"Roboflow Inference Server\" AND a uuid field (server's GLOBAL_INFERENCE_SERVER_ID) present in the same document — generic FastAPI apps or unrelated CV wrappers (see yolo-mmdet-inference) will not match both. Cross-check against GET /model/registry returning a JSON model-descriptions object as a second conjunctive signal when /info is firewalled off but the app root is not."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Roboflow Inference Server\"",
+    "strict": "http.title:\"Roboflow Inference Server\" port:9001",
+    "version": "http.title:\"Roboflow Inference Server\" \"version\""
+  },
+  "deployment_tells": [
+    "Default port 9001 is consistent across CPU, GPU, and Jetson image tags (roboflow/roboflow-inference-server-cpu, -gpu, -jetson-*) and across the `inference server start` CLI wrapper — a stronger single-product signal than the fragmented yolo-mmdet-inference class",
+    "Edge/embedded deployment context is explicit in the product design (Jetson, Raspberry Pi, 'any computer or edge device into a command center for your computer vision projects') — expect exposure on industrial camera networks, robotics fleets, and on-prem retail/warehouse vision rigs, not just cloud GPU rental proxies",
+    "`inference server start` CLI auto-detects hardware and pulls the matching image, so operator-visible install_tell strings vary by target (cpu/gpu/jetson) even though the runtime port and route surface are identical",
+    "MODEL_CACHE_DIR defaults to /tmp/cache — ephemeral by default; a persistent bind-mount (`-v /var/lib/roboflow/cache:/tmp/cache`) is an explicit operator opt-in visible in docker inspect and marks a longer-lived, higher-value target",
+    "SECURE_GATEWAY env var exists for air-gapped enterprise deployments routing through a Roboflow Secure Gateway — its absence on an internet-facing instance confirms a non-air-gapped, directly-exposed self-hosted install"
+  ],
+  "pivot_paths": [
+    "GET /info → server name, version string, GLOBAL_INFERENCE_SERVER_ID (identity + patch-level fingerprint for the SSRF CVE)",
+    "GET /docs, /redoc, /openapi.json → full route + request/response schema disclosure with zero auth",
+    "GET /model/registry → enumerate every loaded model ID (workspace/project name + fine-tuned checkpoint disclosure)",
+    "POST /model/add → force-load an arbitrary registered model into memory (cache-eviction DoS, compute-theft precursor)",
+    "POST /infer/object_detection|instance_segmentation|semantic_segmentation|classification|keypoints_detection → unauth GPU/CPU inference compute theft",
+    "POST /infer/lmm(/{model_id}) → unauth large-multimodal-model inference compute theft (higher compute cost per call than classic CV heads)",
+    "POST /workflows/run, /{workspace_name}/workflows/{workflow_id} → execute operator-defined Workflow graphs unauth, chaining into any block the workflow wires up including external image-URL fetch (SSRF surface)",
+    "GET /workflows/blocks/describe → enumerate installed/available Workflow block catalog for attack-surface recon before triggering a run",
+    "GET /device/stats, /metrics → hardware utilization and Prometheus-style metrics disclosure"
+  ],
+  "vulnerabilities": [
+    "SNYK-PYTHON-INFERENCE-7660503 (CWE-918, SSRF, CVSS 8.7 high, no CVE ID assigned) — inference <0.14.0 processed a malicious numpy-source filename not bound to an FQDN, enabling server-side request forgery; fixed in inference >=0.14.0, confirm patch status via GET /info version string",
+    "GitHub issue roboflow/inference#1913 — aiohttp transitive dependency carried 9 known upstream CVEs into inference-sdk consumers prior to pinning aiohttp>=3.13.3; supply-chain patch-hygiene signal, not a standalone RCE in the server itself"
+  ],
+  "sources": [
+    "https://github.com/roboflow/inference",
+    "https://github.com/roboflow/inference/blob/main/README.md",
+    "https://github.com/roboflow/inference/blob/main/inference_cli/README.md",
+    "https://raw.githubusercontent.com/roboflow/inference/main/inference/core/interfaces/http/http_api.py",
+    "https://inference.roboflow.com/quickstart/docker/",
+    "https://inference.roboflow.com/quickstart/docker_configuration_options/",
+    "https://inference.roboflow.com/quickstart/configure_api_key/",
+    "https://inference.roboflow.com/api/",
+    "https://inference.roboflow.com/start/overview/",
+    "https://blog.roboflow.com/updated-inference-server/",
+    "https://blog.roboflow.com/inference-cli/",
+    "https://blog.roboflow.com/open-source-inference-server/",
+    "https://security.snyk.io/vuln/SNYK-PYTHON-INFERENCE-7660503",
+    "https://github.com/roboflow/inference/issues/1913"
+  ]
+}

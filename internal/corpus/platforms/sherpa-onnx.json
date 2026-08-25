@@ -1,0 +1,78 @@
+{
+  "name": "sherpa-onnx WebSocket Server",
+  "slug": "sherpa-onnx",
+  "category": "voice-tts-conversational",
+  "description": "k2-fsa/sherpa-onnx — the Next-gen Kaldi streaming/offline ASR (and TTS) runtime on onnxruntime, exposed over the network by its WebSocket servers. Two deployment shapes share default port 6006: (a) the C++ binaries sherpa-onnx-online-websocket-server / sherpa-onnx-offline-websocket-server, which are RAW WebSocket listeners with no HTTP body; and (b) the Python servers (python-api-examples streaming_server.py / non_streaming_server.py) which ALSO serve a bundled web UI over HTTP on the same port, whose page carries the literal <title>Next-gen Kaldi demo</title>. That title is the only reliable HTML-body signal, and it exists only for the Python-server variant. No authentication.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in either the C++ or Python WebSocket servers. --port defaults to 6006 and the server binds all interfaces; there is no auth flag, token, or credential check — any client may open the WebSocket, stream audio, and receive transcripts. The Python variant additionally exposes the static web UI (mic/record/upload demo) unauthenticated. TLS is optional and off by default (a generate-certificate.py helper exists for wss but is opt-in), so most exposed instances are plaintext ws://.",
+  "default_ports": [
+    6006
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:6006 http.html:\"Next-gen Kaldi demo\"",
+      "rationale": "The Python server's bundled web UI page has <title>Next-gen Kaldi demo</title> and body text. This is the vendor-unique HTML-body signal and is Shodan-usable — BUT only the Python-server deployments serve it; the C++ sherpa-onnx-*-websocket-server binaries are raw WS with no HTTP body and will NOT match (see version-tier note on the gap). FP CAVEAT: 'Next-gen Kaldi' / 'Next-gen Kaldi demo' is the k2-fsa umbrella brand and the SAME title appears on sherpa TTS web demos and other k2-fsa demos; mitigate by co-requiring an ASR term (see strict tier) or port:6006."
+    },
+    {
+      "tier": "basic",
+      "query": "port:6006 http.html:\"k2-fsa/sherpa-onnx\"",
+      "rationale": "The web UI links to https://github.com/k2-fsa/sherpa-onnx in the page body — a repo-attribution string that pins the platform to sherpa-onnx specifically (vs generic Next-gen Kaldi TTS demos). Present on the Python-server web UI only."
+    },
+    {
+      "tier": "strict",
+      "query": "port:6006 http.html:\"Next-gen Kaldi demo\" http.html:\"streaming\"",
+      "rationale": "Title plus an ASR-specific term ('streaming' / 'recognition' / 'ASR' appear in the streaming_record.html UI) — separates the ASR WebSocket server from sherpa TTS demos that reuse the 'Next-gen Kaldi demo' title. Mitigates the shared-brand FP. High precision for the Python streaming-server footprint."
+    },
+    {
+      "tier": "strict",
+      "query": "port:6006 http.html:\"sherpa-onnx\" http.html:\"record\"",
+      "rationale": "sherpa-onnx name plus the record/upload UI controls (streaming_record.html / offline_record.html / upload.html) — confirms a live sherpa-onnx web UI rather than a doc mirror. For the C++ raw-WS binaries this will 0-match; those require active WS confirmation."
+    },
+    {
+      "tier": "version",
+      "query": "port:6006 http.html:\"Next-gen Kaldi demo\"",
+      "rationale": "VERSION SIGNAL GAP. sherpa-onnx servers do not disclose a build version in HTTP headers or the web UI. No passive version string exists; the sherpa-onnx-version binary reports it locally only. Additionally the C++ websocket servers are a full passive-fingerprint gap (raw WS, no body) and must be confirmed by an active WebSocket handshake — route those to Censys (port 6006 + TLS/ALPN) + active probe, not Shodan http.html."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 6006,
+    "http_path": "/",
+    "title_contains": "Next-gen Kaldi demo",
+    "response_body_contains": [
+      "Next-gen Kaldi demo",
+      "k2-fsa/sherpa-onnx",
+      "sherpa-onnx"
+    ],
+    "http_header": ""
+  },
+  "api_paths": [
+    "GET / (Python server web UI: streaming_record.html / offline_record.html / upload.html)",
+    "WS / (raw WebSocket audio stream; server binaries sherpa-onnx-online-websocket-server / sherpa-onnx-offline-websocket-server)",
+    "GET /streaming_record.html",
+    "GET /offline_record.html",
+    "GET /upload.html"
+  ],
+  "known_vulns": [
+    "No auth on the WebSocket or the web UI — unauthenticated audio streaming and transcription for any client (compute theft + audio PII)",
+    "Plaintext ws:// by default — TLS/wss is opt-in (generate-certificate.py), so streamed audio and transcripts traverse the network unencrypted, exposing PII to on-path capture",
+    "Static web UI served unauthenticated exposes an interactive mic/record/upload attack console to anyone",
+    "No rate limiting / stream-size cap — long or concurrent streams exhaust CPU/threads (DoS)",
+    "Passive-fingerprint gap on the C++ binaries (raw WS, no HTTP body) causes systematic under-inventory of exposed instances by operators and scanners alike"
+  ],
+  "default_creds": [],
+  "risk_notes": "Attack vectors: (1) Compute theft + audio PII — an open 6006 endpoint is free streaming/offline ASR; any audio streamed in is transcribed with no auth or logging. (2) Plaintext transport — default ws:// leaks both the audio and the transcript to any on-path observer, a direct confidentiality failure for medical/legal/call audio. (3) The unauthenticated web UI hands an attacker a ready-made recording/upload console. (4) Split-fingerprint discovery problem: Python-server instances are catchable via the 'Next-gen Kaldi demo' title, but the C++ websocket-server binaries are invisible to Shodan HTML search and must be found by active WS probing / Censys — so the true exposed population is undercounted. sherpa-onnx is embedded-friendly (Pi, RISC-V, Android, x86), so listeners appear on edge devices far from centralized security review.",
+  "deployment_notes": "Two server shapes on default port 6006: C++ prebuilt binaries sherpa-onnx-online-websocket-server (streaming) and sherpa-onnx-offline-websocket-server (batch) — raw WebSocket, no web page; and the Python examples streaming_server.py / non_streaming_server.py which serve the python-api-examples/web assets (index.html title 'Next-gen Kaldi demo', plus streaming_record.html / offline_record.html / upload.html) over HTTP on the same 6006 port and handle the WS upgrade. TLS/wss via generate-certificate.py is opt-in; default is plaintext. Runs CPU or GPU (onnxruntime providers), and targets embedded/edge (Raspberry Pi, RISC-V, NPUs) as well as x86_64 servers — broad, decentralized exposure. Distinct from the other Whisper-based platforms: this is the Next-gen Kaldi / k2-fsa lineage (zipformer/paraformer/sense-voice/whisper-via-onnx models), not a FastAPI whisper wrapper.",
+  "docker_images": [],
+  "github_repos": [
+    "k2-fsa/sherpa-onnx",
+    "k2-fsa/sherpa"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

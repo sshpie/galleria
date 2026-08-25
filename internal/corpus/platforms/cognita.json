@@ -1,0 +1,137 @@
+{
+  "platform": "cognita",
+  "display_name": "Cognita",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    5001,
+    8000,
+    6333,
+    6334,
+    7997,
+    9500,
+    11434,
+    5432
+  ],
+  "api_paths": [
+    "/v1/internal/upload-to-local-directory",
+    "/v1/internal/upload-to-data-directory",
+    "/v1/internal/models",
+    "/v1/internal/get_signed_url",
+    "/v1/collections",
+    "/v1/data_source",
+    "/v1/components",
+    "/v1/apps",
+    "/docs",
+    "/openapi.json"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "LOCAL",
+    "ALLOW_CORS",
+    "CORS_CONFIG",
+    "TFY_API_KEY",
+    "TFY_HOST",
+    "OPENAI_API_KEY",
+    "BRAVE_API_KEY",
+    "POSTGRES_PASSWORD",
+    "INFINITY_API_KEY",
+    "UNSTRUCTURED_IO_API_KEY",
+    "DEBUG_MODE",
+    "METADATA_STORE_CONFIG",
+    "VECTOR_DB_CONFIG"
+  ],
+  "default_creds": [
+    {
+      "user": "postgres",
+      "pass": "test",
+      "context": "compose.env POSTGRES_PASSWORD=test on cognita-db (postgres:13). Only relevant if :5432 is also exposed; not a web-UI gate. DB holds collection/data-source metadata."
+    },
+    {
+      "user": "(none)",
+      "pass": "test",
+      "context": "INFINITY_API_KEY='test' and UNSTRUCTURED_IO_API_KEY='test' are placeholder service keys in compose.env; neither protects the Cognita UI or REST API."
+    }
+  ],
+  "install_tell": "docker-compose --env-file compose.env up   (optional: --profile ollama --profile infinity; first: cp models_config.sample.yaml models_config.yaml)",
+  "misconfig_patterns": [
+    "LOCAL=true shipped in compose.env enables the dangerous local-upload endpoint by default",
+    "uvicorn started with --reload in the backend Dockerfile makes any backend file write auto-execute (turns arbitrary file write into RCE)",
+    "CORS allow_origins=[\"*\"] + allow_credentials=True (the deployed compose config) — wildcard credentialed CORS",
+    "No authentication layer at all on UI (:5001) or REST API (:8000)",
+    "Qdrant (:6333/:6334), Ollama (:11434, OLLAMA_HOST=0.0.0.0), Infinity (:7997), unstructured-io (:9500) all bound to 0.0.0.0 with no auth in the same stack",
+    "Postgres password is the literal string 'test'"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"TrueFoundry – Supercharge your Machine Learning Teams\"",
+      "http.html:\"VITE_QA_FOUNDRY_URL\"",
+      "http.html:\"tf-modal-root\"",
+      "http.html:\"/v1/internal/upload-to-local-directory\""
+    ],
+    "active_probe": {
+      "path": "/openapi.json",
+      "method": "GET",
+      "response_markers": [
+        "/v1/internal/upload-to-local-directory",
+        "/v1/collections",
+        "/v1/data_source",
+        "/v1/components",
+        "rag_apps",
+        "upload-to-data-directory",
+        "get_signed_url"
+      ],
+      "false_positive_check": "The frontend HTML <title> is \"TrueFoundry – Supercharge your Machine Learning Teams\" and the favicon/theme-color (#7C20F9 purple) are shared with the TrueFoundry commercial SaaS portal — title/favicon ALONE collide with the hosted TrueFoundry product and marketing site. To pin Cognita specifically (the self-hosted OSS RAG framework), require a Cognita-unique BACKEND marker: GET /openapi.json (or /docs) on the :8000 backend MUST list the route `/v1/internal/upload-to-local-directory` AND `/v1/collections` — these vendor-unique FastAPI routes exist only in Cognita, not in the TrueFoundry SaaS control plane. Frontend-only match on :5001 with the title is a CANDIDATE; OpenAPI route confirmation on :8000 is the CONFIRMED tell. Also note the frontend build var `VITE_QA_FOUNDRY_URL`/`tf-modal-root` in page source distinguishes the self-hosted Cognita UI from the SaaS marketing page."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"TrueFoundry – Supercharge your Machine Learning Teams\"",
+    "strict": "http.html:\"VITE_QA_FOUNDRY_URL\" http.html:\"tf-modal-root\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Frontend on :5001 with title 'TrueFoundry – Supercharge your Machine Learning Teams' and theme-color #7C20F9",
+    "Backend FastAPI on :8000 exposing /docs and /openapi.json with /v1/internal/* + /v1/collections routes",
+    "Co-located Qdrant on :6333/:6334 (qdrant/qdrant:v1.8.4) on the cognita-docker network",
+    "Optional Ollama on :11434 and Infinity reranker on :7997 when --profile ollama/infinity used",
+    "Postgres 'cognita-config' DB (postgres:13) on :5432",
+    "Page source contains React entrypoint /src/index.tsx, div ids tf-modal-root and promise-loading, build var VITE_QA_FOUNDRY_URL"
+  ],
+  "pivot_paths": [
+    "GET /openapi.json or /docs (unauth) -> enumerate full API surface and confirm Cognita vs TrueFoundry-SaaS false positive",
+    "GET /v1/collections (unauth) -> list RAG collections, their embedder configs and business context (read-only metadata)",
+    "GET /v1/data_source (unauth) -> enumerate configured data sources (S3 buckets, local paths, web URLs) revealing where the corpus comes from",
+    "GET /v1/components -> enumerate available parsers/embedders/vector-db providers wired in",
+    "Query a collection via the RAG /answer controller (read-only) to confirm a live LLM gateway and infer the upstream provider",
+    "Qdrant :6333 GET /collections and /collections/{name} (unauth) -> read vector store inventory / point counts without touching Cognita",
+    "NOTE: CVE-2025-27519 file-write -> RCE -> env-var (LLM API key) read is an ACTIVE write/exploit, OUT of read-only OSINT scope; list as known impact, do not execute"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-27519 (GHSL-2024-194) — Path traversal / arbitrary file write at POST /v1/internal/upload-to-local-directory: user-controlled file.filename is os.path.join'd to folder_path without sanitization, enabling overwrite of /app/backend/__init__.py; with uvicorn auto-reload (default Docker config) this yields unauthenticated RCE in the backend container. Enabled when LOCAL=true (compose.env default). CVSS 9.3. Affected: all versions up to fix commit a78bd06 (PR #393); fixed only on main, repo archived 2026-03-13.",
+    "CVE-2025-27518 (GHSL-2024-193) — CORS misconfiguration: backend sets allow_origins=[\"*\"] with allow_credentials=True, letting any attacker-controlled website issue cross-site authenticated requests to the API. Chains with CVE-2025-27519 for ZERO-CLICK RCE (victim merely visits an attacker page while a Cognita instance is reachable). Affected: same range as above; fixed in PR #393.",
+    "Public PoC available: github.com/Diabl0xE/CVE-2025-27519 (file-write -> __init__.py overwrite -> reload RCE)."
+  ],
+  "auth_evidence": "Default quickstart is `docker-compose --env-file compose.env up`, which exposes cognita-frontend on :5001 and cognita-backend (FastAPI/uvicorn) on :8000 with ZERO application-level authentication. PRIMARY SOURCES: (1) backend/settings.py defines no ENABLE_AUTH / JWT_SECRET / ADMIN_PASSWORD / API_KEY field — only external-service keys (TFY_API_KEY, BRAVE_API_KEY, OPENAI_API_KEY, UNSTRUCTURED_IO_API_KEY) and a CORS toggle (ALLOW_CORS default False, but the deployed compose enables a wildcard CORS config). (2) backend/server/app.py includes all routers (collection/components/data_source/rag_apps/internal + dynamic query controllers) with NO Depends(auth)/Security/middleware token check anywhere — only a health endpoint and exception handlers. (3) backend/server/routers/internal.py routes (/v1/internal/*) carry no auth dependency; the only gate on upload-to-local-directory is `if settings.LOCAL` — and compose.env ships `LOCAL=true`. (4) compose.env ships only test/infra creds (POSTGRES_USER=postgres / POSTGRES_PASSWORD=test, INFINITY_API_KEY='test', UNSTRUCTURED_IO_API_KEY='test') — none gate the web UI or REST API. A user who runs the documented quickstart and exposes :8000 or :5001 to the internet has a fully unauthenticated UI + API.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys: OPENAI_API_KEY, BRAVE_API_KEY, TFY_API_KEY, INFINITY_API_KEY held in backend env/process — recoverable via the RCE chain (CVE-2025-27519) since RCE runs in the backend container that holds these env vars",
+    "Ingested RAG documents / source files: anything uploaded to LOCAL_DATA_DIRECTORY or indexed from configured data sources (local disk, S3, web) — frequently internal/PII-bearing corpora",
+    "Qdrant vector store contents (port 6333, unauth by default in this stack): embedded chunks of the ingested documents, recoverable as near-plaintext",
+    "RAG collection + data-source definitions (/v1/collections, /v1/data_source): reveal what document corpora exist, their sources, embedding models, and business context",
+    "models_config.yaml model-provider routing config (which LLM/embedding gateways and providers are wired in)",
+    "Postgres 'cognita-config' metadata DB (collection metadata) if :5432 also exposed with POSTGRES_PASSWORD=test"
+  ],
+  "sources": [
+    "https://github.com/truefoundry/cognita",
+    "https://github.com/truefoundry/cognita/blob/main/docker-compose.yaml",
+    "https://github.com/truefoundry/cognita/blob/main/compose.env",
+    "https://github.com/truefoundry/cognita/blob/main/README.md",
+    "https://securitylab.github.com/advisories/GHSL-2024-193_GHSL-2024-194_Cognita/",
+    "https://feedly.com/cve/CVE-2025-27519",
+    "https://www.sentinelone.com/vulnerability-database/cve-2025-27519/",
+    "https://cvefeed.io/vuln/detail/CVE-2025-27519",
+    "https://github.com/truefoundry/cognita/pull/393",
+    "https://github.com/Diabl0xE/CVE-2025-27519",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

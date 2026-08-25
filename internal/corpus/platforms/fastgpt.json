@@ -1,0 +1,135 @@
+{
+  "platform": "fastgpt",
+  "display_name": "FastGPT",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000,
+    3003,
+    3005,
+    9000,
+    9001
+  ],
+  "api_paths": [
+    "/api/common/system/getInitData",
+    "/api/support/user/account/loginByPassword",
+    "/api/v1/chat/completions",
+    "/api/v2/chat/completions",
+    "/api/core/chat/team/init",
+    "/api/core/app/httpTools/runTool",
+    "/api/support/user/account/updatePasswordByOld"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [
+    "DEFAULT_ROOT_PSW",
+    "ROOT_KEY",
+    "TOKEN_KEY",
+    "FILE_TOKEN_KEY",
+    "AES256_SECRET_KEY",
+    "PLUGIN_TOKEN",
+    "CODE_SANDBOX_TOKEN",
+    "AIPROXY_API_TOKEN",
+    "MONGODB_URI",
+    "REDIS_URL",
+    "PASSWORD_LOGIN_LOCK_SECONDS"
+  ],
+  "default_creds": [
+    {
+      "user": "root",
+      "pass": "1234",
+      "context": "Web UI + API admin login. Set by DEFAULT_ROOT_PSW='1234' in the default docker-compose; force-reset to this value on EVERY container restart unless the env var is changed. Login at http://HOST:3000."
+    },
+    {
+      "user": "myusername",
+      "pass": "mypassword",
+      "context": "MongoDB root (MONGO_INITDB_ROOT_USERNAME/PASSWORD) — internal 'data' network by default, not port-mapped, but reachable via SSRF (CVE-2026-34162)."
+    },
+    {
+      "user": "minioadmin",
+      "pass": "minioadmin",
+      "context": "MinIO object store (MINIO_ROOT_USER/PASSWORD). Ports 9000 (S3) and 9001 (console) ARE host-mapped by default in docker-compose.pg.yml."
+    },
+    {
+      "user": "ROOT_KEY",
+      "pass": "fastgpt-xxx",
+      "context": "Highest-privilege system API key (ROOT_KEY env, anchor x-system-key='fastgpt-xxx'). Hardcoded default in the shipped compose."
+    }
+  ],
+  "install_tell": "bash <(curl -fsSL https://doc.fastgpt.cn/deploy/install.sh)   # interactive: picks vector DB, then `docker compose up -d`. Manual path: download docker-compose.pg.yml (pgvector default) + config.json, then `docker compose up -d`. Access http://localhost:3000, login root/1234.",
+  "misconfig_patterns": [
+    "Operator runs quickstart and exposes :3000 without changing DEFAULT_ROOT_PSW -> root/1234 works internet-wide",
+    "Shared secrets left at shipped defaults (TOKEN_KEY=fastgpt, AES256_SECRET_KEY=fastgptsecret, FILE_TOKEN_KEY=filetokenkey, ROOT_KEY=fastgpt-xxx) -> forgeable session/file tokens and predictable crypto",
+    "MinIO 9000/9001 host-mapped with minioadmin/minioadmin -> direct object-store access independent of app auth",
+    "Running a pre-4.14.9.5 image -> /api/support/user/account/loginByPassword NoSQL injection ({\"password\":{\"$ne\":\"\"}}) yields unauth admin without even needing the default password",
+    "Pre-4.14.10.4 -> cross-team app execution via foreign appId on /api/v1/chat/completions"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.favicon.hash for projects/app/public/favicon.ico (15086-byte vendor icon at /favicon.ico) — compute mmh3 from the live deploy; FastGPT ships a single unique favicon across the fleet",
+      "http.html:\"/api/common/system/getInitData\" (the SPA bootstraps by calling this exact path; the string appears in the served JS/HTML)",
+      "http.title:\"FastGPT\" (weaker — operator-customizable; pair with another signal, see false_positive_check)"
+    ],
+    "active_probe": {
+      "path": "/api/common/system/getInitData",
+      "method": "GET",
+      "response_markers": [
+        "JSON response object containing a top-level \"feConfigs\" key (FastGPT-unique front-end config blob)",
+        "presence of \"modelProviders\" array of {provider,value,avatar} alongside \"aiproxyChannels\"",
+        "\"systemVersion\" string of form vX.Y.Z (e.g. v4.15.0) when token present; on unauth path feConfigs+modelProviders return without a token (catch-block fallback)",
+        "bufferId field prefixed \"unAuth_\" on the no-token response path"
+      ],
+      "false_positive_check": "Do NOT fingerprint on generic strings (\"FastGPT\" title is operator-customizable via feConfigs/systemDescription, and \"chat\"/\"AI\"/\"knowledge base\" collide with thousands of unrelated hosts). Confirm with TWO independent vendor-unique signals: (1) GET /api/common/system/getInitData returns JSON with the exact key name `feConfigs` (this object name is FastGPT-specific, not Dify/Flowise which use /console/api/setup and /api/v1/* respectively); AND (2) the login route /api/support/user/account/loginByPassword exists (404 elsewhere). Dify exposes /console/api/* and a `/console/api/setup` init flag; Flowise exposes /api/v1/ping and Bull-style routes; FastGPT's getInitData feConfigs shape + the /api/support/user/account/* tree disambiguate. Reverse-proxy / wildcard catch-all hosts that 200 every path are excluded by requiring the literal `feConfigs` JSON key in the body, not just an HTTP 200."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"/api/common/system/getInitData\"",
+    "strict": "http.title:\"FastGPT\" http.html:\"feConfigs\"",
+    "version": "http.html:\"/api/common/system/getInitData\" \"v4.1\""
+  },
+  "deployment_tells": [
+    "Default port 3000 (fastgpt-app), 3003/3005 (fastgpt-mcp-server), 9000+9001 (MinIO S3 + console, host-mapped by default)",
+    "Docker images pulled from registry.cn-hangzhou.aliyuncs.com/fastgpt/* (Alibaba Cloud Hangzhou registry) — strong China-self-host tell; container names fastgpt-app / fastgpt-mongo / fastgpt-pg / fastgpt-redis / fastgpt-minio / fastgpt-aiproxy",
+    "Bundled stack: MongoDB replica-set rs0 + pgvector (or Milvus/Zilliz/OceanBase/SeekDB/opengauss variants) + Redis + MinIO + aiproxy + code-sandbox + plugin service",
+    "Co-located MinIO console on :9001 with minioadmin/minioadmin; aiproxy on internal net with ADMIN_KEY 'token'",
+    "Chinese-language UI/docs default (doc.fastgpt.cn); README and compose comments in Simplified Chinese"
+  ],
+  "pivot_paths": [
+    "GET /api/common/system/getInitData (no token) -> read feConfigs + modelProviders + aiproxyChannels to confirm platform, version, and which LLM providers are wired without authenticating",
+    "/favicon.ico -> mmh3 favicon hash -> pivot the rest of the FastGPT fleet on Shodan/Censys",
+    "If unmodified: login root/1234 at /api/support/user/account/loginByPassword -> full admin (read-only stops here; do not exercise on third-party hosts)",
+    "MinIO console :9001 with minioadmin/minioadmin -> enumerate fastgpt-public / fastgpt-private buckets (object listing only)",
+    "Version string from getInitData/systemVersion -> map to CVE applicability (pre-4.14.9.5 = unauth NoSQL login bypass; pre-4.14.10.4 = cross-team IDOR)"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-40351 (GHSA-x8mx-2mr7-h9xg), CVSS 9.8: unauth NoSQL injection in POST /api/support/user/account/loginByPassword — MongoUser.findOne({username,password}) with no runtime type check; {\"password\":{\"$ne\":\"\"}} logs in as any user incl. root. Affected <=4.14.8.3, fixed 4.14.9.5 (Zod LoginByPasswordBodySchema added).",
+    "CVE-2026-34162 (GHSA-w36r-f268-pwrj), CVSS 9.8: UNAUTH SSRF — /api/core/app/httpTools/runTool acts as an open HTTP proxy (user-supplied URL+headers), exfiltrates configured provider API keys and reaches internal Mongo/Redis/PG/MinIO. Affected <=4.14.8.3, fixed 4.14.9.5.",
+    "CVE-2026-40352 (GHSA-422w-vrfj-72g6), CVSS 8.8: authenticated NoSQL injection in password-change (updatePasswordByOld.ts) — inject Mongo operators into oldPsw to reset password without the old one -> account takeover. Affected <=4.14.8.3, fixed 4.14.9.5.",
+    "CVE-2026-40252 (GHSA-gc8m-w37w-24hw), CVSS 5.3: IDOR/BOLA — authenticated team executes other teams' apps via foreign appId on /api/v1|v2/chat/completions and /api/core/chat/team/init (missing app.teamId===teamId check); leaks cross-tenant system prompts/workflows. Affected <=4.14.10.3, fixed 4.14.10.4.",
+    "GHSA-xpx6-xcpf-76qg: unauth SSRF in the Laf Workflow Node (missing internal-address validation)."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: document/public/deploy/docker/main/cn/docker-compose.pg.yml (the pgvector compose the quickstart install.sh pulls). The fastgpt-app service sets `DEFAULT_ROOT_PSW: *x-default-root-psw` where the anchor is `x-default-root-psw: &x-default-root-psw '1234'`, username `root`. The inline comment states root password \"重启后会强制重置该密码成环境变量值\" (force-reset to the env value on every container restart), so the login is gated but the credential is a universal, predictable default (root/1234). The file header literally warns \"建议修改账密后再运行\" (recommended to change the credentials before running), confirming it ships insecure-by-default. Posture is auth-on-default (there IS a login wall) but the effective security is near-open because the seeded credential is identical across every unmodified deploy. Additional hardcoded shared secrets in the same default file: `TOKEN_KEY: fastgpt`, `FILE_TOKEN_KEY: filetokenkey`, `AES256_SECRET_KEY: fastgptsecret`, `ROOT_KEY: 'fastgpt-xxx'`, plus DB creds myusername/mypassword (mongo+redis) and minioadmin/minioadmin (object store). Caveat lowering this below the pure auth-on-default ideal: the unauth endpoint /api/common/system/getInitData returns feConfigs+modelProviders to callers with no token (catch-block fallback in projects/app/src/pages/api/common/system/getInitData.ts), so a slice of the API answers pre-login (ui-gated-api-open behavior on that route).",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/DeepSeek/Anthropic/etc.) stored in aiproxy + model config — exfiltrable via CVE-2026-34162 unauth SSRF proxy or via root/1234 admin login",
+    "Ingested RAG knowledge-base documents and dataset collections (the customer's private corpus, frequently PII/proprietary)",
+    "Vector store contents (pgvector/Milvus embeddings of ingested docs)",
+    "Visual workflow / agent (flow) definitions = business logic, system prompts, tool wiring (cross-team readable via CVE-2026-40252 IDOR)",
+    "Conversation / chat history per app and team",
+    "System prompts and app configurations of other tenants (cross-team via BOLA)",
+    "Internal infra creds: MongoDB myusername/mypassword, Redis mypassword, MinIO minioadmin/minioadmin, aiproxy ADMIN_KEY — reachable from the SSRF proxy"
+  ],
+  "sources": [
+    "https://github.com/labring/FastGPT",
+    "https://github.com/labring/FastGPT/blob/main/document/public/deploy/docker/main/cn/docker-compose.pg.yml",
+    "https://github.com/labring/FastGPT/blob/main/projects/app/src/pages/api/common/system/getInitData.ts",
+    "https://github.com/labring/FastGPT/blob/main/projects/app/src/pages/api/support/user/account/loginByPassword.ts",
+    "https://doc.fastgpt.io/en/docs/introduction/development/docker",
+    "https://github.com/labring/FastGPT/security/advisories/GHSA-x8mx-2mr7-h9xg",
+    "https://github.com/labring/FastGPT/security/advisories/GHSA-w36r-f268-pwrj",
+    "https://github.com/labring/FastGPT/security/advisories/GHSA-422w-vrfj-72g6",
+    "https://github.com/labring/FastGPT/security/advisories/GHSA-gc8m-w37w-24hw",
+    "https://github.com/labring/FastGPT/security/advisories/GHSA-xpx6-xcpf-76qg",
+    "https://www.sentinelone.com/vulnerability-database/cve-2026-40252/",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

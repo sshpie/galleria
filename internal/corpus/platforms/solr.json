@@ -1,0 +1,60 @@
+{
+  "platform": "solr",
+  "display_name": "Apache Solr",
+  "category": "vector_feature",
+  "default_ports": [
+    8983
+  ],
+  "api_paths": [
+    "/solr/",
+    "/solr/admin/info/system",
+    "/solr/admin/collections",
+    "/solr/{collection}/schema"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "SOLR_AUTHENTICATION_OPTS"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8983:8983 solr:latest",
+  "misconfig_patterns": [
+    "No security.json — all admin and schema APIs publicly accessible",
+    "Admin UI at /solr/ fully open without credentials",
+    "DenseVectorField in schema detectable without auth (Solr 9.0+)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8983 \"Apache Solr\"",
+      "http.html:\"Apache Solr\""
+    ],
+    "active_probe": {
+      "path": "/solr/admin/info/system",
+      "method": "GET",
+      "response_markers": [
+        "\"Apache Solr\"",
+        "solr-spec-version"
+      ],
+      "false_positive_check": "response must include solr-spec-version field — uniquely identifies Solr admin API"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8983 \"Apache Solr\"",
+    "strict": "http.html:\"Apache Solr\" port:8983",
+    "version": "port:8983 \"solr-spec-version\""
+  },
+  "deployment_tells": [
+    "GET /solr/admin/info/system returns Solr version + JVM info without auth",
+    "Admin UI at /solr/ accessible in browser without credentials",
+    "GET /solr/{collection}/schema → DenseVectorField + vectorDimension reveals AI workload"
+  ],
+  "pivot_paths": [
+    "GET /solr/admin/collections → collection list without auth",
+    "GET /solr/{collection}/schema → DenseVectorField + vectorDimension for AI workload detection",
+    "GET /solr/{collection}/select?q=*:*&rows=5 → document sample without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://solr.apache.org/guide/solr/latest/query-guide/dense-vector-search.html",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

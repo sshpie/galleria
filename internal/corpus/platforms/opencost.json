@@ -1,0 +1,60 @@
+{
+  "platform": "opencost",
+  "display_name": "OpenCost",
+  "category": "cost-allocation",
+  "default_ports": [9003, 9090],
+  "api_paths": [
+    "/allocation",
+    "/allocation/compute",
+    "/assets",
+    "/cloudCost",
+    "/customCost/timeseries",
+    "/customCost/total",
+    "/healthz",
+    "/metrics",
+    "/model/allocation",
+    "/model/assets"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["ADMIN_TOKEN"],
+  "default_creds": [],
+  "install_tell": "helm install opencost opencost/opencost (CNCF; opencost-helm-chart)",
+  "misconfig_patterns": [
+    "Helm ADMIN_TOKEN unset by default -> API served unauthenticated",
+    "cost-model :9003 bare /allocation is JSON-only (Censys-only body match)",
+    "Port 9090 shared with Prometheus"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"OpenCost\" port:9090",
+      "http.title:\"OpenCost\" http.html:\"/model/\""
+    ],
+    "active_probe": {
+      "path": "/allocation?window=1d",
+      "method": "GET",
+      "response_markers": ["cpuCost", "totalCost", "cpuBreakdown", "\"code\":200"],
+      "false_positive_check": "JSON {\"code\":200,\"data\":...} with cpuCost/gpuCost/ramCost/totalCost/cpuBreakdown keys; UI title 'OpenCost — Home'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"OpenCost\"",
+    "strict": "http.title:\"OpenCost\" port:9090",
+    "version": "http.headers:\"ETag\" http.title:\"OpenCost\""
+  },
+  "deployment_tells": [
+    "dual-port 9003 (API) + 9090 (UI)",
+    "ETag response header carries UI version e.g. \"1.96.0\" (header-only, Censys)",
+    "title 'OpenCost — Home' / 'OpenCost — Cloud Costs' from React Router route meta",
+    "GET /healthz -> 200 OK (nginx static)",
+    "bare /allocation (no /model prefix) = cost-model direct = OpenCost tell"
+  ],
+  "pivot_paths": [
+    "GET /allocation -> per-namespace/workload spend -> cluster map",
+    "GET /assets -> node inventory + zones + spot/on-demand",
+    "GET /cloudCost -> cloud account rate structure"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

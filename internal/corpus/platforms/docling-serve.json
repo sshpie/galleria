@@ -1,0 +1,70 @@
+{
+  "platform": "docling-serve",
+  "display_name": "Docling Serve (IBM document parser API)",
+  "category": "document_loader",
+  "default_ports": [
+    5001
+  ],
+  "api_paths": [
+    "/v1/convert/source",
+    "/v1/chunk/source",
+    "/docs",
+    "/ui",
+    "/health",
+    "/version"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "DOCLING_API_KEY",
+    "DOCLING_SERVE_ENABLE_UI",
+    "DOCLING_SERVE_MAX_SYNC_WAIT"
+  ],
+  "default_creds": [],
+  "install_tell": "podman run -p 5001:5001 quay.io/docling-project/docling-serve",
+  "misconfig_patterns": [
+    "DOCLING_API_KEY not set by default -- conversion endpoints open to unauthenticated callers",
+    "Health and version endpoints always exempt from auth even when API key is configured",
+    "UI playground (DOCLING_SERVE_ENABLE_UI=1) exposes full document conversion surface in browser with no auth",
+    "FastAPI /docs Swagger UI endpoint accessible by default -- enumerates all routes and schema"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:5001 http.html:\"docling\"",
+      "port:5001 http.title:\"docling\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": [
+        "docling",
+        "ok",
+        "healthy"
+      ],
+      "false_positive_check": "GET /version must return JSON containing 'docling' version string; /docs must reference /v1/convert paths"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:5001 http.html:\"docling\"",
+    "strict": "port:5001 \"docling-serve\"",
+    "version": "port:5001 http.html:\"docling\" http.html:\"/v1/convert\""
+  },
+  "deployment_tells": [
+    "FastAPI app at port 5001 -- Swagger UI at /docs",
+    "Auth uses X-Api-Key header (not Authorization: Bearer) -- diagnostic tell when sniffing",
+    "POST /v1/convert/source accepts multipart document upload; returns Markdown/JSON",
+    "IBM project; often co-deployed with watsonx or LangChain RAG pipelines"
+  ],
+  "pivot_paths": [
+    "POST /v1/convert/source with arbitrary PDF -> full Markdown extraction without auth when DOCLING_API_KEY unset",
+    "GET /docs -> full API schema enumeration without auth regardless of key config",
+    "GET /version or /health -> version disclosure; version-correlate to known upstream Docling CVEs"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://github.com/docling-project/docling-serve",
+    "https://docling-project.github.io/docling/"
+  ],
+  "corpus_corrections": [
+    "2026-06-19 verify: auth env is DOCLING_SERVE_API_KEY (not DOCLING_API_KEY). /ui (Gradio) OFF by default (DOCLING_SERVE_ENABLE_UI=true gates it). FP anchor=/openapi.json convert/source. CVE-2026-24009 PyYAML RCE 8.1 via docling-core 2.21.0-2.48.3 fix 2.48.4."
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "platform": "mimir",
+  "display_name": "Grafana Mimir",
+  "category": "time_series_db",
+  "default_ports": [8080, 9095, 7946],
+  "default_port_notes": {
+    "8080": "Grafana Mimir HTTP API (default --server.http-listen-port) — query + push live UNDER the /prometheus path prefix here",
+    "9095": "Mimir gRPC (inter-component, dskit) — NOT HTTP",
+    "7946": "memberlist gossip ring (cluster membership) — NOT HTTP"
+  },
+  "api_paths": [
+    "/",
+    "/metrics",
+    "/ready",
+    "/config",
+    "/runtime_config",
+    "/services",
+    "/memberlist",
+    "/prometheus/api/v1/query",
+    "/prometheus/api/v1/query_range",
+    "/prometheus/api/v1/series",
+    "/prometheus/api/v1/labels",
+    "/prometheus/api/v1/status/buildinfo",
+    "/prometheus/config/v1/rules",
+    "/api/v1/push",
+    "/distributor/ring",
+    "/ingester/ring",
+    "/store-gateway/ring",
+    "/compactor/ring",
+    "/multitenant_alertmanager/status",
+    "/debug/pprof/"
+  ],
+  "auth_default": "X-Scope-OrgID-required (multitenancy enabled by default; tenant identity, not authentication)",
+  "auth_config_env": [
+    "-auth.multitenancy-enabled=true (DEFAULT) -> every request MUST carry X-Scope-OrgID or it is rejected with 'no org id'",
+    "-auth.multitenancy-enabled=false -> tenant forced to literal 'anonymous' (single-tenant, no real auth)",
+    "Real auth delegated to a gateway (grafana/mimir gateway, nginx, oauth2-proxy) — Mimir core only routes on the header"
+  ],
+  "default_creds": [],
+  "install_tell": "mimir -config.file=mimir.yml ; grafana/mimir:X.Y.Z ; HTTP on :8080 with /prometheus prefix",
+  "misconfig_patterns": [
+    "Query API lives UNDER /prometheus/* — a bare /api/v1/query returns 404 (Mimir-distinctive path-shape tell vs Prometheus/VM which serve /api/v1/* at root)",
+    "X-Scope-OrgID is identity, NOT a secret — anyone supplying a valid/guessed tenant ID ('anonymous','demo','1') reads that tenant's series",
+    "-auth.multitenancy-enabled=false collapses everything to tenant 'anonymous' — header-less reads return data",
+    "/config and /runtime_config return the full running config (object-store creds, per-tenant limits)",
+    "/distributor/ring, /ingester/ring, /store-gateway/ring, /compactor/ring expose ring membership + internal node IPs",
+    "/api/v1/push accepts remote-write — unauth metric injection into a named tenant",
+    "Mimir DROPPED Cortex's /distributor/all_user_stats roster route — tenant enumeration is harder than Cortex (a Mimir-vs-Cortex discriminator)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8080 http.html:\"Grafana Mimir\"",
+      "http.html:\"Mimir\" http.html:\"/prometheus\"",
+      "http.html:\"compactor/ring\" OR http.html:\"store-gateway/ring\""
+    ],
+    "active_probe": {
+      "path": "/prometheus/api/v1/status/buildinfo",
+      "method": "GET",
+      "response_markers": ["mimir", "version", "branch", "goVersion"],
+      "false_positive_check": "POSITIVE Mimir discriminator (conjunctive): (1) query API is served at /prometheus/api/v1/* — a bare /api/v1/query 404s while /prometheus/api/v1/query works; Prometheus and VM serve /api/v1/* at ROOT, so the 404-at-root + 200-under-/prometheus shape is Mimir/GEM-unique among the family. (2) A header-less request to /prometheus/api/v1/query returns the 'no org id' error (SHARED with Cortex — disambiguate: Mimir has NO /distributor/all_user_stats; Mimir exposes /store-gateway/ring + /compactor/ring + /multitenant_alertmanager/status which Cortex's older route set lacks). buildinfo: real Mimir returns goVersion (it is built on the Prometheus codebase); the differentiator from Prometheus is the /prometheus path prefix + ring routes + cortex_/mimir_ /metrics, NOT the buildinfo shape."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8080 http.html:\"Grafana Mimir\"",
+    "strict": "http.html:\"Mimir\" http.html:\"store-gateway/ring\"",
+    "version": "http.html:\"Grafana Mimir\" http.html:\"compactor/ring\"",
+    "no_org_id": "(Censys — 'no org id' is a non-200 body the Shodan web UI under-indexes; route the X-Scope-OrgID-missing tell to Censys http body / header search)"
+  },
+  "deployment_tells": [
+    "Query API under /prometheus/* (and rules under /prometheus/config/v1/rules) — the path-prefix shift is the headline Mimir tell",
+    "Ring admin routes for ALL dskit components: /distributor/ring, /ingester/ring, /store-gateway/ring, /compactor/ring — Mimir (and GEM) expose the full set",
+    "/multitenant_alertmanager/status is Mimir-specific (Cortex names it differently / older)",
+    "/memberlist gossip status page",
+    "/metrics exposes cortex_* AND mimir_* internal metrics (Mimir kept the cortex_ prefix on many metrics for back-compat — a fingerprint subtlety)"
+  ],
+  "pivot_paths": [
+    "GET /prometheus/api/v1/query?query=up with a guessed X-Scope-OrgID -> that tenant's target inventory (read surface)",
+    "GET /config + /runtime_config -> object-store credentials + per-tenant limits + override list (tenant IDs leak here even without all_user_stats)",
+    "GET /ingester/ring + /store-gateway/ring -> ring node membership + internal IPs -> backend topology",
+    "GET /multitenant_alertmanager/status -> per-tenant Alertmanager config presence",
+    "POST /api/v1/push with X-Scope-OrgID -> unauth metric injection (write surface — SEPARATE severity)"
+  ],
+  "vulnerabilities": [
+    "Design choice (NOT a CVE): X-Scope-OrgID is identity not credential; tenant isolation depends on an upstream gateway operators frequently omit",
+    "CVE-2024-24789, CVE-2025-22870, CVE-2025-22871, CVE-2025-61727, CVE-2025-61729 against grafana-mimir images are Go-stdlib/dependency-class (resolved by Go version bumps in 2.16.x/2.17.x), NOT Mimir application-logic vulns",
+    "Mimir 3.0 (Nov 2025) shipped a redesigned architecture — verify port/path set against the running major version"
+  ],
+  "auth_default_thesis": "TENANT-IDENTITY-DEFAULT (multitenancy ON by default). Like Cortex, a bare /api/v1/query (here /prometheus/api/v1/query) without X-Scope-OrgID is rejected, so a naive dork reads as 'protected.' But the header is identity, not a secret: -auth.multitenancy-enabled=false -> 'anonymous' single-tenant collapse, and guessable org IDs read real data. Mimir is HARDER to enumerate than Cortex (no all_user_stats), so the tenant roster leaks via /config/runtime_config instead. The auth-on-default thesis must be scored at the tenant-guess + config-leak layer, not the bare-query 401, for this platform.",
+  "research_questions": [
+    "What share of exposed Mimir run -auth.multitenancy-enabled=false ('anonymous' -> header-less read)?",
+    "Do guessable org IDs (anonymous/demo/1) return real series on multitenancy-enabled hosts?",
+    "How often do /config + /runtime_config leak object-store credentials and the tenant override roster?",
+    "Does the /prometheus-prefix 404-at-root shape cleanly separate Mimir from Prometheus/VM at population scale?",
+    "Mimir 3.0 vs 2.x: did the redesign move ports/paths enough to break the 2.x fingerprint?"
+  ],
+  "sources": [
+    "[CANDIDATE —  Squad-D disambiguation brief 2026-06-19; survey pending]",
+    "grafana.com/docs/mimir/latest/manage/secure/authentication-and-authorization/ (multitenancy-enabled default, X-Scope-OrgID, 'anonymous')",
+    "grafana.com/docs/mimir/latest/references/http-api/ (/prometheus prefix, ring routes, push)",
+    "github.com/grafana/mimir/discussions/2322 + issue/2310 ('no org id' error)",
+    "infoq.com/news/2025/11/grafana-mimir-3 (Mimir 3.0 redesigned architecture, Nov 2025)"
+  ]
+}

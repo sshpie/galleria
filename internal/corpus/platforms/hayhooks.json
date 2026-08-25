@@ -1,0 +1,110 @@
+{
+  "platform": "hayhooks",
+  "display_name": "Hayhooks (Haystack)",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    1416,
+    1417
+  ],
+  "api_paths": [
+    "/status",
+    "/status/{pipeline_name}",
+    "/deploy-yaml",
+    "/deploy_files",
+    "/draw/{pipeline_name}",
+    "/undeploy/{pipeline_name}",
+    "/{pipeline_name}/run",
+    "/docs",
+    "/openapi.json",
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/dashboard"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "HAYHOOKS_HOST",
+    "HAYHOOKS_PORT",
+    "HAYHOOKS_MCP_PORT",
+    "HAYHOOKS_CORS_ALLOW_ORIGINS",
+    "HAYHOOKS_DISABLE_SSL",
+    "HAYHOOKS_SHOW_TRACEBACKS",
+    "HAYHOOKS_PIPELINES_DIR",
+    "WEBUI_AUTH"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install hayhooks && hayhooks run   (Docker: docker compose up from deepset-ai/hayhooks compose.yml, which runs `hayhooks run --host 0.0.0.0`)",
+  "misconfig_patterns": [
+    "Exposing the documented compose.yml port mapping 1416:1416 directly to the internet (binds 0.0.0.0, no reverse-proxy auth)",
+    "HAYHOOKS_CORS_ALLOW_ORIGINS=[\"*\"] left at compose default -> any web origin can call the API from a victim browser",
+    "HAYHOOKS_SHOW_TRACEBACKS=true (compose default) in production -> secret/stack-trace disclosure",
+    "Open WebUI front-end run with WEBUI_AUTH=false (deepset compose default) exposed publicly",
+    "Relying on the pip default host=localhost assumption while actually deploying via the Docker image, which overrides to 0.0.0.0"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Hayhooks\"",
+      "http.title:\"Hayhooks\"",
+      "http.html:\"status_all\" http.html:\"status_pipeline\""
+    ],
+    "active_probe": {
+      "path": "/status",
+      "method": "GET",
+      "response_markers": [
+        "{\"status\":\"Up!\"",
+        "\"pipelines\":[",
+        "operationId \"status_all\" in /openapi.json",
+        "operationId \"pipeline_deploy\" / \"yaml_pipeline_deploy\" in /openapi.json",
+        "FastAPI /docs title containing Hayhooks"
+      ],
+      "false_positive_check": "`{\"status\":\"Up!\"}` alone is generic (many health endpoints return Up/OK). Disambiguate by requiring the Hayhooks-unique pairing: the `/status` JSON must contain BOTH the `\"status\"` string AND a top-level `\"pipelines\"` array, OR fetch `/openapi.json` and confirm the vendor-unique operationIds `status_all`, `status_pipeline`, `pipeline_deploy`, `yaml_pipeline_deploy`, `draw` and the `/deploy_files` + `/deploy-yaml` paths. Port 1416/1417 + FastAPI `/docs` is corroborating but not sufficient alone (1416 is not registered/common, but any FastAPI app can answer /docs). Do not match on the word \"pipeline\" or \"chat\" generically."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"Hayhooks\" \"status_all\"",
+    "strict": "http.html:\"status_all\" http.html:\"yaml_pipeline_deploy\" port:1416",
+    "version": "http.html:\"Hayhooks\" http.html:\"status_all\" port:1416,1417"
+  },
+  "deployment_tells": [
+    "Listening on TCP 1416 (REST) and 1417 (MCP) - 1416 is a vendor-distinctive port pair",
+    "FastAPI /docs + /openapi.json present with operationIds status_all/pipeline_deploy/yaml_pipeline_deploy",
+    "GET /status returns {\"status\":\"Up!\",\"pipelines\":[...]}",
+    "Container CMD `hayhooks run --host 0.0.0.0`; uvicorn banner 'Uvicorn running on http://0.0.0.0:1416'",
+    "Often co-deployed with Open WebUI on host port 3000 (WEBUI_AUTH=false) pointed at OPENAI_API_BASE_URL=http://hayhooks:1416",
+    "CORS Access-Control-Allow-Origin: * header (compose default)"
+  ],
+  "pivot_paths": [
+    "GET /status -> enumerate deployed pipeline names; then GET /status/{name} and GET /draw/{name} to read each pipeline's component graph / business logic (read-only)",
+    "GET /openapi.json + /docs -> map every deployed /{pipeline}/run route and its expected inputs without prior knowledge",
+    "GET /{pipeline}/run or POST /v1/chat/completions -> exercise the RAG pipeline to surface ingested-document content and the backing vector store via normal query path (read-only)",
+    "Trigger an error (malformed run body) -> with HAYHOOKS_SHOW_TRACEBACKS=true read stack traces that can leak env paths and secrets (read-only observation)",
+    "If co-located Open WebUI on :3000 with WEBUI_AUTH=false -> unauth admin of the chat UI and its model/connection config (separate component, read-only enumeration)"
+  ],
+  "vulnerabilities": [
+    "No CVE/GHSA published for Hayhooks as of 2026-06-12 (deepset-ai/hayhooks security advisories page: 'There aren't any published security advisories').",
+    "Design-level unauth RCE class (no CVE): POST /deploy_files and POST /deploy-yaml accept and load arbitrary pipeline_wrapper.py Python / YAML over HTTP with no authentication in any shipped version; affected: all versions (no auth feature exists in settings.py).",
+    "Design-level info-leak: compose default HAYHOOKS_SHOW_TRACEBACKS=true returns full stack traces (potential secret/path disclosure) to unauthenticated callers; affected: all versions when run via the official compose.yml."
+  ],
+  "auth_evidence": "Primary source: deepset-ai/hayhooks `compose.yml` (the documented Docker quickstart) runs `command: sh -c \"pip install --quiet trafilatura && hayhooks run --host 0.0.0.0\"`, publishes `ports: ['1416:1416','1417:1417']`, sets `HAYHOOKS_CORS_ALLOW_ORIGINS=[\"*\"]` and `HAYHOOKS_SHOW_TRACEBACKS=true`, and defines NO auth variable. `docker/Dockerfile` hard-codes `CMD [\"hayhooks\",\"run\",\"--host\",\"0.0.0.0\"]` and `EXPOSE 1416`. `src/hayhooks/settings.py` has no auth/password/token/api_key field at all — only `disable_ssl: bool = False` and `cors_allow_origins: list[str] = [\"*\"]` (which the code logs a warning about). The companion deepset-ai/hayhooks-open-webui-docker-compose sets `WEBUI_AUTH=false` on the Open WebUI front-end. The deepset docker quickstart docs tell users the Open WebUI connection field is `\"API Key\": \"any-value\" (not used by Hayhooks)`. The REST routers (status.py, deploy.py) carry NO FastAPI auth dependency: `GET /status` and `POST /deploy_files` (body field `files` incl. `pipeline_wrapper.py`) / `POST /deploy-yaml` (body field `source_code`) all answer unauthenticated. Note: the bare pip/CLI default binds `host=\"localhost\"` (loopback), but every documented internet-facing path (Docker image + compose) binds 0.0.0.0 with zero auth.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Deployed Haystack pipeline/agent definitions (business logic: retrievers, prompt templates, routing, system prompts) readable via /status/{name} and /draw/{name}",
+    "Upstream LLM provider API keys (OPENAI_API_KEY and other provider keys) injected as env and used by deployed pipelines; HAYHOOKS_SHOW_TRACEBACKS=true (compose default) leaks secrets/stack traces in error responses",
+    "Ingested RAG corpus / document store contents and vector store reachable through the pipeline's own /{pipeline}/run query path (and any fronting Weaviate/Qdrant/Elasticsearch the pipeline points at)",
+    "Conversation/chat history via the OpenAI-compatible /v1/chat/completions backend",
+    "Arbitrary code execution surface: POST /deploy_files (files['pipeline_wrapper.py'] Python) and POST /deploy-yaml (source_code) deploy and load user-supplied Python/YAML at runtime with no auth, yielding RCE in the container and pivot to its env/secrets"
+  ],
+  "sources": [
+    "https://github.com/deepset-ai/hayhooks",
+    "https://github.com/deepset-ai/hayhooks/blob/main/compose.yml",
+    "https://github.com/deepset-ai/hayhooks/blob/main/docker/Dockerfile",
+    "https://github.com/deepset-ai/hayhooks/blob/main/src/hayhooks/settings.py",
+    "https://github.com/deepset-ai/hayhooks/blob/main/src/hayhooks/server/routers/status.py",
+    "https://github.com/deepset-ai/hayhooks/blob/main/src/hayhooks/server/routers/deploy.py",
+    "https://github.com/deepset-ai/hayhooks-open-webui-docker-compose/blob/main/docker-compose.yml",
+    "https://deepset-ai.github.io/hayhooks/getting-started/quick-start-docker/",
+    "https://docs.haystack.deepset.ai/docs/hayhooks",
+    "https://github.com/deepset-ai/hayhooks/security/advisories",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

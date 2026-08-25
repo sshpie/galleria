@@ -1,0 +1,62 @@
+{
+  "platform": "openai-moderation",
+  "display_name": "OpenAI Moderation API (cloud-native, wrapped by LiteLLM)",
+  "category": "guardrail",
+  "entry_type": "cloud_native",
+  "default_ports": [443],
+  "api_paths": ["/v1/moderations"],
+  "auth_default": "on",
+  "auth_config_env": ["OPENAI_API_KEY"],
+  "default_creds": [],
+  "install_tell": "OpenAI-managed endpoint at https://api.openai.com/v1/moderations; bearer sk-* key in Authorization header. Models: omni-moderation-latest (default), text-moderation-latest.",
+  "misconfig_patterns": [
+    "OPENAI_API_KEY in LiteLLM config used for BOTH chat completion and moderation; one leaked key burns both surfaces.",
+    "Operators routing moderation via a private OpenAI-compatible mirror (api_base override): when api_base is misconfigured to an attacker-controlled host, every moderated message is exfiltrated through the attacker; LiteLLM does no host-allowlisting on api_base.",
+    "result.flagged returns false on edge cases (multilingual jailbreaks, code-encoded prompts) where the model is unsure; operators sometimes treat 'not flagged' as 'safe' without realizing the moderation API is best-effort, not a security boundary."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"api.openai.com\" (shared OpenAI infra; not operator-distinct)"
+    ],
+    "active_probe": {
+      "path": "/v1/moderations",
+      "method": "POST",
+      "port": 443,
+      "body": "{\"input\":\"test\"}",
+      "response_markers": ["flagged", "categories", "category_scores"],
+      "false_positive_check": "All requests to api.openai.com look identical; identity = api_key, not endpoint. Not a discoverable surface from Shodan."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "n/a - shared OpenAI cloud edge",
+    "strict": "n/a",
+    "version": "n/a"
+  },
+  "deployment_tells": [
+    "POST https://api.openai.com/v1/moderations with Authorization: Bearer sk-...",
+    "LiteLLM-side: api_base default https://api.openai.com/v1 + Bearer token from OPENAI_API_KEY env"
+  ],
+  "pivot_paths": [
+    "Leaked OPENAI_API_KEY in public configs grants moderation quota AND chat completion quota; the moderation endpoint is the cheaper-to-prove use of a leaked key.",
+    "LiteLLM proxy that wraps OpenAI moderation inherits the LiteLLM CVE chain; same as Bedrock wrapper."
+  ],
+  "vulnerabilities": [],
+  "litellm_wrapper_delta": {
+    "transparent_passthrough": "mostly",
+    "added_surface": [
+      "api_base is operator-controlled and not allowlisted; misconfiguration redirects all moderated content to attacker host.",
+      "LiteLLM stores OPENAI_API_KEY in proxy .env; that file becomes the high-value target.",
+      "LiteLLM raises HTTPException(400) on flagged content but allows operators to set raise_exception=False (mask_response_content path); a misconfigured 'log only' mode lets harmful content through while operator dashboards report 'guardrail active'.",
+      "LiteLLM /guardrails/list discloses moderation guardrail presence to authenticated proxy users."
+    ],
+    "verdict": "Mostly a transparent passthrough at the protocol layer (same POST /v1/moderations, same payload shape). The added surface is credential centralization and policy ambiguity (log-only vs enforce). The cloud API itself is unchanged."
+  },
+  "disclosure_contact": {
+    "security_txt": "https://openai.com/.well-known/security.txt",
+    "channel_observed": "security@openai.com / disclose.io (cloud vendor; not LiteLLM wrapper bugs)"
+  },
+  "sources": [
+    "LiteLLM litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py (2026-06-07)",
+    "OpenAI Moderation API docs (platform.openai.com/docs/guides/moderation)"
+  ]
+}

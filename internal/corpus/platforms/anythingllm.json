@@ -1,0 +1,142 @@
+{
+  "platform": "anythingllm",
+  "display_name": "AnythingLLM",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3001
+  ],
+  "api_paths": [
+    "/api/ping",
+    "/api/system/custom-app-name",
+    "/api/system/is-default-logo",
+    "/api/system/logo",
+    "/api/system/onboarding",
+    "/api/setup-complete",
+    "/api/request-token",
+    "/api/request-token/sso/simple",
+    "/api/system/check-token",
+    "/api/system/system-vectors",
+    "/api/system/local-files",
+    "/api/v1/system",
+    "/api/embed"
+  ],
+  "status": "CONFIRMED",
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "AUTH_TOKEN",
+    "JWT_SECRET",
+    "JWT_EXPIRY",
+    "SIG_KEY",
+    "SIG_SALT",
+    "PASSWORDMINCHAR",
+    "PASSWORDREQUIREMENTS",
+    "SIMPLE_SSO_ENABLED",
+    "DISABLE_LOGIN"
+  ],
+  "default_creds": [],
+  "install_tell": "export STORAGE_LOCATION=$HOME/anythingllm && mkdir -p $STORAGE_LOCATION && touch \"$STORAGE_LOCATION/.env\" && docker run -d --rm -p 3001:3001 --cap-add SYS_ADMIN -v ${STORAGE_LOCATION}:/app/server/storage -v ${STORAGE_LOCATION}/.env:/app/server/.env -e STORAGE_DIR=\"/app/server/storage\" mintplexlabs/anythingllm",
+  "misconfig_patterns": [
+    "Documented quickstart exposes port 3001 with AUTH_TOKEN commented out -> fully unauth UI+API on the public internet",
+    "Single-user AUTH_TOKEN is the ONLY gate for non-multi-user installs and is opt-in; operators frequently skip it for 'internal' boxes that are actually internet-reachable",
+    "DISABLE_LOGIN / Simple SSO Passthrough intended for a fronting portal can leave the app open if the portal is bypassed (direct-to-3001)",
+    "AUTH_TOKEN containing a '#' is silently truncated by sanitizeValue() (issue #5036), weakening/breaking the intended password",
+    "Multi-user mode is irreversible and historically shipped privilege-escalation/RCE bugs for the default user role (CVE-2024-0765, CVE-2024-13060)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"AnythingLLM | Your personal LLM trained on anything\"",
+      "http.html:\"AnythingLLM | Your personal LLM trained on anything\""
+    ],
+    "active_probe": {
+      "path": "/api/system/custom-app-name",
+      "method": "GET",
+      "response_markers": [
+        "JSON key customAppName",
+        "GET /api/ping returns {\"online\":true}",
+        "GET /api/system/is-default-logo returns {\"isDefaultLogo\":<bool>}",
+        "GET /api/system/onboarding returns {\"onboardingComplete\":<bool>}"
+      ],
+      "false_positive_check": "The og:title/description \"AnythingLLM | Your personal LLM trained on anything\" is the verbatim vendor string and does not collide with generic LLM hosts; bare \"AnythingLLM\" can appear in blog posts, doc mirrors, and proxied embed widgets. To avoid the ~50% false positive: confirm with the unauth JSON contract — GET /api/ping must return exactly {\"online\":true} AND GET /api/system/custom-app-name must return a JSON object with the `customAppName` key. A doc/blog mirror or reverse-proxied marketing page will 404 these API routes. Distinguish a default-OPEN instance from an AUTH_TOKEN-protected one by GET /api/system/onboarding: a 200 with onboardingComplete plus a reachable workspace list = no AUTH_TOKEN gate; a 403/redirect on authenticated routes while /api/ping still answers = AUTH_TOKEN is set (surface fingerprinted, access not open)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"AnythingLLM\"",
+    "strict": "http.title:\"AnythingLLM | Your personal LLM trained on anything\"",
+    "version": "http.title:\"AnythingLLM\" port:3001"
+  },
+  "deployment_tells": [
+    "Server-side default port 3001 (SERVER_PORT=3001 is the only active line in docker/.env.example); collapsed React SPA served from / with title 'AnythingLLM | Your personal LLM trained on anything'",
+    "GET /api/ping -> {\"online\":true} is a near-zero-cost liveness/identity tell",
+    "Bundled docker-compose stands up app + Qdrant vector DB + optional nginx; SYS_ADMIN cap requested for in-app document parsing/OCR",
+    "Desktop (Electron) build binds localhost only; the Docker/cloud image is the internet-exposed variant",
+    "favicon at /favicon.png (png, not ico) referenced by both rel=icon and apple-touch-icon"
+  ],
+  "pivot_paths": [
+    "Read configured LLM provider + API keys via the unauth settings UI/API, then bill against the operator's upstream key (LLMjacking) — read-only confirmation via the provider/model dropdown state",
+    "Enumerate workspaces and list ingested documents (/api/system/local-files, workspace endpoints) to scope RAG corpus sensitivity without downloading content",
+    "Read /api/system/system-vectors for vector counts to gauge corpus size",
+    "Read agent/skill and system-prompt definitions to map the operator's internal business logic",
+    "Pull /api/system/custom-app-name + /api/system/logo + /api/system/is-default-logo for operator branding/attribution (custom logo = named tenant)",
+    "Read chat/conversation history per workspace for leaked secrets and PII",
+    "GET /api/setup-complete and /api/system/onboarding to confirm setup state and whether multi-user/auth has been enabled"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-63390 / GHSA-m6qc-6c6w-6687 — authentication bypass on /api/workspaces (Moderate; affects ~v1.8.5)",
+    "CVE-2024-0765 / GHSA-qp7v-9hpx-hcp3 — default (non-admin) user RCE on multi-user instances (Critical; <=1.3.1 era)",
+    "CVE-2024-0759 / GHSA-cw8v-p9jq-r69x — internal-network SSRF (Critical)",
+    "CVE-2024-0455 / GHSA-32rv-jjcf-cmrm — web-scraper authorization bypass (Critical)",
+    "CVE-2024-3279 / GHSA-rrpm-pxv9-75vx — improper access control / IDOR (Critical)",
+    "CVE-2024-5211 / GHSA-v9ph-8hf4-hgrx — path traversal bypassing manager role restrictions (Critical)",
+    "CVE-2024-0549 / GHSA-8xw7-2r28-f569 — relative path traversal (High)",
+    "CVE-2024-10513 / GHSA-45p5-8q33-98hw — path traversal in document uploads (High)",
+    "CVE-2024-13059 / GHSA-866h-pm2w-j493 — path traversal -> arbitrary file write -> RCE in file upload; fixed in 1.3.1 (Critical)",
+    "CVE-2024-13060 / GHSA-mjvp-pg3h-wh59 — privilege escalation via default permissions, Docker (Moderate; fixed 1.3.1)",
+    "CVE-2024-3570 / GHSA-wx55-ppw9-52p9 — stored XSS in chat (Low)"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: docker/.env.example (master) ships AUTH_TOKEN commented out: `# AUTH_TOKEN=\"hunter2\" # This is the password to your application if remote hosting.` — alongside commented `# JWT_SECRET` (\"Only needed if AUTH_TOKEN is set\"), `# SIG_KEY`, `# SIG_SALT`. The only active line is `SERVER_PORT=3001`. The canonical quickstart in docker/HOW_TO_USE_DOCKER.md (`docker run -d --rm -p 3001:3001 --cap-add SYS_ADMIN -v ... mintplexlabs/anythingllm`) sets NO AUTH_TOKEN and NO password. Server behavior (server/endpoints/system.js): single-user login is enforced only when AUTH_TOKEN is present in env (\"disabled if in development or AUTH_TOKEN is unset\"). Multi-user mode is separate, explicitly opt-in, and irreversible. Therefore a user running the documented quickstart and exposing port 3001 gets a fully unauthenticated UI AND API. Auth exists but is OFF unless the AUTH_TOKEN env var (or multi-user mode) is set => configurable-default-off.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Anthropic/Azure/etc.) — stored in settings and readable/usable via the unauth UI/API when AUTH_TOKEN is unset",
+    "Ingested RAG documents and their text chunks (PII/PHI/proprietary corpora) via workspace + document endpoints",
+    "Vector store contents and counts (/api/system/system-vectors, /api/system/local-files)",
+    "Workspace + agent/skill definitions revealing internal business logic and prompts",
+    "Conversation/chat history per workspace",
+    "System settings including embedder/vector-DB/LLM provider configuration (custom-app-name, logo, env-derived config)"
+  ],
+  "population_survey": {
+    "date": "2026-07-02",
+    "category": "cat-anythingllm",
+    "shodan_hits": 1022,
+    "harvested": 92,
+    "live": 56,
+    "truly_open": 1,
+    "multi_user_gated": 2,
+    "auth_on": 52,
+    "open_rate_pct": 1.8,
+    "corrected_method": "RequiresAuth=false AND MultiUserMode=false",
+    "prior_cat07_rate_pct": 71,
+    "prior_cat07_method": "RequiresAuth=false only (incorrect)",
+    "favicon_hash_mmh3": -2031852229,
+    "favicon_path": "/favicon.png",
+    "double_exposure_hosts": 1,
+    "shadow_port_decoy_rate_pct": 87.9,
+    "notes": "Cat-07 71% figure was artifact of checking RequiresAuth alone. Correct classifier requires both RequiresAuth=false AND MultiUserMode=false. useanything.com is AnythingLLM official managed hosting. Kill chain broken when JWT_SECRET unset (POST /api/request-token returns 500). /api/docs/ Swagger UI accessible without auth by default (DISABLE_SWAGGER_DOCS env required to close)."
+  },
+  "sources": [
+    "https://github.com/Mintplex-Labs/anything-llm",
+    "https://github.com/Mintplex-Labs/anything-llm/blob/master/docker/.env.example",
+    "https://github.com/Mintplex-Labs/anything-llm/blob/master/docker/HOW_TO_USE_DOCKER.md",
+    "https://github.com/Mintplex-Labs/anything-llm/blob/master/server/endpoints/system.js",
+    "https://github.com/Mintplex-Labs/anything-llm/blob/master/frontend/index.html",
+    "https://docs.anythingllm.com/configuration",
+    "https://docs.anythingllm.com/installation-docker/overview",
+    "https://github.com/advisories?query=AnythingLLM",
+    "https://github.com/advisories/GHSA-866h-pm2w-j493",
+    "https://github.com/advisories/GHSA-qp7v-9hpx-hcp3",
+    "https://github.com/advisories/GHSA-m6qc-6c6w-6687",
+    "https://hub.docker.com/r/mintplexlabs/anythingllm",
+    "CONFIRMED -  Cat-AnythingLLM population survey 2026-07-02; 56 live hosts probed; 1 truly open (1.8%)",
+    "data/cat-anythingllm/findings-breakdown.txt",
+    "data/platform-intel/anythingllm-osint-2026-07-02.md"
+  ]
+}

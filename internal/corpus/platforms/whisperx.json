@@ -1,0 +1,101 @@
+{
+  "name": "WhisperX HTTP",
+  "slug": "whisperx",
+  "category": "voice-tts-conversational",
+  "description": "OpenAI Whisper-based audio transcription service with speaker diarization (pyannote.audio) and word-level timestamps, exposed via FastAPI/uvicorn HTTP wrapper with OpenAI-compatible /v1/audio/transcriptions endpoint. No built-in authentication in any major wrapper.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in any major WhisperX HTTP wrapper by default. Operators are expected to place a reverse proxy (nginx/caddy with basic auth or API key header) in front; most do not. The pyannote.audio diarization backend requires a HuggingFace API token (PYANNOTE_AUTH_TOKEN env var) at container startup — this token is accessible via container environment inspection, process listings, and sometimes via /docs or framework-level env-leak endpoints. Some wrappers (fedirz/faster-whisper-server) accept an optional API_KEY environment variable that gates the Authorization: Bearer header check, but it is unset by default, disabling all auth enforcement.",
+  "default_ports": [
+    8000,
+    8080,
+    9000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"whisperx\"",
+      "rationale": "Direct name match in Swagger UI body or root JSON response; high signal, low volume"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"diarization\" http.html:\"transcription\"",
+      "rationale": "Co-occurrence of diarization + transcription on port 8000 is nearly unique to WhisperX-class deployments"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"/v1/audio/transcriptions\" http.html:\"whisper\"",
+      "rationale": "OpenAI-compat transcription path rendered in FastAPI Swagger docs body combined with whisper keyword; eliminates non-whisper OpenAI-compat servers"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"word_segments\" http.html:\"speaker\"",
+      "rationale": "word_segments and speaker are WhisperX-specific response fields that appear in /docs schema examples; very high precision"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"whisperx\" http.html:\"version\" port:8000",
+      "rationale": "Version string disclosure in Swagger UI info block or /info endpoint; use for version-targeted enumeration"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/docs",
+    "title_contains": "WhisperX",
+    "response_body_contains": [
+      "whisperx",
+      "diarization",
+      "/v1/audio/transcriptions",
+      "word_segments",
+      "speaker"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "POST /v1/audio/transcriptions",
+    "POST /v1/audio/translations",
+    "GET /v1/models",
+    "POST /asr",
+    "GET /asr",
+    "GET /detect-language",
+    "GET /health",
+    "GET /healthz",
+    "GET /docs",
+    "GET /redoc",
+    "GET /openapi.json",
+    "POST /transcribe",
+    "GET /",
+    "GET /info"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated POST /v1/audio/transcriptions accepts arbitrary audio files from any source",
+    "PYANNOTE_AUTH_TOKEN (HuggingFace token) set in container env; accessible via /proc/1/environ on misconfigured containers or via env-leak framework endpoints",
+    "Unrestricted file upload: no MIME-type validation or file size limits in most wrappers — DoS via multi-GB audio files exhausts GPU VRAM and host disk",
+    "ffmpeg command injection: wrappers that pass uploaded filename to ffmpeg shell invocation without sanitization allow OS command injection via crafted filenames",
+    "FastAPI /docs and /redoc enabled by default — full API schema disclosure aids automated enumeration of all endpoints and parameter shapes",
+    "No rate limiting by default — GPU compute exhaustion attack is trivially automated; attacker submits continuous transcription jobs at operator cost",
+    "HuggingFace Spaces deployments (common for demos) are publicly indexed with no auth and no usage controls"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — GPU transcription runs $0.006-0.024/min on cloud GPU rentals; unauth open endpoint = free GPU at operator cost, automatable with any HTTP client. (2) Audio PII exfiltration — medical dictations, legal recordings, financial calls, and corporate meetings processed without consent or audit logging in default configs. (3) HuggingFace token exfiltration — PYANNOTE_AUTH_TOKEN grants access to private HF model repos and bypasses HF rate limits; token value from container env = lateral movement into operator's HF account. (4) Diarization as surveillance — speaker separation from bulk recordings enables identification and tracking of individuals without consent. (5) Voice cloning training data — high-accuracy word-level diarized transcripts are prime training material for TTS and voice cloning models; audio + transcript pairs harvested from open endpoints provide labeled voice datasets.",
+  "deployment_notes": "Primarily Docker-based on CUDA GPU hosts; CPU-only mode is too slow for production use. Common GPU-as-a-service platforms: Vast.ai, RunPod, Lambda Labs. HuggingFace Spaces deployments are frequent for demos and are publicly indexed. The ahmetoner/whisper-asr-webservice image is the most widely deployed wrapper (port 9000/tcp, endpoints /asr and /detect-language). fedirz/faster-whisper-server targets OpenAI API drop-in replacement use on port 8000/tcp with full /v1/* compatibility. pluja/whishper adds a full web UI on port 8080/tcp with file management. Most enterprise deployments sit behind nginx with basic auth or a VPN, but hobbyist and research deployments frequently expose the raw API port directly to the internet. HuggingFace token required at deploy time for diarization — absent token silently disables speaker labeling without error.",
+  "docker_images": [
+    "onerahmet/openai-whisper-asr-webservice",
+    "ghcr.io/fedirz/faster-whisper-server:latest-cuda",
+    "ghcr.io/fedirz/faster-whisper-server:latest-cpu",
+    "ghcr.io/pluja/whishper"
+  ],
+  "github_repos": [
+    "m-bain/whisperX",
+    "ahmetoner/whisper-asr-webservice",
+    "fedirz/faster-whisper-server",
+    "SYSTRAN/faster-whisper",
+    "pluja/whishper"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

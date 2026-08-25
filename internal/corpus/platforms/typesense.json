@@ -1,0 +1,66 @@
+{
+  "platform": "typesense",
+  "display_name": "Typesense",
+  "category": "vector_db",
+  "default_ports": [
+    8108
+  ],
+  "api_paths": [
+    "/health",
+    "/collections",
+    "/collections/{name}",
+    "/collections/{name}/documents/search"
+  ],
+  "auth_default": "required",
+  "auth_config_env": [
+    "TYPESENSE_API_KEY",
+    "TYPESENSE_ADMIN_ADDRESS"
+  ],
+  "default_creds": [
+    {
+      "user": "",
+      "pass": "xyz",
+      "context": "tutorial default API key — X-TYPESENSE-API-KEY header"
+    }
+  ],
+  "install_tell": "docker run -p 8108:8108 typesense/typesense:latest --api-key=xyz --data-dir=/data",
+  "misconfig_patterns": [
+    "Tutorial default API key xyz used in production",
+    "API key transmitted in X-TYPESENSE-API-KEY header — visible in proxy logs",
+    "Server header leaks Typesense version — enables CVE targeting"
+  ],
+  "fingerprint": {
+    "passive": [
+      "Server:\"Typesense\"",
+      "http.headers:\"typesense\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": [
+        "\"ok\":true"
+      ],
+      "false_positive_check": "Server header must equal Typesense/x.y.z"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "Server:\"Typesense\"",
+    "strict": "Server:\"Typesense\" port:8108",
+    "version": "http.headers:\"Typesense\" port:8108"
+  },
+  "deployment_tells": [
+    "Server: Typesense/x.y.z response header on all endpoints — leaks version",
+    "GET /health returns {\"ok\":true} without key",
+    "/collections requires X-TYPESENSE-API-KEY header"
+  ],
+  "pivot_paths": [
+    "GET /health → version via Server header",
+    "GET /collections with X-TYPESENSE-API-KEY: xyz → collection list if tutorial key in use",
+    "GET /collections/{name}/documents/search?q=*&query_by=* → full document dump"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://typesense.org/docs/guide/install-typesense.html",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

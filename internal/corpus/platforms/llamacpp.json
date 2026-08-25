@@ -1,0 +1,49 @@
+{
+  "platform": "llamacpp",
+  "display_name": "llama.cpp (server mode)",
+  "category": "inference_serving",
+  "default_ports": [8080, 8000],
+  "api_paths": ["/v1/completions", "/v1/chat/completions", "/v1/models", "/health"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "llama-server --model /path/to/model.gguf --port 8080",
+  "misconfig_patterns": [
+    "OpenAI-compat API exposed on public interface",
+    "GGUF model path in /v1/models reveals filesystem layout",
+    "No rate limiting"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:llama.cpp",
+      "http.html:\"gguf\"",
+      "port:8080 http.html:\"llama.cpp\""
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": ["\"gguf\""],
+      "false_positive_check": "model id field must contain .gguf extension — uniquely identifies llama.cpp server"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"llama.cpp\"",
+    "strict": "product:llama.cpp",
+    "version": "product:llama.cpp http.html:\"gguf\""
+  },
+  "deployment_tells": [
+    "Server: llama.cpp response header uniquely identifies native binary (port 8080 default)",
+    "GGUF model format path in /v1/models model id field",
+    "Q4_0/Q5_K/Q8_0 quantization level in startup logs"
+  ],
+  "pivot_paths": [
+    "GET /v1/models → model id contains full file path → infer filesystem layout and model provenance",
+    "Server header version string → exact llama.cpp release → CVE matching",
+    "GGUF quantization level → estimate available VRAM"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01",
+    "Hands-On LLM Serving and Optimization (9798341621480) ch08"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "platform": "codeintegrity",
+  "display_name": "CodeIntegrity (agent runtime control layer)",
+  "category": "ai_email_guardrails",
+  "subcategory": "agent runtime gateway (email = one governed tool call)",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "SaaS + SDK. Runtime control layer between agent and enterprise systems; turns agent intent into sandboxed code, checks tool calls (incl. email sends) before execution, blocks exfil post-injection. $4.8-5.25M seed (Dealroom/GeekWire 2026), founded May 2024, ~5 people, SOC2.",
+  "misconfig_patterns": [
+    "Generic agent-runtime guardrail: email is a governed action class, not a dedicated mail-safety product. In-category only by extension (it gates the send_email tool call)."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"codeintegrity.ai\"",
+      "http.html:\"CodeIntegrity\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "CodeIntegrity",
+        "runtime",
+        "agent"
+      ],
+      "false_positive_check": "Brand + 'runtime'/'agent' co-occurrence; 'code integrity' is a generic infosec phrase, anchor on the apex domain."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"codeintegrity.ai\"",
+    "strict": "ssl.cert.subject.cn:\"codeintegrity.ai\" http.html:\"CodeIntegrity\""
+  },
+  "deployment_tells": [
+    "SaaS control plane + SDK/wrapper; SOC2."
+  ],
+  "pivot_paths": [
+    "Adjacency note: counts as Lane D (SDK/wrapper) capability-control, not content-scan. Classify as adjacent-sibling, not category-core."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "D (SDK/wrapper) + runtime gateway; outbound-safety ADJACENT (email = one tool call)",
+    "differentiator": "Capability-control (CaMeL/IPIGuard family) rather than content classification; email-agnostic."
+  },
+  "sources": [
+    "https://www.codeintegrity.ai/ (PRIMARY) [CONFIRMED company]",
+    "https://app.dealroom.co/news/note/codeintegrity-raises-4-8m-seed (seed round) [CONFIRMED funding]",
+    "category placement ADJACENT [out of tight category \u2014 not email-specific]",
+    "OSINT Platoon sweep 2026-06-23 (YC/funded lane)"
+  ]
+}

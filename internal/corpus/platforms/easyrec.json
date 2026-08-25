@@ -1,0 +1,95 @@
+{
+ "name": "easyrec",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "Studio Smart Agent Technologies (the easyrec project)",
+  "backing": "OSS",
+  "hq": "Austria (Vienna). Origin tied to Austrian R&D; project received the Austrian State Prize for Multimedia/e-business 2009 and Germany's INNOVATIONSPREIS-IT 2011 per Wikipedia.",
+  "repo": "https://sourceforge.net/p/easyrec/ (canonical, SVN); community Git mirrors: github.com/hernad/easyrec, github.com/imosquera/easyrec-on-github",
+  "scale": "Niche/legacy. Long-tail adoption via PHP/Laravel/Django-Oscar/Drupal-Ubercart integration libraries (hafael/easyrec-php, antoineaugusti/laravel-easyrec, django-oscar-easyrec). Small absolute footprint vs modern recsys.",
+  "status": "defunct"
+ },
+ "ports": [
+  "8080/tcp (Tomcat HTTP, default bind 0.0.0.0)",
+  "3306/tcp (MySQL/MariaDB, when the all-in-one Docker image is published)",
+  "443/8443 if fronted by TLS (operator-added, not default)"
+ ],
+ "auth_default": "OPTIONAL",
+ "dorks": [
+  "http.html:\"url=home\" http.title:\"easyrec\"",
+  "http.html:\"easyrec-web\" http.html:\"url=home\"",
+  "http.html:\"easyrec-web\" \"Apache Tomcat/8.5.15\""
+ ],
+ "verification_primitive": {
+  "probe": "GET http://TARGET:8080/easyrec-web/api/1.1/json/otherusersalsoviewed?apikey=8ab9dc3ffcdac576d0f298043a60517a&tenantid=EASYREC_DEMO&itemid=1&itemtype=ITEM&requesteditemtype=ITEM (read-only; uses the documented demo key/tenant). Pair with GET /easyrec-web/ to confirm the title 'easyrec' first.",
+  "success_signal": "HTTP 200 with a JSON recommendation envelope (recommendeditems / item objects, or an empty result set) instead of the TENANT_WRONG_TENANT_APIKEY error. A non-error 200 means the EASYREC_DEMO tenant still exists with the documented key = the instance is operator-readable via a publicly-known credential. The bare title/meta-refresh on '/' confirms the platform even when the demo tenant was deleted.",
+  "impact_when_open": "Read access to that tenant's recommendation/item data and (with userid) per-user action history; if the demo tenant was never removed, this is unauth-equivalent. No record exfiltration needed to prove exposure - the non-error 200 plus the index title is the finding."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/easyrec-web/",
+   "returns": "Welcome page jsp/index.jsp: HTML <title>easyrec</title> with meta refresh to 'home'. Confirms an easyrec instance."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/home",
+   "returns": "Install-wizard start page (LoaderController action=home). On a not-yet-configured instance, exposes the DB setup flow; no installation-complete guard in source."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/connect",
+   "returns": "Install wizard DB-connection test. Accepts arbitrary db_host/db_name/db_username/db_password from the request and runs jdbc:mysql://{db_host}/{db_name} testConnection - a blind credential-test / outbound-connection (SSRF-style) primitive against an exposed pre-install instance."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/api/1.1/json/otherusersalsoviewed?apikey=...&tenantid=...&itemid=...",
+   "returns": "Up to 15 recommended items as JSON: itemId, itemDescription, itemUrl, itemImageUrl, value. With the demo key on an undeleted EASYREC_DEMO tenant, returns that tenant's stored item catalog metadata."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/api/1.1/json/recommendationsforuser?apikey=...&tenantid=...&userid=...",
+   "returns": "Per-user recommendation list (item metadata) for a supplied userid."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/api/1.1/json/actionhistoryforuser?apikey=...&tenantid=...&userid=...",
+   "returns": "The last actions performed by a given userId - user-linked browsing/purchase history if the supplied apikey/tenant is valid for the instance."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/api/1.1/view|rate|buy|sendaction?apikey=...&tenantid=...",
+   "returns": "WRITE: records an action into the tenant. Open instance with a valid key = attacker can inject/poison action data and skew recommendations."
+  },
+  {
+   "method": "GET",
+   "path": "/easyrec-web/api/1.1/importitem|importrule?token=...&tenantid=...",
+   "returns": "WRITE: creates/updates items and item-association rules. Requires a session token from /operator/signin (operator creds), so write-import needs the operator password, unlike the apikey action plane."
+  },
+  {
+   "method": "POST",
+   "path": "/easyrec-web/easyrecsoap",
+   "returns": "SOAP (JAX-WS) endpoint mirroring the REST API surface."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://sourceforge.net/p/easyrec/",
+  "https://sourceforge.net/p/easyrec/wiki/API/",
+  "https://sourceforge.net/p/easyrec/wiki/RecommendationAPI/",
+  "https://sourceforge.net/p/easyrec/wiki/ActionAPI/",
+  "https://sourceforge.net/p/easyrec/wiki/ImportAPI/",
+  "https://sourceforge.net/p/easyrec/wiki/Home/",
+  "https://en.wikipedia.org/wiki/Easyrec",
+  "https://github.com/hernad/easyrec/blob/master/easyrec-web/src/main/webapp/WEB-INF/web.xml",
+  "https://github.com/hernad/easyrec/blob/master/easyrec-web/src/main/webapp/WEB-INF/dispatch-servlet.xml",
+  "https://raw.githubusercontent.com/hernad/easyrec/874886d405fa969949b782020736cca679e53b3b/easyrec-web/src/main/java/org/easyrec/controller/LoaderController.java",
+  "https://raw.githubusercontent.com/hernad/easyrec/874886d405fa969949b782020736cca679e53b3b/easyrec-web/src/main/java/org/easyrec/rest/EasyRec.java",
+  "https://raw.githubusercontent.com/hernad/easyrec/874886d405fa969949b782020736cca679e53b3b/easyrec-web/src/main/webapp/jsp/index.jsp",
+  "https://github.com/hafael/easyrec-docker",
+  "https://github.com/alibaba/EasyRec (disambiguation - different product)",
+  "https://recsyswiki.com/wiki/Easyrec",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

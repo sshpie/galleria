@@ -1,0 +1,67 @@
+{
+  "platform": "kong-ai-gateway",
+  "display_name": "Kong AI Gateway (ai-proxy plugin)",
+  "category": "gateway",
+  "default_ports": [8000, 8001, 8002, 8443, 8444, 8445, 8007],
+  "api_paths": ["/", "/services", "/routes", "/plugins", "/consumers", "/plugins?name=ai-proxy"],
+  "auth_default": "off",
+  "auth_config_env": [
+    "KONG_ADMIN_LISTEN",
+    "KONG_DATABASE",
+    "KONG_PG_PASSWORD"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d --name kong-dbless -e KONG_DATABASE=off -e KONG_PROXY_LISTEN='0.0.0.0:8000' -e KONG_ADMIN_LISTEN='0.0.0.0:8001' -p 8000:8000 -p 8001:8001 kong:latest",
+  "misconfig_patterns": [
+    "Admin API bound to 0.0.0.0:8001 in default docker-compose (CVE-2020-11710)",
+    "No RBAC configured on Admin API -- all management operations unauthenticated",
+    "ai-proxy plugin provider API keys readable via GET /plugins?name=ai-proxy",
+    "Kong Manager GUI at :8002 exposed without authentication",
+    "pre-function plugin enabled -- allows Lua code execution via Admin API"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"Welcome to kong\" port:8001",
+      "http.title:\"Kong Manager\" port:8002",
+      "\"tagline\" \"Welcome to kong\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 8001,
+      "response_markers": ["Welcome to kong", "tagline", "version"],
+      "false_positive_check": "JSON response must contain tagline field with value 'Welcome to kong'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"Welcome to kong\" port:8001",
+    "strict": "\"tagline\" \"Welcome to kong\" port:8001",
+    "version": "\"Welcome to kong\" port:8001 http.html:\"version\""
+  },
+  "deployment_tells": [
+    "Port 8001 returning JSON with tagline 'Welcome to kong'",
+    "Kong Manager UI at port 8002",
+    "ai-proxy plugin listed in GET /plugins response",
+    "Provider API keys in plugins[].config.auth.header_value"
+  ],
+  "pivot_paths": [
+    "GET :8001/plugins?name=ai-proxy -- returns all ai-proxy plugin configs with provider API keys in config.auth.header_value",
+    "GET :8001/services -- full upstream service list including AI provider endpoints",
+    "POST :8001/plugins {name:'pre-function', config:{access:['os.execute...']}} -- Lua RCE via Admin API",
+    "GET :8001/ -- version + plugin inventory without auth",
+    "GET :8001/consumers -- all consumer credentials and key auth secrets"
+  ],
+  "vulnerabilities": [
+    "CVE-2020-11710 CVSS 9.8: Admin API bound to 0.0.0.0:8001 in official docker-compose through v2.0.3; full unauthenticated admin access from any interface; requires manual fix",
+    "CVE-2026-29413 CVSS 9.8 CISA-KEV: auth bypass via HTTP/2 pseudo-header logic flaw in plugin rewrite phase; all auth plugins bypassable; affected 3.4.x-3.8.x; fixed 3.9.0",
+    "CVE-2026-29414 CVSS 7.5: rate limiting bypass via header manipulation; synthetic consumer identity fragmentation; affected 3.2.x-3.8.x; fixed 3.9.0"
+  ],
+  "sources": [
+    "https://developer.konghq.com/gateway/network/",
+    "https://developer.konghq.com/plugins/ai-proxy/",
+    "https://developer.konghq.com/gateway/secure-the-admin-api/",
+    "https://kensai.app/blog/kong-api-gateway-cve-2026-authentication-bypass-rate-limiting",
+    "https://www.trendmicro.com/vinfo/us/security/news/virtualization-and-cloud/kong-api-gateway-misconfigurations-an-api-gateway-security-case-study",
+    "https://www.acunetix.com/vulnerabilities/web/unrestricted-access-to-kong-gateway-api/"
+  ]
+}

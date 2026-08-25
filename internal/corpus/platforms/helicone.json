@@ -1,0 +1,63 @@
+{
+  "platform": "helicone",
+  "display_name": "Helicone (self-hosted observability stack)",
+  "category": "gateway",
+  "default_ports": [3000, 8585, 9080, 8123, 5432],
+  "api_paths": ["/", "/v1/chat/completions"],
+  "auth_default": "off",
+  "auth_config_env": [
+    "HELICONE_API_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "DATABASE_URL"
+  ],
+  "default_creds": [
+    {"user": "minioadmin", "pass": "minioadmin", "context": "MinIO S3 storage at port 9080 -- stores all LLM request/response bodies"},
+    {"user": "", "pass": "change-me-in-production", "context": "Auth secret default literal value from self-hosted config"}
+  ],
+  "install_tell": "docker run -p 3000:3000 -p 8585:8585 -p 9080:9080 helicone/helicone:latest",
+  "misconfig_patterns": [
+    "Port 8585 (Jawn API) requires no authentication -- anyone with network access can proxy LLM requests",
+    "MinIO at port 9080 with default creds minioadmin/minioadmin -- all stored request/response bodies exposed",
+    "Auth secret 'change-me-in-production' not changed -- predictable for brute force",
+    "Dashboard signup open by default -- anyone can create account and view org's LLM data",
+    "No HTTPS by default -- all LLM prompts/responses in plaintext on network"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Helicone\" port:3000",
+      "\"helicone\" port:8585",
+      "http.html:\"helicone\" port:3000"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 3000,
+      "response_markers": ["Helicone", "helicone"],
+      "false_positive_check": "page title or body must contain Helicone"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Helicone\" port:3000",
+    "strict": "http.title:\"Helicone\" port:3000",
+    "version": "http.html:\"helicone\" port:3000"
+  },
+  "deployment_tells": [
+    "Port 3000 web dashboard (Helicone branding)",
+    "Port 8585 Jawn proxy -- no auth required for LLM proxying",
+    "Port 9080 MinIO -- default creds minioadmin/minioadmin",
+    "Self-hosted path in maintenance mode -- SaaS is primary product"
+  ],
+  "pivot_paths": [
+    "GET :8585/ -- no-auth LLM proxy; all requests logged with full prompt/response bodies",
+    "GET :9080/ + login minioadmin/minioadmin -- MinIO browser shows all stored request body objects",
+    "POST :8585/v1/chat/completions -- proxy LLM calls through victim's Helicone account; logs to their dashboard",
+    "Dashboard at :3000 -- open signup allows creating account; view usage analytics"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.helicone.ai/getting-started/self-host/docker",
+    "https://www.helicone.ai/blog/self-hosting-journey",
+    "https://www.helicone.ai/changelog/20250505-introducing-helicone-self-hosting",
+    "https://github.com/Helicone/helicone"
+  ]
+}

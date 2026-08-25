@@ -1,0 +1,115 @@
+{
+  "platform": "khoj",
+  "display_name": "Khoj",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    42110
+  ],
+  "api_paths": [
+    "/api/health",
+    "/api/v1/user",
+    "/api/settings",
+    "/api/chat",
+    "/api/search",
+    "/api/content",
+    "/server/admin",
+    "/api/chat/options",
+    "/api/transcribe"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "KHOJ_ADMIN_EMAIL (default username@example.com in shipped compose)",
+    "KHOJ_ADMIN_PASSWORD (default 'password' in shipped compose)",
+    "KHOJ_DJANGO_SECRET_KEY (default 'secret' in shipped compose)",
+    "--anonymous-mode CLI flag (present in default command; remove it to force per-user auth)",
+    "KHOJ_DOMAIN / KHOJ_ALLOWED_DOMAIN (required for admin panel / CSRF when exposed)",
+    "KHOJ_NO_HTTPS"
+  ],
+  "default_creds": [
+    {
+      "user": "username@example.com",
+      "pass": "password",
+      "context": "Default KHOJ_ADMIN_EMAIL / KHOJ_ADMIN_PASSWORD literally shipped in master docker-compose.yml for the Django /server/admin panel; KHOJ_DJANGO_SECRET_KEY ships as 'secret'. Operators who run the quickstart unchanged keep these. In anonymous mode the admin panel is also reachable as the default premium user without these creds."
+    }
+  ],
+  "install_tell": "curl -O https://raw.githubusercontent.com/khoj-ai/khoj/master/docker-compose.yml && docker-compose up  (pip path: `pip install khoj && khoj --anonymous-mode`)",
+  "misconfig_patterns": [
+    "--anonymous-mode left enabled (shipped default) on an internet-exposed 42110 -> full unauth UI+API as a premium 'default' user",
+    "Default KHOJ_ADMIN_PASSWORD=password / KHOJ_DJANGO_SECRET_KEY=secret left unchanged -> admin takeover + forgeable Django sessions",
+    "0.0.0.0:42110 bound with no reverse-proxy auth",
+    "Default Postgres creds postgres/postgres on the bundled pgvector DB",
+    "khoj-computer operator container exposing VNC on 5900 when KHOJ_OPERATOR_ENABLED=True"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Khoj\"",
+      "http.html:\"khoj_lantern\"",
+      "http.html:\"assets.khoj.dev\"",
+      "http.html:\"khoj-header-wrapper\"",
+      "http.favicon.hash:<khoj_lantern_128x128.png hash>"
+    ],
+    "active_probe": {
+      "path": "/api/health",
+      "method": "GET",
+      "response_markers": [
+        "JSON body with a \"version\" key and Khoj semver (e.g. 2.0.0-beta.x or 1.x)",
+        "/api/v1/user on an anonymous-mode host returns JSON {email, username, photo, is_active, has_documents, khoj_version} for the synthetic \"default\" user with no auth header",
+        "/api/settings returns user config JSON unauthenticated when anonymous_mode is on",
+        "X-Frame-Options / CSP referencing khoj.dev served by a Starlette/uvicorn server header"
+      ],
+      "false_positive_check": "Title \"Khoj\" alone is too generic-adjacent; require a Khoj-unique co-marker to avoid the ~50% false-positive: the body must contain the asset host string `assets.khoj.dev` AND/OR the lantern favicon `khoj_lantern_128x128.png`, OR the JSON path /api/v1/user must return the documented field set {email, username, photo, has_documents, khoj_version}. A bare 200 on /api/health is insufficient (collides with countless health endpoints) — confirm the `khoj_version` semver field. To distinguish an anonymous-mode (open) host from an auth-enabled one: hit /api/v1/user with no credentials; a 200 with the \"default\" user means anonymous_mode is on (the finding), a 401/redirect-to-login means auth was enabled."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Khoj\"",
+    "strict": "http.title:\"Khoj\" http.html:\"assets.khoj.dev\"",
+    "version": "http.html:\"khoj_lantern_128x128.png?v=\" port:42110"
+  },
+  "deployment_tells": [
+    "Listens on 42110 (vendor-unique port)",
+    "Sidecar containers in default compose: pgvector/pgvector:pg15 (DB), ghcr.io/khoj-ai/terrarium (Python sandbox), searxng/searxng (web search), ghcr.io/khoj-ai/khoj-computer (operator VNC on 5900)",
+    "Server image ghcr.io/khoj-ai/khoj:latest",
+    "Favicon/asset host assets.khoj.dev, lantern logo khoj_lantern_128x128.png",
+    "Django admin at /server/admin (Khoj uses Django ORM/admin behind a Starlette/FastAPI app)",
+    "uvicorn/Starlette server; command string contains --anonymous-mode --non-interactive"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/user -> confirm anonymous-mode (default user, no auth) and read identity/version",
+    "GET /api/settings -> read user config JSON (configured models, providers)",
+    "GET /api/search?q= -> read the ingested RAG index / personal documents",
+    "Browse /server/admin as the default premium user -> view configured LLM/web-search API keys and server config",
+    "GET conversation/chat history endpoints -> read prior chats",
+    "Enumerate 'Automations'/scheduled tasks -> recover workflow/business logic",
+    "Forge Django session if KHOJ_DJANGO_SECRET_KEY=secret default is in use"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-69207 / GHSA-6whj-7qmg-86qj (Moderate) — IDOR in Notion OAuth callback: unvalidated state param lets an attacker overwrite a victim's Notion integration -> index poisoning; victim UUID leakable via shared-conversation AI-image file paths. Affected: <=2.0.0-beta.22 per advisory writeups; web-source claims fixed in 2.0.0-beta.23 (GitHub advisory page itself shows affected='latest', patched='None' as of fetch — treat patched version as unconfirmed).",
+    "GHSA-h2q2-vch3-72qm (Moderate) — Prompt-injection-triggered Stored XSS in Obsidian/Desktop/Web clients: AI response + user input inadequately sanitized; untrusted indexed/web docs can inject script.",
+    "GHSA-cf72-vg59-4j4h (Moderate) — Stored XSS in Automate (Preview feature).",
+    "GHSA-hq4h-w933-jm6c (Moderate) — IDOR in subscription management allows unauthorized subscription modifications.",
+    "GHSA-564j-v29w-rqr6 (Low) — Open Redirect in the login page.",
+    "ARCHITECTURAL (not a CVE): shipped default --anonymous-mode = unauthenticated UI+API; this is the dominant exposure for self-hosted internet-facing instances."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: the canonical docker-compose.yml in khoj-ai/khoj (master, the file the quickstart at docs.khoj.dev/get-started/setup tells users to download and `docker-compose up`) ends the `server` service with: `command: --host=\"0.0.0.0\" --port=42110 -vv --anonymous-mode --non-interactive`. The `--anonymous-mode` flag is hardcoded into the shipped command. Confirmed in source (src/khoj/configure.py auth backend): with anonymous_mode True the backend short-circuits all auth — `if state.anonymous_mode: user = await self.khojuser_manager.filter(username=\"default\")... return AuthCredentials([\"authenticated\",\"premium\"]), AuthenticatedKhojUser(user)`. Every UI and REST request is silently authenticated as the `default` premium user; no login, no API key. The compose also binds 0.0.0.0:42110 directly. The compose comment block itself warns: \"Uncomment the necessary lines below to make your instance publicly accessible. Proceed with caution, especially if you are using anonymous mode.\" A user who runs the documented quickstart and exposes 42110 to the internet gets a fully unauth UI+API. (Note: only when anonymous_mode is False does configure.py mount auth_router and return UnauthenticatedUser() for unauthed requests — but the shipped default has it on.)",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG corpus / personal knowledge base: notes, PDFs, Markdown, Org-mode, Notion/GitHub/Obsidian-synced documents — frequently PII and private personal/work content (Khoj is a 'personal AI second brain')",
+    "Full conversation history of the default user (read + continue any chat)",
+    "Upstream LLM provider API keys configurable via /server/admin (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY) and web-search keys (SERPER, FIRECRAWL, EXA, OLOSTEP) — admin panel reachable as the premium default user in anonymous mode",
+    "Semantic search index over the user's documents (queryable via /api/search)",
+    "Agent/automation definitions and scheduled tasks ('Automations'), revealing workflows and business logic",
+    "Use of LLM credits / model access on the operator's dime (llmjacking) since the default user is granted premium subscription"
+  ],
+  "sources": [
+    "https://github.com/khoj-ai/khoj/blob/master/docker-compose.yml",
+    "https://docs.khoj.dev/get-started/setup/",
+    "https://docs.khoj.dev/advanced/remote/",
+    "https://github.com/khoj-ai/khoj/blob/master/src/khoj/configure.py",
+    "https://github.com/khoj-ai/khoj/security/advisories",
+    "https://github.com/khoj-ai/khoj/security/advisories/GHSA-6whj-7qmg-86qj",
+    "https://www.sentinelone.com/vulnerability-database/cve-2025-69207/",
+    "https://github.com/khoj-ai/khoj/security/advisories/GHSA-h2q2-vch3-72qm",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

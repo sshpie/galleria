@@ -1,0 +1,113 @@
+{
+  "platform": "r2r",
+  "display_name": "R2R (RAG to Riches)",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    7272,
+    7273,
+    7274
+  ],
+  "api_paths": [
+    "/v3/health",
+    "/v3/system/settings",
+    "/v3/system/status",
+    "/v3/documents",
+    "/v3/chunks",
+    "/v3/collections",
+    "/v3/conversations",
+    "/v3/graphs",
+    "/v3/indices",
+    "/v3/prompts",
+    "/v3/retrieval/search",
+    "/v3/retrieval/rag",
+    "/v3/users"
+  ],
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "R2R_REQUIRE_AUTHENTICATION (not set in docker/env/r2r-full.env; toml default require_authentication=false governs)",
+    "R2R_CONFIG_NAME=full (selects config that inherits the require_authentication=false default)",
+    "R2R_SECRET_KEY (JWT signing key; blank in template)",
+    "default_admin_email / default_admin_password (r2r.toml [auth])"
+  ],
+  "default_creds": [
+    {
+      "user": "admin@example.com",
+      "pass": "change_me_immediately",
+      "context": "Default superuser created at init by R2RAuthProvider from r2r.toml [auth] default_admin_email/default_admin_password. With require_authentication=false (default) anonymous callers are auto-mapped to this user; if auth is later armed without rotating, these creds log in as superuser."
+    }
+  ],
+  "install_tell": "git clone https://github.com/SciPhi-AI/R2R && cd R2R/docker && export R2R_CONFIG_NAME=full OPENAI_API_KEY=sk-... && docker compose -f compose.full.yaml --profile postgres up -d   # API at http://localhost:7272 , dashboard at :7273",
+  "misconfig_patterns": [
+    "Quickstart `docker compose ... up -d` binds 7272 and the env template never sets R2R_REQUIRE_AUTHENTICATION, so the default require_authentication=false leaves every /v3 endpoint anonymous-superuser the moment the port is internet-reachable",
+    "Operators exposing 7272 without a fronting reverse-proxy / auth gateway (R2R has no built-in TLS or network ACL by default)",
+    "Default superuser password change_me_immediately left unrotated even after arming auth",
+    "Provider API keys placed in r2r-full.env become readable via /v3/system/settings the instant the box is reachable, because the superuser-only gate is satisfied by anonymous auto-elevation"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"R2R\" http.html:\"v3/health\"",
+      "http.title:\"R2R\"",
+      "http.html:\"7272\" http.html:\"R2R-Application\""
+    ],
+    "active_probe": {
+      "path": "/v3/health",
+      "method": "GET",
+      "response_markers": [
+        "{\"results\":{\"message\":\"ok\"}}",
+        "response wrapped in a top-level \"results\" envelope (R2R-unique)",
+        "/v3 path prefix answering 200 on port 7272",
+        "GET /v3/system/settings returns 200 with a config TOML dump (config_toml) and r2r_project_name when auth is default-off (superuser-only check satisfied by anonymous auto-elevation)"
+      ],
+      "false_positive_check": "\"v3/health\" and \"results\"/\"message\":\"ok\" are individually generic and collide with countless APIs. Disambiguate by requiring the R2R-specific COMBINATION on port 7272: (1) GET /v3/health -> 200 with exactly {\"results\":{\"message\":\"ok\"}} (the \"results\" envelope is R2R's response wrapper, not a bare {\"status\":\"ok\"}), AND (2) GET /v3/system/settings -> 200 returning a JSON object containing \"config\" + \"prompts\" + \"r2r_project_name\" keys (config dumped from to_toml). A host that returns the health 200 but 401/403 on /v3/system/settings is either a hardened R2R (auth armed) or a lookalike; a host returning config_toml + r2r_project_name is positively R2R with default-off auth. Do not fingerprint on bare \"RAG\"/\"retrieval\"/\"chat\" strings. Port 7273 (Next.js dashboard) alone is a weak tell since it is a generic Next.js app on :3000 internally; anchor on the 7272 /v3 envelope instead."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"R2R\" \"v3/health\"",
+    "strict": "port:7272 http.html:\"v3/health\" \"results\"",
+    "version": "http.html:\"R2R-Application\" port:7273,7272"
+  },
+  "deployment_tells": [
+    "Three adjacent published ports 7272 (API) / 7273 (R2R Next.js dashboard) / 7274 (Hatchet orchestration dashboard) on the same host is a strong R2R-full signature",
+    "GET /v3/health -> {\"results\":{\"message\":\"ok\"}} on 7272",
+    "Container/compose project name r2r_default (R2R_PROJECT_NAME default) and bundled services: postgres+pgvector, hatchet, unstructured, clustering",
+    "Server header / app framework: FastAPI (uvicorn) serving /v3 under a top-level \"results\" response envelope",
+    "Dashboard is a Next.js app (R2R-Application) typically reachable on 7273 mapping to internal :3000"
+  ],
+  "pivot_paths": [
+    "GET /v3/system/settings -> harvest upstream LLM/provider API keys from the config_toml dump (read-only)",
+    "GET /v3/documents then GET /v3/documents/{id}/chunks -> enumerate and read the ingested private corpus (names/metadata first, restraint-ethic: enumerate not exfiltrate)",
+    "GET /v3/users -> confirm the claimable default admin and roster",
+    "GET /v3/prompts and the settings prompt dump -> read system prompts / business logic",
+    "GET /v3/conversations -> read prior chat history",
+    "POST /v3/retrieval/search (read-only query) -> confirm RAG surface is anonymously queryable and corpus is live, without ingesting or mutating"
+  ],
+  "vulnerabilities": [
+    "No platform-specific CVE/GHSA published for SciPhi-AI/R2R as of 2026-06-12 (GitHub Security tab and NVD return no R2R-specific advisory). The exposure is a default-misconfiguration class (insecure default), not a numbered CVE.",
+    "Hardcoded default superuser credential admin@example.com / change_me_immediately shipped in r2r.toml; documentation provides no in-band rotation path (tracked in upstream issues #1234, #1570) - a credential-stuffing / claimable-admin condition on any deployment that flipped auth ON without changing the default password."
+  ],
+  "auth_evidence": "Default ships auth OFF. Primary source `py/r2r/r2r.toml` [auth] section sets verbatim: provider = \"r2r\", require_authentication = false, require_email_verification = false, default_admin_email = \"admin@example.com\", default_admin_password = \"change_me_immediately\". The quickstart compose loads `docker/env/r2r-full.env`, which does NOT set R2R_REQUIRE_AUTHENTICATION (auth absent from the entire env file), so the toml default governs unchanged. The runtime auth_wrapper in py/core/base/providers/auth.py auto-elevates anonymous callers to the default admin: `if (((not self.config.require_authentication) or public) and auth is None and api_key is None): return await self._get_default_admin_user()` where `_get_default_admin_user` resolves the user by `self.admin_email` (admin@example.com). Net result: a documented quickstart `docker compose -f compose.full.yaml --profile postgres up -d` exposes port 7272 where every /v3 REST call is served as the superuser with no credential. This is auth-exists-but-OFF-by-default, not open-by-default (the provider machinery is present and a single env/toml flip arms it).",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM/provider API keys and endpoints exposed via GET /v3/system/settings config_toml dump (OPENAI_API_KEY, ANTHROPIC_API_KEY, AZURE/VERTEX/GEMINI/MISTRAL/GROQ/COHERE keys, plus FIRECRAWL/SERPER/TAVILY/UNSTRUCTURED/SENDGRID/MAILERSEND keys all flow through r2r-full.env into config)",
+    "Ingested RAG corpus: full document text and metadata listable via GET /v3/documents and retrievable chunk-by-chunk via /v3/chunks (the customer's private knowledge base / PII)",
+    "Knowledge-graph entities, relationships and communities via /v3/graphs revealing business-domain structure",
+    "Conversation/chat history via /v3/conversations",
+    "System prompts and prompt templates via /v3/prompts and the settings dump (business logic / instruction leakage)",
+    "Vector index configuration and search surface via /v3/indices and /v3/retrieval (RAG and hybrid search executable anonymously, burning the operator's LLM credits)",
+    "Full user roster and the claimable default superuser (admin@example.com / change_me_immediately) via /v3/users"
+  ],
+  "sources": [
+    "https://github.com/SciPhi-AI/R2R",
+    "https://raw.githubusercontent.com/SciPhi-AI/R2R/main/py/r2r/r2r.toml",
+    "https://raw.githubusercontent.com/SciPhi-AI/R2R/main/py/core/base/providers/auth.py",
+    "https://raw.githubusercontent.com/SciPhi-AI/R2R/main/docker/env/r2r-full.env",
+    "https://raw.githubusercontent.com/SciPhi-AI/R2R/main/docker/compose.full.yaml",
+    "https://raw.githubusercontent.com/SciPhi-AI/R2R/main/py/core/main/services/management_service.py",
+    "https://github.com/SciPhi-AI/R2R/issues/1234",
+    "https://github.com/SciPhi-AI/R2R/issues/1570",
+    "https://github.com/SciPhi-AI/R2R-Application",
+    "https://r2r-docs.sciphi.ai/",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

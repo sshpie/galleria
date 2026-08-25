@@ -1,0 +1,48 @@
+{
+  "platform": "nats",
+  "display_name": "NATS",
+  "category": "event_streaming",
+  "default_ports": [4222, 8222, 6222],
+  "api_paths": ["/varz", "/connz", "/subsz", "/routez", "/gatewayz", "/jsz"],
+  "auth_default": "none",
+  "auth_config_env": ["authorization"],
+  "default_creds": [],
+  "install_tell": "nats-server -m 8222 — monitoring HTTP endpoint has NO auth mechanism at all in OSS NATS, even when client auth (NKey/JWT/user-pass) is fully configured",
+  "misconfig_patterns": [
+    "monitoring port 8222 exposed with no authorization{} block possible on that endpoint",
+    "client port 4222 with no authorization{} block — anonymous connect allowed"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"nats-server\"",
+      "http.html:\"connz\" http.html:\"server_id\""
+    ],
+    "active_probe": {
+      "path": "/varz",
+      "method": "GET",
+      "response_markers": ["server_id", "version", "jetstream"],
+      "false_positive_check": "JSON body must include server_id and jetstream boolean fields — vendor-unique to NATS monitoring"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"nats-server\"",
+    "strict": "http.html:\"connz\" http.html:\"server_id\"",
+    "version": "\"nats-server\" version:\"2.10\""
+  },
+  "deployment_tells": [
+    "4222 sends unauthenticated INFO {json} banner on raw TCP connect before any handshake",
+    "8222 /connz leaks connected client IPs and subject subscriptions even when 4222 client auth IS configured — metadata leak survives the auth boundary"
+  ],
+  "pivot_paths": [
+    "unauth 4222 subscribe to any subject -> read all message traffic",
+    "unauth 4222 publish -> inject/poison messages",
+    "/connz on 8222 -> connected-client IP/subject metadata even behind configured client auth",
+    "/routez /gatewayz -> cluster topology mapping"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.nats.io/running-a-nats-service/nats_admin/monitoring",
+    "https://docs.nats.io/running-a-nats-service/configuration/securing_nats",
+    "[CANDIDATE —  cat-event-streaming Stage -1, 2026-07-14]"
+  ]
+}

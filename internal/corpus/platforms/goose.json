@@ -1,0 +1,35 @@
+{
+  "name": "Goose",
+  "category": "agent-platform",
+  "github": "https://github.com/block/goose",
+  "description": "Rust autonomous coding agent. goosed HTTP/WS backend for the desktop app. Distributed gaggle mode runs a Manager.",
+  "default_ports": [3000, 5115],
+  "protocols": ["http", "https"],
+  "auth_default": "token",
+  "auth_bypass": "none",
+  "tls_default": true,
+  "fingerprint_status": "candidate",
+  "fingerprint_note": "goosed default-binds 127.0.0.1 + TLS-on + X-Secret-Key header (protected routes 401 without it). GET /status unauth health. Gaggle Manager binds 0.0.0.0:5115. The localhost bind is the load-bearing default mitigation.",
+  "dorks": {
+    "basic": "port:5115",
+    "strict": null,
+    "version": null
+  },
+  "dork_notes": "DARK_CONFIRMED (2026-06-19 round-2). 127.0.0.1:3000 default (configuration.rs default_host); goosed serves NO HTML (UI is the separate Electron app), so http.html dorks=0. Vendor marker is GET /features -> JSON {features:{local-inference, code-mode}} (auth-bypass allowlisted), JSON-only = invisible to Shodan HTML index. http.html:\"local-inference\" \"code-mode\"=0. port:5115=283 generic, no discriminator. Exposure requires GOOSE_HOST=0.0.0.0 or gaggle Manager. Engine route: Censys/active-probe only.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "aimap_ports": null,
+  "aimap_probes": null,
+  "severity": "high",
+  "severity_note": "If reachable unauth (proxy misconfig / gaggle): arbitrary command exec on host AS THE USER (no container sandbox), provider keys + OAuth tokens from OS keyring or secrets.yaml fallback.",
+  "exposure_data": "host RCE-as-user, keyring/secrets.yaml provider keys + OAuth tokens, MCP/extension reach (GitHub/Slack/Docker)",
+  "research_date": "2026-06-19",
+  "sources": [
+    "https://github.com/block/goose",
+    "Veria Labs goose web-mode CSWSH (patched ~v1.25.0)",
+    "DARK_CONFIRMED:  cat-agent-platforms survey 2026-06-19 round-2. 127.0.0.1:3000 default + no HTML served (/features is JSON-only, auth-bypass allowlisted). Not Shodan-selectable; Censys/active-probe only."
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "name": "LocalAI",
+  "slug": "localai",
+  "category": "voice-tts-conversational",
+  "description": "Self-hosted, OpenAI-compatible AI engine (mudler/LocalAI) that runs LLMs, vision, image, and — relevant here — a full voice stack: OpenAI-compatible speech-to-text (/v1/audio/transcriptions), text-to-speech (/tts, /v1/audio/speech), speaker diarization, and WebRTC speech-out. Serves a Go (Fiber) HTTP API plus a web management UI on port 8080. No authentication is enforced by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "LocalAI enforces no authentication out of the box: with no LOCALAI_API_KEY set, every endpoint and the web UI on :8080 are open. Optional gating exists but is opt-in — LOCALAI_API_KEY=<key> requires an Authorization: Bearer header, and LOCALAI_AUTH=true enables a fuller multi-user mode (admin/user roles, OAuth, per-user keys, usage tracking). Because the quickstart, Docker one-liners, and the bundled web UI all run without a key, the overwhelming majority of self-hosted and demo instances expose the entire API — including model management — unauthenticated.",
+  "default_ports": [
+    8080
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8080 http.html:\"LocalAI\"",
+      "rationale": "The LocalAI web UI shell and API landing reference the LocalAI name directly on the canonical port; high-signal name match"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"LocalAI\" http.html:\"models\"",
+      "rationale": "Web UI model gallery/management view text; co-occurrence catches instances on non-default ports or behind proxies"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8080 http.html:\"LocalAI\" http.html:\"/v1/audio\"",
+      "rationale": "Combines the LocalAI name with the OpenAI-compatible audio path advertised in the UI/API surface; isolates instances with the voice/audio stack enabled"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"LocalAI\" http.html:\"version\" port:8080",
+      "rationale": "Version string surfaced in the web UI footer / API; version-targeted enumeration for CVE scoping"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8080,
+    "http_path": "/",
+    "title_contains": "LocalAI",
+    "response_body_contains": [
+      "LocalAI",
+      "models",
+      "/v1/audio",
+      "chat",
+      "gallery"
+    ],
+    "http_header": "server: fiber"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /readyz",
+    "GET /v1/models",
+    "POST /v1/chat/completions",
+    "POST /v1/completions",
+    "POST /v1/embeddings",
+    "POST /v1/audio/transcriptions",
+    "POST /v1/audio/speech",
+    "POST /tts",
+    "POST /v1/images/generations",
+    "GET /models/available",
+    "POST /models/apply",
+    "GET /metrics"
+  ],
+  "known_vulns": [
+    "No authentication by default — the entire API and web UI on :8080 are open unless LOCALAI_API_KEY / LOCALAI_AUTH is explicitly set",
+    "Unauthenticated model installation — POST /models/apply pulls and installs arbitrary models/backends from the gallery or a supplied URL; a malicious model config can lead to code execution / SSRF on the host",
+    "Compute theft — open /v1/chat/completions, /v1/audio/transcriptions, /tts, and /v1/images/generations give free (often GPU-backed) inference and audio synthesis/transcription at operator cost",
+    "Audio PII exposure — transcription and diarization endpoints process arbitrary uploaded audio with no auth, consent, or logging in default configs",
+    "Voice cloning surface — LocalAI's TTS/voice-clone backends (e.g. VibeVoice) exposed unauthenticated enable arbitrary voice synthesis from operator-hosted voices",
+    "Resource-exhaustion DoS — no rate limiting by default; large audio/model operations exhaust GPU VRAM, disk, and bandwidth",
+    "Configuration/metrics disclosure — /metrics and model listings enumerate installed backends, model paths, and versions to unauthenticated clients"
+  ],
+  "default_creds": [],
+  "risk_notes": "LocalAI is a broad OpenAI-compatible engine, but its voice stack (STT /v1/audio/transcriptions, TTS /tts + /v1/audio/speech, diarization, WebRTC speech-out) makes an open instance a full unauthenticated voice/audio processing service. Chain: (1) find open :8080 with the LocalAI signature -> (2) enumerate /v1/models and /metrics for installed voice/LLM backends and versions -> (3) abuse the audio + chat + image endpoints for free GPU compute, transcribe attacker audio, synthesize/clone voices, and process (or exfiltrate metadata about) whatever audio the operator routes through it -> (4) escalate via POST /models/apply, installing an attacker-chosen model/backend for potential code execution and SSRF on the host. Because the entire default posture is no-auth and the web UI runs keyless, exposure is common among hobbyist, demo, and 'quick internal tool' deployments. Confirmed added to the corpus as it was not previously present (checked: no prior localai entry).",
+  "deployment_notes": "Distributed primarily as Docker images (localai/localai, quay.io/go-skynet/local-ai) and single binaries; the API + web UI listen on 8080/tcp (Go Fiber server). CPU-only operation is supported (no GPU required), which broadens where it gets deployed. Models are pulled at runtime from a gallery or arbitrary URLs; the voice stack (whisper-family STT, piper/vibevoice/other TTS, diarization) is enabled per-model. Default runs have no API key; LOCALAI_API_KEY and LOCALAI_AUTH must be opted into. Internet exposure results from users publishing 8080 for a 'private ChatGPT' / internal tool without fronting it with auth or a proxy. Overlaps the OpenAI-compatible inference space (vLLM, Ollama, etc.) but is called out here for its integrated, unauthenticated voice/audio endpoints.",
+  "docker_images": [
+    "localai/localai",
+    "localai/localai:latest-cpu",
+    "localai/localai:latest-gpu-nvidia-cuda-12",
+    "quay.io/go-skynet/local-ai"
+  ],
+  "github_repos": [
+    "mudler/LocalAI"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

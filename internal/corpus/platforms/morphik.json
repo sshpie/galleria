@@ -1,0 +1,131 @@
+{
+  "platform": "morphik",
+  "display_name": "Morphik (Morphik Core)",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8000,
+    3003,
+    5432,
+    6379,
+    11434,
+    6000
+  ],
+  "api_paths": [
+    "/retrieve/chunks",
+    "/retrieve/chunks/grouped",
+    "/retrieve/docs",
+    "/search/documents",
+    "/batch/documents",
+    "/batch/chunks",
+    "/query",
+    "/ingest/text",
+    "/ingest/file",
+    "/documents",
+    "/folders",
+    "/graph",
+    "/local/generate_uri",
+    "/models/available",
+    "/ping",
+    "/health"
+  ],
+  "auth_default": "configurable-default-off",
+  "auth_config_env": [
+    "JWT_SECRET_KEY",
+    "LOCAL_URI_PASSWORD",
+    "SESSION_SECRET_KEY",
+    "ADMIN_SERVICE_SECRET"
+  ],
+  "default_creds": [
+    {
+      "user": "morphik",
+      "pass": "morphik",
+      "context": "Default Postgres (pgvector/pgvector:pg16) creds in docker-compose.run.yml: POSTGRES_USER=morphik / POSTGRES_PASSWORD=morphik, port 5432 published to host"
+    },
+    {
+      "user": "(none)",
+      "pass": "your-secret-key-here",
+      "context": "JWT_SECRET_KEY fallback in docker-compose.run.yml (JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}); core/config.py uses 'dev-secret-key' fallback in bypass mode. Predictable HS256 secret = forgeable tokens if auth is later enabled without changing it"
+    }
+  ],
+  "install_tell": "curl -sSL https://install.morphik.ai | bash   (downloads docker-compose.run.yml + morphik.toml, runs ghcr.io/morphik-org/morphik-core:latest). Alternative: git clone https://github.com/morphik-org/morphik-core && docker compose up",
+  "misconfig_patterns": [
+    "Quickstart accepted with defaults (Enter at LOCAL_URI_PASSWORD prompt) -> bypass_auth_mode=true -> unauth UI+API on internet-facing :8000",
+    "Default morphik.toml committed with bypass_auth_mode=true + mode=self_hosted + environment=development left unchanged in production",
+    "JWT_SECRET_KEY left at fallback your-secret-key-here / dev-secret-key (predictable, forgeable)",
+    "Postgres :5432 published to host with morphik:morphik default creds",
+    "Redis :6379 published with no auth (redis-server --appendonly yes, no requirepass)",
+    "Telemetry/heartbeat left enabled, beaconing installation_id + version to logs.morphik.ai"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"morphik\" http.html:\"generate_local_uri\"",
+      "http.favicon.hash: (Morphik Console Next.js UI on :3003 - derive from live favicon, not yet cataloged)",
+      "http.title:\"Morphik\""
+    ],
+    "active_probe": {
+      "path": "/ping",
+      "method": "GET",
+      "response_markers": [
+        "{\"status\":\"ok\",\"message\":\"Server is running\"}",
+        "GET /openapi.json -> paths include /retrieve/chunks/grouped AND /local/generate_uri AND /ingest/file (this triad is Morphik-unique)",
+        "GET /health -> JSON with component checks for postgres, redis, pgvector, colpali",
+        "unauth POST /documents (empty filter) returns 200 with a JSON document list when bypass_auth_mode=true (confirms open posture without exfiltrating content)"
+      ],
+      "false_positive_check": "Do NOT fingerprint on the OpenAPI/Swagger title: core/api.py instantiates `app = FastAPI(lifespan=lifespan)` with NO title argument, so /openapi.json returns the FastAPI DEFAULT `\"title\":\"FastAPI\"` and /docs shows the generic \"FastAPI - Swagger UI\" — this collides with tens of thousands of unrelated FastAPI apps and is worthless as a Morphik tell. Likewise /ping's `{\"status\":\"ok\"}` and a bare 8000 port are generic. Confirm Morphik specifically by the vendor-unique ROUTE SET in /openapi.json: the co-occurrence of `/retrieve/chunks/grouped` + `/local/generate_uri` + `/ingest/file` (ColPali multimodal RAG routes) appears together only in Morphik. A second corroborator: the `morphik://` connection-URI scheme returned by /local/generate_uri, and the legacy telemetry tell SERVICE_NAME=\"databridge-core\" / heartbeat to logs.morphik.ai. A host that only echoes /ping or has no /retrieve/* routes is a FastAPI false positive, not Morphik."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"generate_local_uri\" \"morphik\"",
+    "strict": "http.html:\"morphik\" http.html:\"retrieve/chunks\" port:8000",
+    "version": "http.html:\"Morphik Console\" http.title:\"Morphik\""
+  },
+  "deployment_tells": [
+    "Outbound heartbeat POST to https://logs.morphik.ai/api/heartbeat every 4h (TELEMETRY_ENABLED default true)",
+    "Legacy project name leaks in telemetry: SERVICE_NAME default 'databridge-core' (Morphik was formerly DataBridge)",
+    "Container names morphik-app / morphik-worker / morphik-redis / morphik-postgres / morphik-ollama / morphik-ui from docker-compose.run.yml",
+    "Image ghcr.io/morphik-org/morphik-core:latest",
+    "Next.js 'Morphik Console' UI on :3003 (profile-gated), API on :8000, embedding/ColPali API on :6000 (morphik_embedding_api_domain=http://localhost:6000)",
+    "arq worker queue on Redis :6379; pgvector/pgvector:pg16 on :5432",
+    "morphik:// connection-URI scheme emitted by /local/generate_uri"
+  ],
+  "pivot_paths": [
+    "GET /openapi.json -> enumerate full route surface + confirm Morphik triad without touching data",
+    "GET /ping and GET /health -> liveness + component map (postgres/redis/pgvector/colpali up) read-only",
+    "POST /documents with empty/minimal filter -> count + metadata of ingested corpus (names ARE the finding; do not pull bodies)",
+    "GET /models/available and /models -> registered LLM models + provider config (reveals which upstream keys are wired)",
+    "GET /graph -> knowledge-graph names/entities (business-logic map) read-only",
+    "GET /chats -> presence + count of stored conversations (sensitivity signal) without reading transcripts",
+    "If :5432 exposed: confirm pgvector reachability via banner only (Insight: banner != schema; do not auth) for attribution that the document store is co-exposed"
+  ],
+  "vulnerabilities": [
+    "No published CVE or GHSA as of 2026-06-12 (github.com/morphik-org/morphik-core/security/advisories: 'There aren't any published security advisories'). The security-relevant default is design-level: bypass_auth_mode=true shipped in default morphik.toml + installer defaulting to skip-password = unauthenticated full-fleet read/write on an internet-exposed :8000.",
+    "Predictable default HS256 JWT secret (your-secret-key-here / dev-secret-key fallback) = token forgery / auth bypass even when bypass_auth_mode is later set false, if operator does not rotate JWT_SECRET_KEY. Affected: all self-host versions using the shipped docker-compose.run.yml fallback."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: the default `morphik.toml` shipped in morphik-org/morphik-core ships, verbatim, `[auth] jwt_algorithm = \"HS256\" / bypass_auth_mode = true  # Enabled by default for easier local development / dev_user_id = \"dev_user\"`, and `[morphik] mode = \"self_hosted\"`, `[service] environment = \"development\"`. `core/auth_utils.py` verify_token: when `settings.bypass_auth_mode` is true it returns `AuthContext(user_id=settings.dev_user_id, app_id=None)` with NO Authorization header checked, so every request (UI and REST/API) is served as the dev_user with no token. `core/config.py` loads `bypass_auth_mode` straight from the toml and only raises \"JWT_SECRET_KEY is required\" when bypass is OFF; `dev_mode` is a backward-compat alias property for `bypass_auth_mode`. The canonical installer `install_docker.sh` (run via `curl -sSL https://install.morphik.ai | bash`) downloads `docker-compose.run.yml` (publishes `8000:8000`) plus this `morphik.toml`, and prompts \"enter a secure LOCAL_URI_PASSWORD (or press Enter to skip for local-only access)\" — pressing Enter (the default, lowest-friction path) prints \"No LOCAL_URI_PASSWORD provided - enabling authentication bypass (bypass_auth_mode=true)\". So a user who runs the documented quickstart and accepts defaults gets a fully unauthenticated UI+API; auth exists but is OFF unless the operator sets a LOCAL_URI_PASSWORD / flips bypass_auth_mode=false. Classified configurable-default-off (it skews open-by-default in practice because the install prompt defaults to skip).",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG corpus: raw documents, PDFs, images, parsed chunks (any private/PII/PHI/contract data the operator loaded) readable unauth via POST /documents, /retrieve/docs, /retrieve/chunks, /batch/documents",
+    "Vector store contents (pgvector chunks + ColPali multivector embeddings) and metadata filters revealing business taxonomy",
+    "Upstream LLM provider API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, ASSEMBLYAI_API_KEY, TURBOPUFFER_API_KEY, AWS creds held in env/.env (used for completion+embedding; abusable for LLMjacking if env or completion config leaks)",
+    "Knowledge-graph definitions (/graph) exposing entity/relationship structure of the private knowledge base = business logic",
+    "Conversation/chat history: GET /chats, GET /chat/{chat_id} returns prior queries and model answers",
+    "Postgres directly exposed on 5432 with morphik:morphik (vector + document_metadata tables) when host port published",
+    "App/connection tokens via /apps and /apps/rotate_token; predictable JWT secret (your-secret-key-here / dev-secret-key) enables token forgery"
+  ],
+  "sources": [
+    "https://github.com/morphik-org/morphik-core",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/morphik.toml",
+    "https://github.com/morphik-org/morphik-core/blob/main/docker-compose.run.yml",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/core/config.py",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/core/auth_utils.py",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/core/api.py",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/core/app_factory.py",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/core/routes/health.py",
+    "https://raw.githubusercontent.com/morphik-org/morphik-core/main/install_docker.sh",
+    "https://github.com/morphik-org/morphik-core/blob/main/DOCKER.md",
+    "https://www.morphik.ai/docs/self-hosting",
+    "https://github.com/morphik-org/morphik-core/security/advisories",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

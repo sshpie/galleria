@@ -1,0 +1,70 @@
+{
+  "platform": "milvus",
+  "display_name": "Milvus",
+  "category": "vector_db",
+  "default_ports": [
+    19530
+  ],
+  "api_paths": [
+    "/v1/health",
+    "/v1/vector/collections",
+    "/api/v1/list",
+    "/api/v1/get_backup?backup_name=<name>"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "MILVUS_SECURITY_AUTHORIZATIONENABLED"
+  ],
+  "default_creds": [
+    {
+      "user": "root",
+      "pass": "Milvus",
+      "context": "default root credential when common.security.authorizationEnabled=true; registry-confirmed (vendor-port-registry default_auth: OFF (root/Milvus))"
+    }
+  ],
+  "install_tell": "docker run -p 19530:19530 milvusdb/milvus:latest standalone",
+  "misconfig_patterns": [
+    "No authentication in single-node deployment",
+    "gRPC port 19530 exposed without TLS",
+    "MILVUS_SECURITY_AUTHORIZATIONENABLED defaults to false"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:19530",
+      "port:19530 http.html:\"milvus\"",
+      "\"collection_backups\" \"backup_timestamp\" \"requestId\" port:8080"
+    ],
+    "active_probe": {
+      "path": "/v1/health",
+      "method": "GET",
+      "response_markers": [
+        "\"nodeInfos\""
+      ],
+      "false_positive_check": "response data.nodeInfos field is Milvus-specific — present in healthy cluster health response"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"milvus\" port:19530",
+    "strict": "port:19530 \"milvus\"",
+    "version": "port:19530 http.html:\"milvus\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "Port 19530 is Milvus-specific — lower FP than port 8000 cluster",
+    "Attu web UI often running at port 8000 alongside gRPC on 19530",
+    "Error messages reveal Milvus version for CVE matching"
+  ],
+  "pivot_paths": [
+    "GET /v1/vector/collections → list collections → query vectors without auth",
+    "Error response bodies reveal exact Milvus version string",
+    "Attu UI at :8000 → full vector database browser without credentials"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-26190 (CVSS 9.8): port 9091 zero-auth REST API; /expr evals arbitrary expressions with default by-dev etcd token; GET :9091/api/v1/credential/users enumerates users even when 19530 auth ON; fixed 2.5.27/2.6.10; GHSA-7ppg-37fh-vcr6",
+    "CVE-2025-64513 (CVSS 9.3): forge sourceId header @@milvus-member@@ (base64: QEBtaWx2dXMtbWVtYmVyQEA=) to gain admin"
+  ],
+  "sources": [
+    "Learning LangChain (9781098167271) ch02",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (backup-endpoint enrichment)"
+  ]
+}

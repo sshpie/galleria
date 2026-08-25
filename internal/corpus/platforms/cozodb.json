@@ -1,0 +1,61 @@
+{
+  "platform": "cozodb",
+  "display_name": "CozoDB",
+  "category": "vector_db",
+  "default_ports": [
+    9070
+  ],
+  "api_paths": [
+    "/text-query",
+    "/export/{rel}",
+    "/import"
+  ],
+  "auth_default": "trust",
+  "auth_config_env": [
+    "COZO_AUTH"
+  ],
+  "default_creds": [],
+  "install_tell": "./cozo server -e rocksdb -p cozo.db  (no official Docker image exists — cozodb/cozodb-rocksdb does not resolve on Docker Hub; distributed as GitHub release binaries, cozodb/cozo repo)",
+  "misconfig_patterns": [
+    "VERIFIED against real binary v0.7.6: default bind is 127.0.0.1 with NO auth requirement at all — safe only because it's unreachable off-box",
+    "VERIFIED: any non-default --bind (0.0.0.0 or a specific interface IP) auto-generates a random token and mandates x-cozo-auth on every request, including from localhost — this is NOT a bypassable/optional setting, there is no CLI flag to disable it",
+    "Real exposure path is NOT 'no auth' — it's the auth TOKEN FILE leaking (world-readable volume mount, committed to a repo, echoed in deploy/CI logs, `docker cp`'d to a public location)",
+    "Reverse proxy hardcoding x-cozo-auth on every forwarded request defeats the token's purpose for anyone who can reach the proxy",
+    "/export/{rel} dumps entire relation as JSON — still gated by the same x-cozo-auth requirement once bound non-default; not a separate bypass"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9070 \"cozo\""
+    ],
+    "active_probe": {
+      "path": "/text-query",
+      "method": "POST",
+      "response_markers": [
+        "\"ok\":true",
+        "\"rows\"",
+        "\"headers\""
+      ],
+      "false_positive_check": "response must include ok:true, rows, and headers fields — unique to CozoDB Datalog response format"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9070",
+    "strict": "port:9070 \"cozo\"",
+    "version": "port:9070 \"cozodb\""
+  },
+  "deployment_tells": [
+    "POST /text-query with Datalog query returns {ok:true, rows:[], headers:[]} structure",
+    "Auth token conditional — loopback deployments are open, port-forwarded deployments may be",
+    "HNSW vector index support via hnsw() relation"
+  ],
+  "pivot_paths": [
+    "POST /text-query body=?[k,v] := *sys:relations[k,v] → list all stored relations",
+    "GET /export/{rel} → full relation dump as JSON without auth (if no token)",
+    "POST /text-query → Datalog query arbitrary stored data"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://cozodb.org",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

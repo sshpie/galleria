@@ -1,0 +1,147 @@
+{
+  "platform": "ragflow",
+  "display_name": "RAGFlow",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    80,
+    443,
+    9380,
+    9381,
+    9382,
+    9383,
+    9384
+  ],
+  "api_paths": [
+    "/api/v1/datasets",
+    "/api/v1/chats",
+    "/api/v1/agents",
+    "/api/v1/retrieval",
+    "/api/v1/datasets/{dataset_id}/documents",
+    "/api/v1/files",
+    "/api/v1/admin",
+    "/v1/user/login",
+    "/v1/system/healthz",
+    "/v1/system/version"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [
+    "REGISTER_ENABLED",
+    "DISABLE_PASSWORD_LOGIN",
+    "ADMIN_SVR_HTTP_PORT",
+    "SVR_HTTP_PORT",
+    "SVR_WEB_HTTP_PORT"
+  ],
+  "default_creds": [
+    {
+      "user": "admin@ragflow.io",
+      "pass": "admin",
+      "context": "Admin server / Admin UI (port 9381, proxied at /api/v1/admin and /admin). Auto-created at first startup; admin server is ON by default because docker-compose.yml command includes --enable-adminserver. Per vendor admin_ui docs; no forced rotation. Also the CLI admin tool default password is 'admin'."
+    },
+    {
+      "user": "rag_flow",
+      "pass": "infini_rag_flow",
+      "context": "MinIO object store (S3-compatible, MINIO_USER/MINIO_PASSWORD in docker/.env; console 9001, API 9000) holding all ingested RAG source documents"
+    },
+    {
+      "user": "elastic",
+      "pass": "infini_rag_flow",
+      "context": "Elasticsearch ELASTIC_PASSWORD in docker/.env, port 1200 (ES_PORT), holds the vector/full-text index of ingested doc chunks"
+    },
+    {
+      "user": "root",
+      "pass": "infini_rag_flow",
+      "context": "MySQL MYSQL_PASSWORD in docker/.env, host port 3306 (EXPOSE_MYSQL_PORT), holds users, tenants, API keys, chat history, agent/flow definitions"
+    },
+    {
+      "user": "(none)",
+      "pass": "infini_rag_flow",
+      "context": "Redis REDIS_PASSWORD in docker/.env, port 6379"
+    }
+  ],
+  "install_tell": "git clone https://github.com/infiniflow/ragflow.git ; cd ragflow/docker ; docker compose -f docker-compose.yml up -d  (then browse http://IP_OF_YOUR_MACHINE on default port 80). RAGFLOW_IMAGE=infiniflow/ragflow:v0.26.0 per docker/.env.",
+  "misconfig_patterns": [
+    "Admin server ON by default (--enable-adminserver in docker-compose.yml command) with hardcoded default creds admin@ragflow.io/admin and no forced rotation -> admin takeover if 9381 or /api/v1/admin is reachable",
+    "REGISTER_ENABLED=1 by default -> open self-registration; an internet-exposed instance lets any visitor create an account/tenant (operators must flip to 0 to lock down)",
+    "All backing-store passwords default to the literal 'infini_rag_flow' (Elasticsearch, MySQL, MinIO, Redis, OceanBase) - .env header warns 'DO NOT DEPLOY WITH DEFAULT PASSWORDS' but quickstart ships them unchanged",
+    "docker/.env EXPOSE_MYSQL_PORT=3306, MINIO_PORT=9000, MINIO_CONSOLE_PORT=9001, ES_PORT=1200, REDIS_PORT=6379 all bind to the host -> backing stores directly reachable with default creds if firewall is open",
+    "Optional MCP server (9382) and embedded sandbox code-exec feature add further exec surface when enabled"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.favicon.hash for the RAGFlow web UI favicon",
+      "http.title:\"RAGFlow\"",
+      "http.html:\"infiniflow\"",
+      "http.html:\"ragflow\""
+    ],
+    "active_probe": {
+      "path": "/v1/system/healthz",
+      "method": "GET",
+      "response_markers": [
+        "\"doc_engine\"",
+        "\"db\":\"ok\"",
+        "\"redis\"",
+        "\"storage\"",
+        "\"status\":\"ok\""
+      ],
+      "false_positive_check": "Do NOT fingerprint on generic strings ('RAG', 'chat', 'AI', 'flow') - they collide with thousands of unrelated apps and Flowise/Dify/Langflow. Confirm RAGFlow specifically by: (1) the SPA bundle path `/static/js/` plus `/ragflow/web/dist` semantics and an index.html whose title is exactly 'RAGFlow'; (2) the vendor-unique combined health JSON at /v1/system/healthz returning the exact key set {db, redis, doc_engine, storage, status} - the `doc_engine` key is RAGFlow-specific (Elasticsearch/Infinity/OceanBase backend abstraction) and not present in Dify/Flowise/Langflow health responses; (3) presence of the /api/v1/admin route (nginx proxies it to 9381) which is unique to RAGFlow's split web/admin server design. The ~50%-rule trap: a host merely titled with 'RAG' is not RAGFlow - require either the favicon hash OR the healthz key set before labeling."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"RAGFlow\"",
+    "strict": "http.title:\"RAGFlow\" http.html:\"infiniflow\"",
+    "version": "http.title:\"RAGFlow\" http.html:\"v0.26\""
+  },
+  "deployment_tells": [
+    "nginx serving SPA from /ragflow/web/dist with /static/(css|js|media)/ asset routing",
+    "Split-server architecture: /v1 + /api -> 9380 (RAGFlow API), /api/v1/admin -> 9381 (admin server)",
+    "Default image tag infiniflow/ragflow:vX.Y.Z (v0.26.0 current); :nightly for edge",
+    "Backing services es01/opensearch01, mysql, minio, redis, optional infinity/oceanbase/seekdb containers on one docker network named 'ragflow'",
+    "TZ=Asia/Shanghai default and Huawei/Aliyun mirror image fallbacks in .env (China-origin project tells)",
+    "Health JSON exposing doc_engine + storage backend selection"
+  ],
+  "pivot_paths": [
+    "GET /v1/system/healthz (unauth) -> confirm liveness + doc_engine backend type before any further interaction",
+    "Read-only: navigate /admin (or /api/v1/admin) and attempt the documented default admin@ragflow.io/admin to gauge whether the admin surface was hardened (observe only, do not change state)",
+    "Read-only: probe whether self-registration is open (REGISTER_ENABLED=1) by loading the Sign-up view - presence of an open signup form is itself the finding",
+    "Enumerate exposed backing-store ports (3306 MySQL, 9000/9001 MinIO, 1200 ES, 6379 Redis) for default-cred reachability - banner/auth-handshake only, no data pull",
+    "If a shared assistant/agent public link is exposed, the CVE-2025-69286 predictable-token weakness is the documented unauth path to derive the owner's API key (note as a known weakness; do not exercise against third-party hosts)"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-69286 / GHSA-9j5g-g4xm-57w7 (Critical): Predictable UUIDv1-timestamp token generation -> authentication bypass; attacker with a shared assistant/agent URL decodes the beta token and enumerates the owner's personal API key for full account control. Affected: < 0.20.5.",
+    "CVE-2024-12450 / GHSA-775f-24cq-qg6p (Moderate, CVSS 6.5): web_crawl in document_app.py does not filter URLs -> Full-Read SSRF, Arbitrary File Read (file:// unrestricted), and RCE via outdated --no-sandbox Chromium. Affected 0.12.0; fixed 0.14.0.",
+    "GHSA-wpg4-h5g2-jxm6 (Critical): Server-Side Template Injection in Prompt Generator -> RCE.",
+    "GHSA-vvwj-fvwh-4whx (Critical): SSTI in Agent 'Text Processing' component -> RCE.",
+    "GHSA-v7cf-w7gj-pgf4 (Critical): Zip-Slip path traversal in MinerUParser -> RCE.",
+    "GHSA-3gqj-66qm-25jq (Critical): SQL injection.",
+    "GHSA-wc5v-g79p-7hch (High): IDOR / insecure direct object reference -> cross-object access.",
+    "GHSA-8xw3-v6c2-j84j (High): Remote Code Execution.",
+    "Operational (not a CVE): Admin server enabled by default with static admin@ragflow.io/admin credentials -> admin takeover when 9381 or /api/v1/admin is exposed."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: docker/.env (ref d32e05d, the file the quickstart tells users to run via `docker compose -f docker-compose.yml up -d`). It sets `REGISTER_ENABLED=1` and `DISABLE_PASSWORD_LOGIN=false`. The SPA served at port 80 (nginx root `/ragflow/web/dist`) renders a login/Sign-up gate; the first registered user becomes the tenant owner. The `/api/v1` REST API (proxied to 9380 per docker/nginx/ragflow.conf.python) requires `Authorization: Bearer <API_KEY>`, and that key can only be minted from the authenticated UI (avatar > API). So a fresh quickstart yields NO usable UI or v1 API without registering/logging in first = auth-on-default. CAVEAT that downgrades real-world posture: docker-compose.yml default `command:` includes `--enable-adminserver`, so the Admin server is ON by default, proxied at `/api/v1/admin` (nginx) and exposed on host port 9381 (ADMIN_SVR_HTTP_PORT). Per vendor admin_ui docs it ships HARDCODED default credentials admin@ragflow.io / admin, auto-created at first startup, with no forced rotation. That secondary surface is configurable-default-on-with-default-creds.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG source documents and their parsed chunks (uploaded PDFs/Office/scanned docs - frequently internal/confidential corp docs and PII) - stored in MinIO (9000/9001) and indexed in Elasticsearch (1200), both with default creds infini_rag_flow",
+    "Upstream LLM provider API keys (OpenAI/Azure/Ollama/etc.) and embedding-model creds configured per-tenant, stored in MySQL (3306, default creds) and reachable through the authenticated model-provider config",
+    "Agent/flow definitions revealing business logic and system prompts (the low-code RAG pipeline graphs)",
+    "Chat/conversation history per assistant",
+    "Raw vector store contents (chunk embeddings + source text) in the doc engine",
+    "User/tenant table, password hashes, and minted API keys / beta tokens in MySQL",
+    "Via the default-cred Admin server (admin@ragflow.io/admin on 9381 // /api/v1/admin): cross-tenant user management, service config, sandbox settings - full administrative takeover of the deployment"
+  ],
+  "sources": [
+    "https://github.com/infiniflow/ragflow/blob/main/docker/.env",
+    "https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml",
+    "https://github.com/infiniflow/ragflow/blob/main/docker/nginx/ragflow.conf.python",
+    "https://ragflow.io/docs/configurations",
+    "https://ragflow.io/docs/admin_ui",
+    "https://ragflow.io/docs/http_api_reference",
+    "https://ragflow.io/docs/acquire_ragflow_api_key",
+    "https://ragflow.io/docs/dev/run_health_check",
+    "https://github.com/infiniflow/ragflow/security/advisories/GHSA-9j5g-g4xm-57w7",
+    "https://github.com/advisories/GHSA-775f-24cq-qg6p",
+    "https://www.cvedetails.com/cve/CVE-2024-12450/",
+    "https://github.com/infiniflow/ragflow/security",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

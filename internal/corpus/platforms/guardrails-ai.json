@@ -1,0 +1,82 @@
+{
+  "platform": "guardrails-ai",
+  "display_name": "Guardrails AI (Guardrails Hub, OSS + commercial)",
+  "category": "ai-guardrail-self-hosted",
+  "default_ports": [8000, 443],
+  "api_paths": ["/guards/", "/guards/{guard_name}", "/guards/{guard_name}/validate", "/guards/{guard_name}/openai/v1/chat/completions", "/api-docs", "/health-check"],
+  "auth_default": "off",
+  "auth_config_env": ["GUARDRAILS_AI_API_BASE"],
+  "default_creds": [],
+  "install_tell": "OSS framework github.com/guardrails-ai/guardrails plus commercial Guardrails Hub at guardrailsai.com. LiteLLM default base http://0.0.0.0:8000 (NO AUTH by default). Operators run a local FastAPI server; production deployments behind operator-managed auth. Hub catalogs Detectors (detect_pii, toxic_language, competitor_check, etc.) published as separate repos.",
+  "misconfig_patterns": [
+    "Default 0.0.0.0:8000 bind exposes guardrails server cluster-wide / VPC-wide / WAN-wide if cluster has no egress restriction",
+    "/guards/{name}/openai/v1/chat/completions is a passthrough; if guard is permissive, becomes an open LLM proxy with operator-side OpenAI key",
+    "Hub-published Detectors (e.g. detect_pii) ship their own Triton-style app.py; supply-chain surface"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"guardrailsai.com\" (commercial dashboard only)",
+      "http.html:\"Guardrails Server\"",
+      "port:8000 + path /guards/"
+    ],
+    "active_probe": {
+      "path": "/guards/",
+      "method": "GET",
+      "port": 443,
+      "host_header": "playground.api.guardrailsai.com",
+      "response_markers": ["HTTP 200", "JSON array", "playground-session-", "validators", "Access-Control-Allow-Origin: *"],
+      "false_positive_check": "reject if body contains \"<html\" (SPA catch-all). Anchor on json_array + body_contains \"playground-session-\" + body_contains \"validators\". Prod tier (api.simlab.guardrailsai.com) is correctly 401 -- do not confuse."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"guardrailsai.com\"",
+    "strict": "http.html:\"guardrails-ai\" port:8000",
+    "version": "http.html:\"/guards/\" http.html:\"validate\""
+  },
+  "deployment_tells": [
+    "Default 0.0.0.0:8000 bind is the killer pattern",
+    "Operators often containerize and front with Traefik/Nginx on 443",
+    "DMARC p=quarantine, pct=100 -- relatively mature enforcement"
+  ],
+  "pivot_paths": [
+    "Port 8000 sweep on AI-tagged corpora with /guards/ path",
+    "Hub repo enumeration on github.com/guardrails-ai for Detector inventory",
+    "Cert-CN pivot via guardrailsai.com for commercial customers"
+  ],
+  "vulnerabilities": [
+    {
+      "id": "guardrailsai-playground-unauth-guards",
+      "severity": "high",
+      "class": "missing-authentication / broken-object-level-authorization (multi-tenant read)",
+      "target": "playground.api.guardrailsai.com",
+      "endpoint": "GET /guards/ (no auth header, no cookie)",
+      "verified": "2026-06-23 (200-with-data, read-only)",
+      "summary": "Unauthenticated GET /guards/ on the Hub Playground API returns every playground user's guard objects. 1,287 objects, 992 distinct OAuth subject IDs. Object id/name keyed playground-session-<provider>|<subject-id> where provider is an Auth0 connection name (google-oauth2|github|auth0) and subject-id is the Auth0 sub. GitHub numeric IDs deanonymize via api.github.com/user/<id>. Wildcard CORS (Access-Control-Allow-Origin: *) -> drive-by harvestable cross-origin. Per-user validator selections + thresholds + on-fail modes also disclosed.",
+      "identity_backbone": "Auth0 tenant guardrailsai.us.auth0.com (custom domain auth.guardrailsai.com); authn.guardrailsai.com Express service mints playground-session-* cookies post-Auth0.",
+      "scope_discipline": "Playground (try-it) tier only. Production threat-tester api.simlab.guardrailsai.com/api is correctly 401 (hardened). Validator selections/thresholds exposed, NOT validated prompt/response content. No creds/API keys in listing. Not CRITICAL: identifiers + configs, demo tier, no credential/content exposure.",
+      "remediation": "Require playground session token on /guards/; scope list to caller (object-level authz). Drop wildcard CORS on data endpoints. Replace embedded provider subject IDs with opaque per-session UUIDs.",
+      "evidence_discipline": "200-with-data confirmed once; sized as counts only (1,287/992/3/45); body shredded; no subject IDs persisted."
+    }
+  ],
+  "category_lane_classification": "Lane D (OSS framework + commercial Hub; LiteLLM consumes the OSS server).",
+  "disclosure_contact": {
+    "security_txt": "https://guardrailsai.com/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "admin@guardrailsai.com",
+    "channel_observed": "DMARC reports + GitHub security advisories on guardrails-ai/guardrails"
+  },
+  "dmarc_posture": {
+    "policy": "quarantine",
+    "pct": 100,
+    "rua": "admin@guardrailsai.com",
+    "adkim": "r",
+    "aspf": "r",
+    "mx_provider": "Google Workspace (smtp.google.com)",
+    "insight_80_placement": "Series A band (quarantine at pct=100, relaxed alignment, no reject yet)"
+  },
+  "insight_82_status": "CONFIRMED live SaaS find 2026-06-23. Commercial Hub Playground (playground.api.guardrailsai.com, Flask/gunicorn, us-west-2 ELB guardrails-hub-playgroun*) leaks all-tenant guards unauth at /guards/. Prod tier (api.simlab.guardrailsai.com) correctly 401. Demo-tier-weaker pattern.",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py",
+    "https://github.com/guardrails-ai/guardrails",
+    "dig +short TXT _dmarc.guardrailsai.com 2026-06-07"
+  ]
+}

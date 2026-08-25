@@ -1,0 +1,119 @@
+{
+ "name": "H2O-3 (H2O Flow web UI + REST API)",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "H2O.ai (legal: H2O.ai, Inc.)",
+  "backing": "OSS (Apache-2.0) with a commercial company behind it; H2O-3 is the free open-source core, while Driverless AI, H2O MLOps, Document AI, Hydrogen Torch, and the newer GenAI/agentic stack are the commercial products",
+  "hq": "Mountain View, California, USA",
+  "repo": "https://github.com/h2oai/h2o-3",
+  "scale": "Founded 2012. ~7k GitHub stars on h2o-3. Total funding ~$250M (Series E led by Commonwealth Bank of Australia; earlier Series C led by Wells Fargo and NVIDIA). Vendor claims >20,000 organizations, ~1M+ data scientists, and over half the Fortune 500 use the broader platform (AT&T, Citi, Capital One, GSK, PayPal, Walgreens cited). H2O-3 itself is one of the most widely deployed open-source AutoML/distributed-ML engines.",
+  "status": "active"
+ },
+ "ports": [
+  "54321/tcp (H2O Flow UI + REST API, embedded Jetty, plaintext HTTP by default; HTTPS only if -jks set)",
+  "54322/tcp (proprietary binary intra-cluster node-to-node protocol, unencrypted by default)"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "port:54321",
+  "http.html:\"H2O Flow\"",
+  "http.html:\"H2O Flow\" port:54321",
+  "\"build_number\" \"node_idx\" \"cloud_name\"",
+  "http.html:\"H2O Flow\" \"3.46\"",
+  "\"version\":\"3.4\" \"build_age\" \"build_number\""
+ ],
+ "verification_primitive": {
+  "probe": "HTTP GET http://<host>:54321/3/Cloud (read-only; also GET /3/About). No auth header. Single GET, no state change.",
+  "success_signal": "HTTP 200 with application/json body containing the H2O-specific keys cloud_name, build_number, node_idx, cloud_healthy, and a nodes[] array with member IP:port and version. A login prompt (401/redirect to a form) instead means auth IS enabled = not open.",
+  "impact_when_open": "A 200-with-data here proves the cluster is fully unauthenticated: the same session can list Frames (/3/Frames) and Models (/3/Models) to read loaded datasets and their column/schema names, enumerate the server filesystem via /3/Typeahead/files, and reach the ImportFiles / ImportSQLTable ingestion endpoints. On builds <= 3.46.0.8 those ingestion endpoints are the unauthenticated JDBC-deserialization RCE sink. Restraint: /3/Cloud read alone confirms exposure; do not exercise the RCE sink."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/",
+   "returns": "H2O Flow single-page web UI (notebook). Loads with no login on a default instance; full point-and-click control of the cluster."
+  },
+  {
+   "method": "GET",
+   "path": "/3/Cloud",
+   "returns": "Cluster status JSON: version, build_number, node names, node IP:port list, healthy flag, member node H2O versions, memory/CPU. Best single unauth fingerprint + recon read."
+  },
+  {
+   "method": "GET",
+   "path": "/3/About",
+   "returns": "Build/version metadata JSON (H2O version, build branch, build age, JVM, OS). Vendor-unique keys."
+  },
+  {
+   "method": "GET",
+   "path": "/3/Frames",
+   "returns": "All Frames (datasets) in the DKV - frame keys, column names, row counts. Reveals what data is loaded; column names leak schema/PII fields."
+  },
+  {
+   "method": "GET",
+   "path": "/3/Models",
+   "returns": "All trained models in the DKV with algorithm and parameters - the org's ML IP."
+  },
+  {
+   "method": "GET",
+   "path": "/3/Jobs",
+   "returns": "All running/finished jobs (long-running actions), exposing activity and operator usage."
+  },
+  {
+   "method": "GET",
+   "path": "/3/Typeahead/files?src=/",
+   "returns": "Server-side filesystem path autocomplete - enumerate the host filesystem of the H2O node unauthenticated."
+  },
+  {
+   "method": "POST",
+   "path": "/3/ImportFiles",
+   "returns": "Imports a server-side file/URL path into a Frame - lets an unauth client read arbitrary server-readable files and SSRF-style fetch URLs the node can reach."
+  },
+  {
+   "method": "POST",
+   "path": "/99/ImportSQLTable",
+   "returns": "Imports a SQL table via a caller-supplied connection_url JDBC string - the JDBC deserialization RCE sink (CVE-2024-45758 / CVE-2025-5662 / 6507 / 6544 / 10769)."
+  },
+  {
+   "method": "GET",
+   "path": "/3/NodePersistentStorage/{category}",
+   "returns": "Lists keys in node persistent storage categories."
+  },
+  {
+   "method": "POST",
+   "path": "/99/ImportHive / /3/Parse",
+   "returns": "Hive import and parse drivers - additional data-ingestion / connection-string attack surface."
+  }
+ ],
+ "cves": [
+  "CVE-2024-45758",
+  "CVE-2025-5662",
+  "CVE-2025-6507",
+  "CVE-2025-6544",
+  "CVE-2025-10769",
+  "CVE-2024-7768"
+ ],
+ "sources": [
+  "https://github.com/h2oai/h2o-3",
+  "https://raw.githubusercontent.com/h2oai/h2o-3/master/h2o-docs/src/product/security.rst",
+  "https://docs.h2o.ai/h2o/latest-stable/h2o-docs/security.html",
+  "https://docs.h2o.ai/h2o/latest-stable/h2o-docs/starting-h2o.html",
+  "https://docs.h2o.ai/h2o/latest-stable/h2o-docs/welcome.html",
+  "https://docs.h2o.ai/h2o/latest-stable/h2o-docs/flow.html",
+  "https://docs.h2o.ai/h2o/latest-stable/h2o-docs/rest-api-reference.html",
+  "https://raw.githubusercontent.com/h2oai/h2o-3/master/h2o-core/src/main/java/water/H2O.java",
+  "https://raw.githubusercontent.com/h2oai/h2o-3/master/Dockerfile",
+  "https://raw.githubusercontent.com/h2oai/h2o-3/master/h2o-helm/values.yaml",
+  "https://raw.githubusercontent.com/h2oai/h2o-3/master/README.md",
+  "https://github.com/h2oai/h2o-3/blob/master/h2o-docs/src/api/REST/h2o_3_rest_api_overview.md",
+  "https://www.sentinelone.com/vulnerability-database/cve-2024-45758/",
+  "https://www.sentinelone.com/vulnerability-database/cve-2025-10769/",
+  "https://zeropath.com/blog/cve-2025-5662-h2o3-deserialization-rce-summary",
+  "https://www.loginsoft.com/post/cve-2025-6544-cve-2025-6507-deserialization-vulnerabilities-and-mysql-jdbc-bypass-in-h2o-3-explained",
+  "https://securityboulevard.com/2025/09/h2o-3-jdbc-deserialization-vulnerability-cve-2025-6507/",
+  "https://www.miggo.io/vulnerability-database/cve/CVE-2024-7768",
+  "https://h2o.ai/",
+  "https://www.crunchbase.com/organization/h2o-2",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

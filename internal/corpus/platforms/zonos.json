@@ -1,0 +1,81 @@
+{
+  "name": "Zonos",
+  "slug": "zonos",
+  "category": "voice-tts-conversational",
+  "description": "Zyphra's open-weight zero-shot TTS engine (Zyphra/Zonos, Zonos-v0.1, trained on ~200k hours). Self-hosted only via a Gradio interface (gradio_interface.py) that binds 0.0.0.0 on port 7860 with no authentication. Shodan http.html-blind (JS-rendered SPA); identity resolves via the unauthenticated /config JSON.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication. gradio_interface.py calls demo.launch(server_name=\"0.0.0.0\", server_port=7860, share=share) - it binds ALL interfaces on port 7860 by default (not loopback), with no auth= argument, so an exposed host serves the UI to anyone who finds the port. share is gated by the GRADIO_SHARE env var (default False); when set it mints a public *.gradio.live tunnel. Gradio would enforce credentials only if auth= or GRADIO_USERNAME/GRADIO_PASSWORD were set - none are. No rate limiting.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio-app\"",
+      "rationale": "Zonos serves a Gradio SPA that binds 0.0.0.0:7860 by default; the gradio-app mount div is the reliable body marker since the Zonos name is JS-rendered and not in http.html. Catches the surface for /config confirmation."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio_config\"",
+      "rationale": "The served SPA shell embeds/references the Gradio config; combined with the canonical port this isolates Gradio surfaces to then resolve via the /config JSON that carries the Zonos app title."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio-app\" http.html:\"Zonos\"",
+      "rationale": "Conjunctive: Gradio mount plus the inlined Zonos banner isolates it from other Gradio TTS apps - but the name resolves only when the Gradio version inlines config; otherwise fetch GET /config (unauthenticated, returns the app title) or use aimap deep-enum."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"Zonos-v0.1\"",
+      "rationale": "The Zonos-v0.1 model identifier in the inlined config banner or /config JSON scopes the release; the /config 'version' field also gives the Gradio version for CVE scoping."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/config",
+    "title_contains": "Gradio",
+    "response_body_contains": [
+      "gradio-app",
+      "gradio_config",
+      "Zonos",
+      "prefix_audio",
+      "speaker"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/config",
+    "/info",
+    "/heartbeat/{hash}",
+    "/queue/join",
+    "/queue/data",
+    "/run/predict",
+    "/api/predict",
+    "/gradio_api/info",
+    "/file=",
+    "/"
+  ],
+  "known_vulns": [
+    "Binds 0.0.0.0:7860 by default with no auth - exposed unauthenticated TTS and voice cloning out of the box on a public host",
+    "Gradio CVE-2024-1561 - arbitrary local file read via component routes on unpatched pins",
+    "Gradio CVE-2023-51449 - path traversal via /file= on Gradio 3.x < 3.47.0",
+    "Gradio CVE-2024-1727 - CSRF chain against /file and upload routes on Gradio 4.x pre-patch",
+    "SSRF via /queue/join upload proxy in the 2024 Gradio 4.x security batch",
+    "Unauthenticated GPU compute consumption - no rate limiting on inference by default",
+    "GRADIO_SHARE=1 mints a public *.gradio.live tunnel bypassing local network controls"
+  ],
+  "default_creds": [],
+  "risk_notes": "Zonos is a default-exposed Gradio surface: gradio_interface.py hardcodes server_name='0.0.0.0', so unlike the loopback-defaulting cohort it serves all interfaces the moment it runs. Vectors: (1) Unauthenticated zero-shot voice cloning - attacker supplies a reference clip and synthesizes arbitrary speech in that voice (deepfake/vishing), aided by Zonos's high-fidelity 200k-hour model; (2) GPU compute theft on the ungated inference queue; (3) File-read/traversal on instances pinned to a vulnerable Gradio version (CVE-2024-1561 / CVE-2023-51449) via /file=; (4) GRADIO_SHARE tunnels publish the whole UI publicly. Shodan http.html is blind to the Zonos name (JS SPA; title 'Gradio', mount div id='gradio-app', Server 'uvicorn'); the name lives in the /config JSON, which is unauthenticated and also carries the Gradio version for CVE scoping - so confirmation is a /config fetch or JS-rendering crawl, not a body-string match. Zyphra also runs a first-party hosted playground at playground.zyphra.com/audio (out of scope for self-hosted harvesting).",
+  "deployment_notes": "~7.2k stars, not archived (last push 2025-03-05). Self-hosted only via the Gradio interface (no separate REST server in-repo); a Dockerfile and docker-compose are shipped in-repo (run the Gradio interface with --gpus=all) but no named published image is confirmed. gradio_interface.py binds 0.0.0.0:7860. Server header is 'uvicorn' (Gradio on Starlette/uvicorn). The served page is a JS SPA, so pivot on port 7860 plus the gradio-app mount, gradio_config reference, and 'Gradio' title, then read GET /config (unauthenticated) to recover the Zonos app title and the Gradio version. HuggingFace Spaces demos of Zonos are public by design.",
+  "docker_images": [],
+  "github_repos": [
+    "Zyphra/Zonos"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

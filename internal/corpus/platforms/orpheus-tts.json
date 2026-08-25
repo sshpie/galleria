@@ -1,0 +1,93 @@
+{
+  "name": "Orpheus-TTS",
+  "slug": "orpheus-tts",
+  "category": "voice-tts-conversational",
+  "description": "LLM-based TTS from Canopy Labs (canopyai/Orpheus-TTS) built on a Llama-3B backbone with SNAC audio decoding, producing highly human-like speech with inline emotion tags (<laugh>, <sigh>, <gasp>). The Orpheus model runs on an LLM inference backend (llama.cpp server or vLLM), fronted by a community FastAPI server (Lex-au/Orpheus-FastAPI and forks) on port 5005 that exposes an OpenAI-compatible /v1/audio/speech endpoint plus a modern web UI. No authentication by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication on the Orpheus-FastAPI server (port 5005 web UI + /v1/audio/speech) or on the backing llama.cpp/vLLM inference server (typically port 8080/8000 exposing /v1/completions). This is a TWO-tier exposure: the TTS front end AND the raw LLM backend are each unauthenticated by default. The web UI lets anyone change server settings (ORPHEUS_API_URL, model params) live with no auth. Operators must add their own proxy; the compose stack ships none.",
+  "default_ports": [
+    5005,
+    8080
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:5005 http.html:\"Orpheus\"",
+      "rationale": "Orpheus-FastAPI serves an HTML web UI (not a Gradio SPA) whose title/header contains 'Orpheus' / 'Orpheus-FastAPI'; direct HTML-body match, HTML-dorkable on Shodan. High precision on 5005."
+    },
+    {
+      "tier": "basic",
+      "query": "http.title:\"Orpheus-FastAPI\"",
+      "rationale": "The web UI <title> is a strong identity signal independent of port (operators relocate off 5005). http.title is HTML-only and works on Shodan web UI."
+    },
+    {
+      "tier": "strict",
+      "query": "port:5005 http.html:\"Orpheus\" http.html:\"emotion\"",
+      "rationale": "The UI advertises emotion tags (<laugh>, <sigh>, <gasp>) and its 8 named voices (tara, leah, jess, leo, dan, mia, zac, zoe); 'Orpheus' + 'emotion'/a voice name confirms the live TTS UI versus a bare index. Voice names (tara/leo/...) are the sharpest discriminator against generic OpenAI-compat TTS."
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"/v1/audio/speech\" http.html:\"orpheus\"",
+      "rationale": "OpenAI-compat path + orpheus token. FP-risk HIGH without 'orpheus' — /v1/audio/speech alone matches openedai-speech, LocalAI, Kokoro-FastAPI, MeloTTS-openai. The 'orpheus' qualifier (or a voice name like tara) disambiguates. Path may be JSON-only (openapi.json) if docs are off -> Censys/active route."
+    },
+    {
+      "tier": "version",
+      "query": "port:5005 http.html:\"Orpheus\" http.html:\"version\"",
+      "rationale": "Orpheus-FastAPI version in the UI/footer or /health JSON; also fingerprint the backing model tag (Orpheus-3b-0.1-ft, and GGUF quant for llama.cpp) which sets capability. Backend llama.cpp version is a separate CVE axis -> check port 8080 /v1/models."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 5005,
+    "http_path": "/",
+    "title_contains": "Orpheus-FastAPI",
+    "response_body_contains": [
+      "Orpheus",
+      "/v1/audio/speech",
+      "emotion",
+      "tara",
+      "SNAC"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET / (Orpheus-FastAPI web UI, HTML)",
+    "POST /v1/audio/speech (OpenAI-compatible TTS endpoint)",
+    "GET /v1/models",
+    "POST /speak (web UI synthesis)",
+    "GET /health",
+    "GET /docs (FastAPI Swagger, if enabled)",
+    "GET /openapi.json",
+    "GET /web/ (static UI assets)",
+    "BACKEND port 8080/8000: POST /v1/completions, GET /v1/models (llama.cpp/vLLM — unauthenticated inference)"
+  ],
+  "known_vulns": [
+    "No authentication on the TTS front end (5005) — unauthenticated human-realistic voice synthesis with emotion control",
+    "No authentication on the backing llama.cpp/vLLM server (8080/8000) — a fully open LLM inference endpoint (/v1/completions) exposed alongside the TTS UI; separate and often overlooked compute-theft + prompt-abuse surface",
+    "Web UI allows live reconfiguration of ORPHEUS_API_URL and model params with no auth — attacker can repoint the backend or exfiltrate config",
+    "No rate limiting — Orpheus is LLM-scale GPU-heavy (3B + SNAC decode); unauth = high-cost GPU compute-theft on both tiers",
+    "FastAPI /docs / openapi.json schema disclosure where enabled",
+    "SSRF potential: server fetches from a configurable ORPHEUS_API_URL — attacker-controlled backend URL can pivot requests to internal services",
+    "No content filtering — high-realism emotional speech is prime material for vishing, impersonation, and disinformation audio",
+    "Backend llama.cpp server carries its own CVE surface (llama.cpp RPC/HTTP server vulns) when co-exposed"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Two-tier compute-theft — Orpheus is LLM-scale: the TTS front end (5005) AND an open llama.cpp/vLLM backend (8080/8000, /v1/completions) are each unauthenticated by default, so an exposed host leaks BOTH free TTS and free general LLM inference; the backend is the more valuable and more frequently missed prize. (2) High-realism voice-abuse — Orpheus's Llama-3B-backed prosody with inline emotion tags (<laugh>/<sigh>/<gasp>) is among the most human-like open TTS, making it especially dangerous for vishing, executive impersonation, and disinformation; no content controls. (3) SSRF / config tamper — the web UI exposes a settable ORPHEUS_API_URL with no auth; an attacker can repoint the backend or coerce server-side requests to internal targets. (4) Backend CVE surface — a co-exposed llama.cpp HTTP server adds its own vuln class. When enumerating an Orpheus host, ALWAYS check the backend inference port (commonly 8080) separately — that is the higher-impact finding. Data-sensitivity is low for inbound data but abuse-value is high on both the voice and the LLM-compute axes.",
+  "deployment_notes": "canopyai/Orpheus-TTS is the model + a Python inference package; production self-hosting is dominated by the community Lex-au/Orpheus-FastAPI server and its forks (prakharsr/Orpheus-TTS-FastAPI, richardr1126/LlamaCpp-Orpheus-FastAPI, Dalsontimes/orpheus-fastapi). Standard run: 'uvicorn app:app --host 0.0.0.0 --port 5005', web UI at http://host:5005/, OpenAI-compat /v1/audio/speech. The model needs an LLM backend — either llama.cpp server (GGUF quant of Orpheus-3b-0.1-ft, typically :8080) or vLLM (:8000) for higher concurrency — set via ORPHEUS_API_URL; the richardr1126 fork ships a docker-compose that orchestrates BOTH the FastAPI UI and a llama-cpp-server together, so the backend port is commonly co-exposed. 8 built-in voices (tara, leah, jess, leo, dan, mia, zac, zoe); emotion tags inline in text. RTX-class GPU expected. Unlike the Gradio platforms, the front end is a bespoke HTML UI (http.title:\"Orpheus-FastAPI\" is a clean Shodan signal); the CVE axis is FastAPI + the backing llama.cpp/vLLM server, not Gradio.",
+  "docker_images": [
+    "ghcr.io/lex-au/orpheus-fastapi",
+    "richardr1126/llamacpp-orpheus-fastapi (docker-compose in repo)"
+  ],
+  "github_repos": [
+    "canopyai/Orpheus-TTS",
+    "Lex-au/Orpheus-FastAPI",
+    "prakharsr/Orpheus-TTS-FastAPI",
+    "richardr1126/LlamaCpp-Orpheus-FastAPI"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

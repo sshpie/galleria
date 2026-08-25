@@ -1,0 +1,57 @@
+{
+  "platform": "portkey",
+  "display_name": "Portkey Gateway (self-hosted)",
+  "category": "gateway",
+  "default_ports": [8787],
+  "api_paths": ["/v1/chat/completions", "/v1/embeddings", "/public/"],
+  "auth_default": "off",
+  "auth_config_env": [
+    "PORTKEY_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "npx @portkey-ai/gateway",
+  "misconfig_patterns": [
+    "PORTKEY_API_KEY not set -- gateway proxies all requests without authentication",
+    "Console at /public/ accessible without auth -- exposes local request logs",
+    "x-portkey-custom-host header trusted without validation -- SSRF to internal hosts (CVE-2025-66405, fixed <v1.14.0)",
+    "Provider API keys passed per-request via x-portkey-api-key header visible in console logs"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"AI Gateway says hey\" port:8787",
+      "http.html:\"portkey\" port:8787",
+      "http.html:\"x-portkey\" port:8787"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 8787,
+      "response_markers": ["AI Gateway says hey"],
+      "false_positive_check": "body must contain exact string 'AI Gateway says hey'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"AI Gateway says hey\" port:8787",
+    "strict": "\"AI Gateway says hey\" port:8787",
+    "version": "\"AI Gateway says hey\" port:8787 http.html:\"portkey\""
+  },
+  "deployment_tells": [
+    "Port 8787 with root path returning 'AI Gateway says hey'",
+    "Console accessible at /public/ for local request monitoring",
+    "No favicon (pure API proxy -- no web UI)",
+    "x-portkey-api-key and x-portkey-provider headers in proxied requests"
+  ],
+  "pivot_paths": [
+    "GET :8787/ -- health check string 'AI Gateway says hey' confirms instance; no auth",
+    "Console at :8787/public/ -- request log viewer for all proxied calls",
+    "SSRF: POST with x-portkey-custom-host: http://169.254.169.254/latest/meta-data/ on unpatched <v1.14.0"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-66405 CVSS 6.9: SSRF via x-portkey-custom-host header; trusted without validation; allows requests to internal hosts including AWS/GCP metadata (169.254.169.254); affected <v1.14.0; fixed v1.14.0"
+  ],
+  "sources": [
+    "https://github.com/Portkey-AI/gateway",
+    "https://docs1.portkey.ai/docs/guides/getting-started/getting-started-with-ai-gateway",
+    "https://chatforest.com/reviews/portkey-ai-gateway-review/"
+  ]
+}

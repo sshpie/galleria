@@ -1,0 +1,48 @@
+{
+  "platform": "langserve",
+  "display_name": "LangServe",
+  "category": "orchestration",
+  "default_ports": [8000],
+  "api_paths": ["/chain", "/invoke", "/stream", "/docs", "/playground"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "pip install langserve && python serve.py",
+  "misconfig_patterns": [
+    "No input validation on /invoke — prompt injection surface",
+    "/playground exposes model behavior analysis without auth",
+    "FastAPI /docs exposes full API schema including chain logic"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8000 http.html:\"/playground\"",
+      "port:8000 http.html:\"invoke\"",
+      "http.headers:\"Server: uvicorn\""
+    ],
+    "active_probe": {
+      "path": "/docs",
+      "method": "GET",
+      "response_markers": ["FastAPI", "invoke"],
+      "false_positive_check": "OpenAPI spec must include /invoke path"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8000 \"/playground\"",
+    "strict": "port:8000 http.html:\"/playground\" http.html:\"invoke\"",
+    "version": "port:8000 http.html:\"langserve\" http.html:\"/playground\""
+  },
+  "deployment_tells": [
+    "FastAPI /docs endpoint with /invoke path",
+    "/playground browser UI for chain interaction",
+    "uvicorn Server header — shared with vLLM; verify via /playground presence"
+  ],
+  "pivot_paths": [
+    "GET /docs → full OpenAPI spec → enumerate all chain endpoints and input schemas",
+    "POST /invoke → test for prompt injection on chain input",
+    "GET /playground → inspect chain behavior, extract system prompt"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Learning LangChain (9781098167271) ch09"
+  ]
+}

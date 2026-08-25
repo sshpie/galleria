@@ -1,0 +1,91 @@
+{
+  "name": "Bert-VITS2",
+  "slug": "bert-vits2",
+  "category": "voice-tts-conversational",
+  "description": "Multilingual (Chinese/Japanese/English) TTS with BERT-conditioned prosody and speaker/voice cloning, built on VITS2 (fishaudio/Bert-VITS2). Self-hosted via a Gradio inference web UI (webui.py, default :7860) and a separate FastAPI inference server (server_fastapi.py, default :5000 from config.yml) that exposes a queryable HTTP synthesis API. ~8.8k stars; upstream now in maintenance-hold in favor of Fish-Speech, but Bert-VITS2 remains one of the most widely self-hosted Chinese-community TTS/cloning stacks with a large fork and one-click-package population.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in webui.py (Gradio launch() without auth=) or in server_fastapi.py by default. The FastAPI /voice synthesis endpoint and model-management routes accept unauthenticated requests. config.yml holds a webui.server 'share' flag and the FastAPI server host/port but no credential; operators are expected to firewall or reverse-proxy. Common Chinese-language one-click bundles bind 0.0.0.0 on both 7860 and 5000 with no protection. Gradio share=True tunnels are an additional accidental-exposure path.",
+  "default_ports": [
+    7860,
+    5000,
+    6006
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio_config\"",
+      "rationale": "Gradio's inline window.gradio_config JSON blob is the http.html-visible signal for the webui.py surface; broad Gradio-on-7860 net to narrow by Bert-VITS2 labels."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"Bert-VITS2\"",
+      "rationale": "Direct product-name match — appears in the Gradio UI title/gradio_config and in the FastAPI server's HTML/JSON responses; port-agnostic to catch both the 7860 and 5000 surfaces."
+    },
+    {
+      "tier": "strict",
+      "query": "port:5000 http.html:\"Bert-VITS2\" http.html:\"voice\"",
+      "rationale": "server_fastapi.py surface on its default port carrying the product name plus the /voice synthesis route label; isolates the FastAPI inference API from the Gradio UI."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"emotion\" http.html:\"sdp_ratio\"",
+      "rationale": "sdp_ratio and emotion sliders are Bert-VITS2-specific inference controls surfaced in gradio_config; very high precision against generic Gradio TTS demos."
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"Bert-VITS2\" http.html:\"2.3\"",
+      "rationale": "Bert-VITS2 major/minor version (2.0-2.3) frequently printed in the UI header and FastAPI /status; use for version-targeted enumeration of the dominant 2.x line."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "Bert-VITS2",
+    "response_body_contains": [
+      "gradio_config",
+      "Bert-VITS2",
+      "sdp_ratio",
+      "emotion",
+      "speaker"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /voice",
+    "GET /status",
+    "GET /models/info",
+    "POST /models/add",
+    "GET /tools/get_audio",
+    "GET /docs",
+    "GET /openapi.json"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated Gradio UI (7860) and FastAPI synthesis API (5000) allow arbitrary TTS/voice-cloning requests",
+    "FastAPI /models/add and /models/delete style routes allow unauthenticated model-management operations on exposed server_fastapi.py instances",
+    "server_fastapi.py /tools/get_audio and static file routes have exhibited path-traversal / arbitrary-file-read behavior when the base directory is unconstrained",
+    "Gradio file-component path-traversal CVEs (CVE-2024-1561 and related) apply to exposed webui.py instances on vulnerable Gradio versions",
+    "FastAPI /docs and /openapi.json enabled by default — full API schema disclosure aids automated enumeration",
+    "Unrestricted synthesis with no rate limiting — GPU compute theft and bulk deepfake generation",
+    "share=True gradio.live tunnels publish the UI publicly with no auth"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Non-consensual voice cloning at scale — the FastAPI /voice endpoint is a machine-callable synthesis API; an attacker scripts bulk impersonation audio in the operator's trained voices, a fraud/disinformation surface far more automatable than a UI-only tool. (2) Model theft / tampering — unauthenticated model-management routes let an attacker enumerate, add, or swap loaded speaker models on server_fastapi.py hosts. (3) Arbitrary file read — /tools/get_audio and Gradio-CVE traversal chains expose weights (.pth), config.yml (which can reference tokens/paths), and adjacent secrets. (4) Compute theft — open GPU synthesis automatable at operator cost. (5) API schema disclosure via /docs accelerates the whole chain. config.yml is a high-value read: it maps every model directory and server binding.",
+  "deployment_notes": "CUDA GPU hosts; the dual surface is the distinguishing feature — Gradio webui.py on :7860 for interactive use AND server_fastapi.py on :5000 (config.yml server_fastapi.port) as a headless synthesis API. The FastAPI surface is the MORE Shodan-visible of the two: it returns JSON/HTML with the product name and has /docs, unlike the Gradio SPA. SHODAN VISIBILITY CAVEAT for the 7860 Gradio side: rendered UI is JS-only; pivot on inline gradio_config + control labels (sdp_ratio, emotion). For the 5000 FastAPI side use http.html:\"Bert-VITS2\" and the /docs Swagger body. Chinese one-click integration packages (整合包) are the dominant deployment form and frequently expose both ports on 0.0.0.0. Upstream on maintenance-hold; forks and integration bundles are the live population.",
+  "docker_images": [],
+  "github_repos": [
+    "fishaudio/Bert-VITS2",
+    "Stardust-minus/Bert-VITS2"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

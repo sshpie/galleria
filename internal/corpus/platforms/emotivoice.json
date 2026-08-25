@@ -1,0 +1,79 @@
+{
+  "name": "EmotiVoice",
+  "slug": "emotivoice",
+  "category": "voice-tts-conversational",
+  "description": "NetEase Youdao's prompt-controlled, multi-voice emotional TTS engine (netease-youdao/EmotiVoice). Ships two self-hosted listeners: an OpenAI-compatible FastAPI server (port 8000) exposing POST /v1/audio/speech with no API-key check, and a Streamlit web demo (port 8501). No authentication on either.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication on either service. The FastAPI OpenAI-compatible server (openaiapi.py, uvicorn openaiapi:app on port 8000) performs no API-key check - POST /v1/audio/speech is open with Pydantic-schema-only validation. The Streamlit demo (demo_page.py, port 8501, the Docker-exposed default) has no access control. No token, no basic auth, no rate limiting on either. The endpoint mimics the OpenAI TTS API shape but omits OpenAI's Authorization requirement.",
+  "default_ports": [
+    8000,
+    8501
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"/v1/audio/speech\"",
+      "rationale": "The FastAPI /openapi.json and /docs Swagger expose the /v1/audio/speech path in served content; the OpenAI-compat speech path on port 8000 is the primary body-reachable signal since the FastAPI root is JSON."
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"SpeechRequest\"",
+      "rationale": "The EmotiVoice request schema class SpeechRequest (input, voice, prompt, language, model, response_format, speed) surfaces in the FastAPI /openapi.json schema; a distinctive, near-unique body match for this server."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"/v1/audio/speech\" http.html:\"prompt\"",
+      "rationale": "Conjunctive: the OpenAI-compat speech path plus the EmotiVoice-specific 'prompt' emotion-control field in the openapi schema distinguishes EmotiVoice from generic OpenAI-compatible TTS servers on 8000."
+    },
+    {
+      "tier": "version",
+      "query": "port:8501 product:\"TornadoServer\" http.html:\"stMain\"",
+      "rationale": "The Streamlit demo (port 8501) runs on TornadoServer with stMain/_stcore markers; the EmotiVoice name is DOM-injected (SPA-blind), so route the Streamlit surface via the Streamlit server fingerprint and confirm identity via a JS-rendering crawler or the co-located :8000 API."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/openapi.json",
+    "title_contains": "FastAPI",
+    "response_body_contains": [
+      "/v1/audio/speech",
+      "SpeechRequest",
+      "prompt",
+      "voice",
+      "response_format"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/v1/audio/speech",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/_stcore/stream",
+    "/_stcore/health",
+    "/"
+  ],
+  "known_vulns": [
+    "OpenAI-compatible POST /v1/audio/speech with no API-key check - open unauthenticated TTS inference and GPU compute abuse",
+    "No rate limiting on the FastAPI endpoint - trivially scripted compute-exhaustion",
+    "Streamlit /_stcore/stream WebSocket is an exposed control channel on port 8501",
+    "FastAPI /docs and /openapi.json expose the full API schema (including the emotion-prompt field) unauthenticated",
+    "GPU required for inference (syq163/emoti-voice image) - unauth access = direct theft of operator GPU capacity"
+  ],
+  "default_creds": [],
+  "risk_notes": "EmotiVoice presents the richest surface of the two-listener designs: an unauthenticated OpenAI-compatible POST /v1/audio/speech that self-documents via FastAPI /openapi.json and /docs. Vectors: (1) Free unauthenticated GPU inference / compute theft - the endpoint mimics OpenAI's TTS shape but drops the API-key requirement, so any client that would call OpenAI can point at an open EmotiVoice instance at zero cost; (2) Emotion/prompt-controlled synthesis abuse - the 'prompt' field drives emotional delivery, raising the fidelity of vishing/deepfake output; (3) Streamlit control-channel exposure via /_stcore/stream on 8501. Shodan visibility is split: the :8000 FastAPI root is JSON (not branded HTML), so harvest via the /openapi.json-reachable /v1/audio/speech and SpeechRequest schema strings rather than a title dork; the :8501 Streamlit app is a JS-rendered SPA whose page_title 'demo page' and bilingual labels ('Speaker ID (说话人)', 'Prompt (开心/悲伤)', 'Synthesize (合成)') are DOM-injected and http.html-blind - route it via the TornadoServer/stMain Streamlit fingerprint and confirm through a JS-rendering crawler or the co-located API.",
+  "deployment_notes": "~8.5k stars, not archived (velocity slowed, last push 2024-08-13). Two listeners: FastAPI OpenAI-compatible API on port 8000 (uvicorn openaiapi:app, server header 'uvicorn') and a Streamlit demo on port 8501 (demo_page.py / openaidemo_page.py, server header 'TornadoServer'). Official Docker image syq163/emoti-voice:latest (NVIDIA GPU required). The FastAPI surface is JSON-only at root - use /openapi.json and /docs for identity and the /v1/audio/speech + SpeechRequest schema for dorking; the Streamlit surface is SPA-blind on http.html, so pivot on the Streamlit server fingerprint (TornadoServer, /_stcore/, stMain) and read the app via a browser/Censys crawl. No TLS in the default configuration.",
+  "docker_images": [
+    "syq163/emoti-voice"
+  ],
+  "github_repos": [
+    "netease-youdao/EmotiVoice"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "platform": "haystack",
+  "display_name": "Haystack / hayhooks (deepset RAG pipeline server)",
+  "category": "rag-framework-server",
+  "default_ports": [
+    1416,
+    1417,
+    8000
+  ],
+  "api_paths": [
+    "/status",
+    "/openapi.json",
+    "/deploy_files",
+    "/deploy-yaml",
+    "/undeploy",
+    "/v1/models",
+    "/v1/chat/completions",
+    "/draw",
+    "/query",
+    "/file-upload",
+    "/documents",
+    "/initialized",
+    "/health"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "HAYHOOKS_HOST",
+    "HAYHOOKS_PORT",
+    "HAYHOOKS_MCP_PORT"
+  ],
+  "default_creds": [],
+  "install_tell": "Tier-A* (no auth primitive ships at all -> effectively Tier-A). hayhooks create_app() adds only RequestId + CORS middleware; AppSettings has NO auth field (no HAYHOOKS_API_KEY, no bearer/APIKeyHeader dependency). Legacy rest_api: FastAPI(title='Haystack REST API', debug=True) with CORS allow_origins=['*'], allow_credentials=True. Both rely entirely on external reverse proxy/ACL the docs do not prescribe. Operators set HAYHOOKS_HOST=0.0.0.0 for containers -> the exposure misconfig.",
+  "misconfig_patterns": [
+    "HAYHOOKS_HOST=0.0.0.0 for containers exposes unauthed instance",
+    "/pipelines volume mount auto-deploys any YAML/wrapper found at startup",
+    "deploy via /deploy-yaml writes provider secrets to /pipelines dir on disk",
+    "deepset Helm chart bundles document-store credentials + pipeline YAML"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Hayhooks\"",
+      "http.html:\"Hayhooks makes it easy to deploy and serve Haystack pipelines\""
+    ],
+    "active_probe": {
+      "path": "/status",
+      "method": "GET",
+      "port": 1416,
+      "response_markers": [
+        "\"status\":\"Up!\"",
+        "pipelines"
+      ],
+      "false_positive_check": "json_field status=='Up!' AND pipelines is array (hayhooks-unique, leaks pipeline names). Cross-confirm /openapi.json info.title=='Hayhooks' or 'Haystack REST API' (legacy). /initialized==true is generic, MUST be title-gated."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Hayhooks\"",
+    "strict": "http.html:\"Hayhooks makes it easy to deploy and serve Haystack pipelines\"",
+    "version": "http.title:\"Haystack REST API\""
+  },
+  "deployment_tells": [
+    "1416 hayhooks REST, 1417 hayhooks MCP, 8000 legacy rest_api -- sweep 1416/1417 first (niche, under-indexed)",
+    "Open WebUI co-deploy (official hayhooks-open-webui-docker-compose)",
+    "OpenSearch/Elasticsearch 9200 document store, Weaviate 8080/50051, Qdrant 6333, Milvus 19530",
+    "no TLS by default (HAYHOOKS_USE_HTTPS is CLI-flag-only); plaintext or external proxy termination"
+  ],
+  "pivot_paths": [
+    "GET /status -> {status:Up!, pipelines:[...]} confirms platform+unauth+leaks pipeline names",
+    "POST /deploy_files = unauth arbitrary code execution by design (CRITICAL) -- confirm reachability, DO NOT execute",
+    "CVE-2024-41950 SSTI->RCE chain via pipeline /run on <=2.3.0",
+    "co-located 9200/8080/6333 on same host binds operator identity"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-41950 Jinja2 SSTI->RCE in PromptBuilder (7.5, fixed 2.3.1, remote-unauth when template body user-controlled)",
+    "Zip-Slip file-write->RCE in farm-haystack 1.x fetch_archive_from_http (no CVE, EOL unpatched)",
+    "hayhooks: zero published advisories; no nuclei template (gap)"
+  ],
+  "category_lane_classification": "RAG framework server. hayhooks (modern) + rest_api (legacy 1.x EOL). Two as-designed unauth-RCE surfaces (/deploy_files, /deploy-yaml). aimap FP GAP -- build for 1416/1417/8000. deepset Cloud self-host (likely Tier-C) is a separate variant, NOT covered by open-posture findings.",
+  "disclosure_contact": {
+    "security_txt": "unknown",
+    "channel_observed": "deepset-ai GitHub; docs.cloud.deepset.ai"
+  },
+  "sources": [
+    "CONFIRMED-DARK 2026-06-18 (Cat-RAG-Framework-Servers): hayhooks/deepset brand strings = genuine 0 on Shodan (JSON root, no HTML title banner). Population only via active 1416/1417 banner or Censys. Negative on Shodan brand discovery; not an auth finding.",
+    "CANDIDATE 2026-06-17 -- Stage -1 OSINT, no host verified",
+    "deepset-ai/hayhooks src/hayhooks/server/app.py + settings.py",
+    "deepset-ai/haystack rest_api/rest_api/utils.py v1.26.4",
+    "GHSA-hx9v-6r9f-w677 (CVE-2024-41950)",
+    "data/platform-intel/rag-framework-servers-osint-2026-06-17.md"
+  ]
+}

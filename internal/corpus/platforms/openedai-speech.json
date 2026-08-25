@@ -1,0 +1,83 @@
+{
+  "name": "openedai-speech",
+  "slug": "openedai-speech",
+  "category": "voice-tts-conversational",
+  "description": "OpenAI-compatible TTS proxy (POST /v1/audio/speech) wrapping Coqui XTTS v2, Piper, and Kokoro backends; commonly bundled in self-hosted LLM stacks alongside Ollama and Open-WebUI; no authentication layer in any version; archived upstream January 2026 with no patches forthcoming",
+  "auth_tier": "A",
+  "default_auth": "none",
+  "auth_notes": "Zero authentication in all deployment configurations. The OpenAIStub base class (openedai.py) registers no auth middleware whatsoever. Arbitrary bearer tokens (e.g., sk-111111111) are accepted and silently ignored — no validation occurs. CORS middleware is configured with allow_origins:[\"*\"], allow_credentials:True, allow_methods:[\"*\"], allow_headers:[\"*\"] — completely permissive. No rate limiting, no IP allowlisting, no token scoping. Official integration docs explicitly instruct users to enter a dummy API key because the server does not require one. Repository archived 2026-01-04; no authentication mechanism has ever shipped and none will.",
+  "default_ports": [
+    8000,
+    8080
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"tts-1-hd\"",
+      "rationale": "Matches the /v1/models JSON response body containing the tts-1-hd model ID; specific to openedai-speech and compatible forks on the default port"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"openedai\" http.html:\"tts-1\"",
+      "rationale": "Conjunctive match on owned_by:openedai field in /v1/models JSON plus tts-1 model name; narrows to canonical matatonic deployments and direct forks"
+    },
+    {
+      "tier": "version",
+      "query": "port:8000 http.html:\"total_usage\" http.html:\"tts-1-hd\"",
+      "rationale": "Combines the billing stub artifact (total_usage:0 from /v1/billing/usage and /v1/dashboard/billing/usage) with the HD TTS model name; both are synthetic OpenAIStub responses that co-occur only in openedai-speech-derived servers"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8080 http.html:\"tts-1-hd\"",
+      "rationale": "Alternate port used when openedai-speech is bundled behind nginx or in multi-service stacks alongside Ollama or Open-WebUI"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"tts-1-hd\" http.html:\"/v1/audio/speech\"",
+      "rationale": "Targets instances where the TTS endpoint path appears in an error page, docs fragment, or indexed response body alongside the model name; port-agnostic for stack deployments"
+    }
+  ],
+  "fingerprint_markers": {
+    "http_path": "/v1/models",
+    "port": 8000,
+    "response_body_contains": [
+      "tts-1-hd",
+      "\"owned_by\": \"openedai\"",
+      "\"total_usage\": 0",
+      "tts-1"
+    ],
+    "http_header": "Access-Control-Allow-Origin: *"
+  },
+  "api_paths": [
+    "POST /v1/audio/speech",
+    "GET /v1/models",
+    "GET /v1/models/{model}",
+    "GET /v1/billing/usage",
+    "GET /v1/dashboard/billing/usage",
+    "GET /health",
+    "GET /",
+    "HEAD /",
+    "OPTIONS /"
+  ],
+  "known_vulns": [],
+  "default_creds": [],
+  "risk_notes": "Unauth compute abuse: POST /v1/audio/speech accepts arbitrary text and synthesizes audio with no access control; GPU-equipped instances (XTTS v2, 4GB VRAM) can be exhausted or weaponized for bulk TTS generation. Voice cloning: XTTS v2 tts-1-hd model supports voice cloning from a 6-30 second mono WAV sample — unauth access enables targeted impersonation audio for vishing, CEO fraud, or deepfake audio dataset construction. CSRF: fully open CORS (allow_origins:*) allows any browser-originating cross-site request to generate audio from a victim's co-located server without user interaction. Resource exhaustion DoS: no rate limiting on TTS generation; GPU or CPU can be saturated. /v1/billing/usage returns {\"total_usage\":0} — attacker can confirm service is operational without triggering any metering. Lateral movement: co-deployment in Ollama/Open-WebUI stacks means a compromised or exposed openedai-speech instance may share Docker network segments with the LLM inference backend. Archived repo: Coqui XTTS v2, Piper, and FastAPI/uvicorn dependency vulnerabilities will never receive patches from upstream.",
+  "deployment_notes": "Default deployment is Docker Compose on port 8000:8000 with restart:unless-stopped. Server binds 0.0.0.0 by default. Full CUDA image (ghcr.io/matatonic/openedai-speech, ~8GB) requires Nvidia Docker runtime and ~4GB VRAM for XTTS v2. Minimal CPU-only variant (ghcr.io/matatonic/openedai-speech-min, ~860MB) runs Piper only. ROCm variant targets AMD GPUs. ARM64 builds support Apple M-series and Raspberry Pi. Config loaded from speech.env and config/voice_to_speaker.yaml; both are hot-reloadable without restart. Voice models downloaded from HuggingFace on first use (HF_HOME=voices). Commonly deployed as TTS sidecar in Ollama + Open-WebUI stacks, exposing the service at http://host.docker.internal:8000/v1. Repository archived 2026-01-04 — upstream is frozen; Coqui dependency itself has also been archived, compounding supply-chain risk. Active successor projects include speaches (speaches.ai) and kokoro-fastapi.",
+  "docker_images": [
+    "ghcr.io/matatonic/openedai-speech",
+    "ghcr.io/matatonic/openedai-speech:latest",
+    "ghcr.io/matatonic/openedai-speech-min",
+    "ghcr.io/matatonic/openedai-speech:rocm"
+  ],
+  "github_repos": [
+    "matatonic/openedai-speech",
+    "Haervwe/openedai-speech-bilingual-tts-1",
+    "hchasens/amd-open-speech"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

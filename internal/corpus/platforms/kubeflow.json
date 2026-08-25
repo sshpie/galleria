@@ -1,0 +1,64 @@
+{
+  "platform": "kubeflow",
+  "display_name": "Kubeflow Pipelines",
+  "category": "ml_pipeline_orchestration",
+  "default_ports": [
+    80,
+    8080
+  ],
+  "api_paths": [
+    "/pipeline/apis/v1beta1/healthz",
+    "/pipeline/apis/v1beta1/experiments",
+    "/pipeline/apis/v1beta1/runs"
+  ],
+  "auth_default": "dex_oidc_required",
+  "auth_config_env": [
+    "KUBEFLOW_AUTH_TYPE",
+    "OIDC_AUTH"
+  ],
+  "default_creds": [],
+  "install_tell": "kubectl apply -k github.com/kubeflow/manifests",
+  "misconfig_patterns": [
+    "Operators run apiServerMultiUser=false (single-user mode) to skip Dex+Istio setup",
+    "Single-user-mode Pipelines API is exposed unauthenticated on the public internet",
+    "Experiment names disclose customer fleet for B2B AI SaaS deployments"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Kubeflow\""
+    ],
+    "active_probe": {
+      "path": "/pipeline/apis/v1beta1/experiments?page_size=20",
+      "method": "GET",
+      "response_markers": [
+        "\"experiments\""
+      ],
+      "false_positive_check": "Response must be JSON with experiments[] key; many Shodan title-hits are stale banners"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Kubeflow\"",
+    "strict": "http.title:\"Kubeflow\" port:80",
+    "version": "http.title:\"Kubeflow\" \"apiServerTagName\""
+  },
+  "deployment_tells": [
+    "/pipeline/apis/v1beta1/healthz returns multi_user:false on misconfigured deploys",
+    "GCP us-east5 region (35.212.x) hosts multiple Kubeflow tenants",
+    "Adjacent /24 is typically unrelated cloud tenants (no operator cluster)"
+  ],
+  "pivot_paths": [
+    "GET /pipeline/apis/v1beta1/experiments -> customer fleet via experiment names",
+    "GET /pipeline/apis/v1beta1/runs/{id} -> input parameters incl secrets, model URIs",
+    "POST /pipeline/apis/v1beta1/runs -> arbitrary pipeline trigger on operator compute",
+    "/jupyter notebook endpoints typically equally exposed in single-user mode"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-47237 - Istio permissions allow Kubeflow auth token stealing",
+    "Single-user mode is by-design unauth and operators commonly expose it publicly"
+  ],
+  "sources": [
+    "https://www.kubeflow.org/docs/components/pipelines",
+    "case-studies/commercial/kubeflow-population-survey-2026-06-08.md (5/619 unauth, B2B SaaS customer-fleet finding)",
+    "[CONFIRMED -  2026-06-08 population survey]"
+  ]
+}

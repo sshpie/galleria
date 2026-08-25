@@ -1,0 +1,57 @@
+{
+  "platform": "semadb",
+  "display_name": "SemaDB (Semafind)",
+  "category": "vector_db",
+  "default_ports": [
+    8081
+  ],
+  "api_paths": [
+    "/v1/collections",
+    "/v1/collections/{id}",
+    "/v1/collections/{id}/points/search"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8081:8081 semafind/semadb:latest",
+  "misconfig_patterns": [
+    "No auth in default deployment — collections fully enumerable",
+    "vectorVamana/degreeBound/alpha schema fields are SemaDB-unique identifiers"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8081 \"vectorVamana\"",
+      "port:8081 \"semadb\""
+    ],
+    "active_probe": {
+      "path": "/v1/collections",
+      "method": "GET",
+      "response_markers": [
+        "vectorVamana",
+        "degreeBound",
+        "alpha"
+      ],
+      "false_positive_check": "response must include vectorVamana field — unique to SemaDB VAMANA index schema"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8081 \"vectorVamana\"",
+    "strict": "port:8081 \"vectorVamana\"",
+    "version": "port:8081 \"semadb\""
+  },
+  "deployment_tells": [
+    "GET /v1/collections returns schema with vectorVamana, degreeBound, alpha fields",
+    "Port 8081 shared with Jina/Vald — require body confirmation",
+    "Near-zero known production population"
+  ],
+  "pivot_paths": [
+    "GET /v1/collections → collection names + VAMANA index config without auth",
+    "GET /v1/collections/{id} → full schema + vector dimension",
+    "POST /v1/collections/{id}/points/search → vector search without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://github.com/Semafind/semadb",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

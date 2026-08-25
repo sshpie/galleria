@@ -1,0 +1,64 @@
+{
+  "platform": "tidb",
+  "display_name": "TiDB",
+  "category": "vector_feature",
+  "default_ports": [
+    4000,
+    10080
+  ],
+  "api_paths": [
+    "/status"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "TIDB_PASSWORD"
+  ],
+  "default_creds": [
+    {
+      "user": "root",
+      "pass": "",
+      "context": "empty password in development/quickstart deployments"
+    }
+  ],
+  "install_tell": "docker run -p 4000:4000 -p 10080:10080 pingcap/tidb:latest",
+  "misconfig_patterns": [
+    "root with empty password risk in development deployments",
+    "Status server at :10080 exposes git_hash and version without auth",
+    "VECTOR type support (TiDB 7.5+) — detectable via SHOW CREATE TABLE with auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:10080 \"git_hash\"",
+      "port:4000 \"TiDB\""
+    ],
+    "active_probe": {
+      "path": "/status",
+      "method": "GET",
+      "response_markers": [
+        "\"git_hash\"",
+        "connections"
+      ],
+      "false_positive_check": "response must include git_hash field — unique to TiDB status server"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:10080 \"git_hash\"",
+    "strict": "port:10080 \"git_hash\"",
+    "version": "port:10080 \"tidb\""
+  },
+  "deployment_tells": [
+    "GET :10080/status returns {git_hash:..., connections:N, ...} without auth",
+    "MySQL wire at :4000 — mysql -h host -P 4000 -u root (may be empty password)",
+    "CN-heavy deployment pattern"
+  ],
+  "pivot_paths": [
+    "GET :10080/status → TiDB version (git_hash) for CVE matching",
+    "MySQL :4000 → root empty-password attempt → SHOW DATABASES",
+    "SHOW CREATE TABLE {t} → detect VECTOR type columns (TiDB 7.5+)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.pingcap.com/tidb/stable/tidb-architecture",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

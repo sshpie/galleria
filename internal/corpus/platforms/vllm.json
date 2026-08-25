@@ -1,0 +1,49 @@
+{
+  "platform": "vllm",
+  "display_name": "vLLM",
+  "category": "inference_serving",
+  "default_ports": [8000],
+  "api_paths": ["/v1/completions", "/v1/chat/completions", "/v1/models", "/metrics"],
+  "auth_default": "none",
+  "auth_config_env": ["HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8000:8000 vllm/vllm-openai:latest --model mistralai/Mistral-7B-v0.1",
+  "misconfig_patterns": [
+    "Binding to 0.0.0.0 without auth proxy",
+    "/metrics exposes GPU memory utilization and model stats",
+    "No rate limiting — unlimited token generation"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"vllm\"",
+      "port:8000 http.html:\"vllm\"",
+      "http.html:\"gpu_cache_usage_perc\""
+    ],
+    "active_probe": {
+      "path": "/metrics",
+      "method": "GET",
+      "response_markers": ["vllm:num_requests_running"],
+      "false_positive_check": "response must be Prometheus text format containing vllm: prefixed metric names"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"vllm\" port:8000",
+    "strict": "port:8000 http.html:\"vllm\"",
+    "version": "port:8000 http.html:\"vllm\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "Server: uvicorn response header",
+    "/metrics endpoint exposes GPU stats with vllm: prefixed Prometheus labels",
+    "Loading model weights log line at startup"
+  ],
+  "pivot_paths": [
+    "GET /v1/models → model list → infer org via model name (org/model-name format)",
+    "GET /metrics → gpu_memory_utilization → estimate cluster GPU count",
+    "HF_TOKEN in process env → Hugging Face account pivot"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01",
+    "Generative AI on Kubernetes (9781098171919) ch04"
+  ]
+}

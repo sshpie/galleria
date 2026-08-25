@@ -1,0 +1,90 @@
+{
+  "platform": "lightrag",
+  "display_name": "LightRAG (HKUDS graph-based RAG server)",
+  "category": "rag-framework-server",
+  "default_ports": [
+    9621
+  ],
+  "api_paths": [
+    "/health",
+    "/query",
+    "/query/stream",
+    "/documents",
+    "/documents/paginated",
+    "/documents/upload",
+    "/documents/text",
+    "/documents/scan",
+    "/graphs",
+    "/webui",
+    "/docs"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "LIGHTRAG_API_KEY",
+    "AUTH_ACCOUNTS",
+    "TOKEN_SECRET"
+  ],
+  "default_creds": [],
+  "install_tell": "lightrag-server binds 0.0.0.0:9621, API+WebUI+Ollama-emulation all on same port. Tier-A* : an auth concept exists (X-API-Key header + JWT account login) but ships OFF by default. utils_api.py auth dependency short-circuits when neither LIGHTRAG_API_KEY nor AUTH_ACCOUNTS is set. Docs state verbatim 'By default, the LightRAG Server can be accessed without any authentication.' /health self-reports auth_mode:disabled, making posture machine-readable. Roadmap label 'Tier-A no auth concept' is INACCURATE and corrected to Tier-A*.",
+  "misconfig_patterns": [
+    "Docker quickstart binds 0.0.0.0:9621 with no auth env set -> ships open",
+    "Heavily Ollama-paired (calls 11434 for LLM+embeddings); compose co-locates both, Ollama often itself unauth",
+    "Hardcoded default JWT secret 'lightrag-jwt-default-secret-key!' (CVE-2026-30762) when guest mode used",
+    ".env with LLM_BINDING_API_KEY / OPENAI_API_KEY committed to git or exposed dir"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9621 \"status\":\"healthy\" \"core_version\"",
+      "http.html:\"LightRAG Server API\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "port": 9621,
+      "response_markers": [
+        "\"status\":\"healthy\"",
+        "core_version",
+        "webui_title",
+        "auth_mode"
+      ],
+      "false_positive_check": "JSON body must contain conjunction core_version + webui_title; auth_mode value (disabled|enabled) is the auth-state decoder. Anchor on json_field, not body_contains (catch-all 200 FP risk per CVAT/dcm4chee lessons)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9621 \"core_version\"",
+    "strict": "port:9621 \"status\":\"healthy\" \"core_version\"",
+    "version": "port:9621 \"auth_mode\""
+  },
+  "deployment_tells": [
+    "port 9621 default for API + WebUI; reverse-proxy relocates to 80/443 behind nginx",
+    "Ollama on 11434 same host (paired LLM)",
+    "Storage backends: PostgreSQL/pgvector 5432, Neo4j 7474/7687, Milvus 19530, Qdrant 6333, Redis 6379, MongoDB 27017",
+    "WEBUI_TITLE customization is a soft attribution leak in /health webui_title"
+  ],
+  "pivot_paths": [
+    "GET :9621/health -> auth_mode:disabled confirms unauth in one read (names ARE the finding, no exfil)",
+    "/query against ingested corpus = data exfil via NL query",
+    "/graphs = knowledge-graph dump",
+    "shadow-sweep 11434 (Ollama) on every confirmed host -- Insight #12"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-6773 path traversal in upload_to_input_dir (4.8, fixed 1.3.8)",
+    "CVE-2026-30762 hardcoded JWT signing secret (fixed 1.4.13, NVD RESERVED)",
+    "CVE-2026-39413 JWT alg:none algorithm-confusion (fixed 1.4.14)"
+  ],
+  "category_lane_classification": "RAG framework server (the pipeline above the vector DB). Graph-based RAG. Distinct from Cat-34 RAG-builders (R2R/Cognita/RAGFlow). aimap FP exists on 9621 -- HARDEN to anchor on /health json_field + wire auth_mode into auth_status.",
+  "disclosure_contact": {
+    "security_txt": "unknown",
+    "channel_observed": "HKUDS/LightRAG GitHub (academic, HKU Data Science)"
+  },
+  "sources": [
+    "CONFIRMED 2026-06-18 (Cat-RAG-Framework-Servers): 67 services / 50 unique IPs live; ~29% unauth (auth_mode=disabled); 12/13 unauth candidates re-confirmed; mobee.com ~600-doc unauth corpus.",
+    "FINDING: /health on no-auth skip-list leaks llm_binding/llm_model/embedding_model + working_directory paths on ALL instances incl. authed (platform config-disclosure).",
+    "NUANCE: auth_mode=disabled != all-endpoints-open (2 hosts gate /documents 403 despite disabled). vhost-routed instances reject bare-IP (re-probe with Host header).",
+    "CANDIDATE 2026-06-17 -- Stage -1 OSINT, no host verified",
+    "https://github.com/HKUDS/LightRAG/tree/main/lightrag/api",
+    "https://github.com/HKUDS/LightRAG/blob/main/docs/LightRAG-API-Server.md",
+    "https://github.com/advisories/GHSA-v9w6-9hq9-33ch",
+    "data/platform-intel/rag-framework-servers-osint-2026-06-17.md"
+  ]
+}

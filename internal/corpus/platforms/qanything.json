@@ -1,0 +1,130 @@
+{
+  "platform": "qanything",
+  "display_name": "QAnything",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8777,
+    9210,
+    19540,
+    3316,
+    9200,
+    19530,
+    3306,
+    9001
+  ],
+  "api_paths": [
+    "/qanything/",
+    "/api/local_doc_qa/local_doc_chat",
+    "/api/local_doc_qa/list_knowledge_base",
+    "/api/local_doc_qa/new_knowledge_base",
+    "/api/local_doc_qa/upload_files",
+    "/api/local_doc_qa/list_files",
+    "/api/local_doc_qa/get_total_status",
+    "/api/local_doc_qa/new_bot",
+    "/api/local_doc_qa/get_bot_info",
+    "/api/local_doc_qa/get_file_base64",
+    "/api/local_doc_qa/upload_faqs"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [],
+  "default_creds": [
+    {
+      "user": "minioadmin",
+      "pass": "minioadmin",
+      "context": "MinIO object store (raw ingested files) — MINIO_ACCESS_KEY/MINIO_SECRET_KEY in docker-compose-linux.yaml; exposed on host port 9001 (console) / 9000 in v1"
+    },
+    {
+      "user": "root",
+      "pass": "123456",
+      "context": "MySQL metadata DB — MYSQL_ROOT_PASSWORD=123456 in docker-compose-linux.yaml; host port 3306 (v1) / 3316 (v2)"
+    },
+    {
+      "user": "elastic",
+      "pass": "(none — security disabled)",
+      "context": "Elasticsearch — xpack.security.enabled=false; fully open on host port 9200 (v1) / 9210 (v2)"
+    }
+  ],
+  "install_tell": "git clone https://github.com/netease-youdao/QAnything.git && cd QAnything && bash run.sh   (or: docker compose -f docker-compose-linux.yaml up)",
+  "misconfig_patterns": [
+    "Port 8777 exposed to the internet with the API answering POST /api/local_doc_qa/* for any free-text user_id (no tenancy isolation — user_id is client-supplied, so guessing/iterating user_id enumerates other tenants' KBs)",
+    "Host-networking mode (v2) leaking Elasticsearch 9200, Milvus 19530, MySQL 3306, MinIO 9000/9001 directly onto the public interface",
+    "Default backing-store creds left unchanged (minioadmin/minioadmin, root/123456, ES security off)",
+    "LLM API key stored in front-end settings on an unauth instance -> key theft + LLM-bill abuse (llmjacking)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"QAnything\"",
+      "http.html:\"/qanything/\"",
+      "http.html:\"/api/local_doc_qa/\"",
+      "http.favicon.path:\"/favicons.png\""
+    ],
+    "active_probe": {
+      "path": "/api/local_doc_qa/list_knowledge_base",
+      "method": "POST",
+      "response_markers": [
+        "JSON response with top-level \"code\":200 and \"data\" array of knowledge-base objects (kb_id, kb_name)",
+        "POST body {\"user_id\":\"zzp\"} returns 200 with KB list and no auth challenge",
+        "\"msg\":\"success\"",
+        "frontend index served at /qanything/ with <title>QAnything</title>"
+      ],
+      "false_positive_check": "Do not match on generic strings like \"QA\", \"chat\", or \"Anything\" — they collide with thousands of unrelated apps. Anchor on the co-occurrence of (a) the literal path segment `/api/local_doc_qa/` AND (b) port 8777 serving a frontend at `/qanything/` with `<title>QAnything</title>`. The decisive non-FP confirmation is a POST to `/api/local_doc_qa/list_knowledge_base` with body `{\"user_id\":\"zzp\"}` returning a JSON envelope `{\"code\":200,\"msg\":\"success\",\"data\":[...]}` — the `local_doc_qa` route prefix and the JSON code/msg/data envelope are vendor-unique. A bare 200 on `/` or a reachable 8777 banner alone is insufficient (could be any host-networked container); require the local_doc_qa JSON envelope. Watch for honeypots echoing the path without the structured KB-object schema."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"QAnything\"",
+    "strict": "http.title:\"QAnything\" http.html:\"/api/local_doc_qa/\"",
+    "version": "http.html:\"/api/local_doc_qa/\" port:8777"
+  },
+  "deployment_tells": [
+    "Frontend served at path http://HOST:8777/qanything/ (vendor-unique URL prefix)",
+    "Backend REST under /api/local_doc_qa/ on the same 8777 port",
+    "favicon at /favicons.png and <title>QAnything</title>",
+    "Companion ports from the compose stack commonly co-exposed: Elasticsearch (9200/9210), Milvus standalone (19530/19540), MySQL (3306/3316), MinIO (9000-9001) — a host showing 8777 + 19530 + 9200 together is a strong QAnything stack signature",
+    "v1 uses bridge port-map 8777:8777; v2 qanything_local runs network_mode: host (so all internal service ports can leak onto the host if firewalling is absent)",
+    "Self-hosted Docker-Compose, NetEase Youdao embedding+rerank stack (BCEmbedding) bundled — distinguishes it from library-style RAG"
+  ],
+  "pivot_paths": [
+    "POST /api/local_doc_qa/list_knowledge_base {\"user_id\":\"zzp\"} -> enumerate knowledge bases (read-only)",
+    "POST /api/local_doc_qa/list_files -> inventory ingested documents per KB (names/status only, restraint-compliant)",
+    "Iterate the client-supplied user_id to test cross-tenant KB enumeration (names are the finding; do not exfiltrate file bodies)",
+    "POST /api/local_doc_qa/get_bot_info -> read bot/agent config including model + base_url (confirm whether an upstream LLM key is configured; do not extract the secret)",
+    "Probe co-exposed Elasticsearch 9200 /_cat/indices and Milvus 19530 for unauth schema (metadata only)",
+    "Check MinIO console 9001 for minioadmin default (login page reachability only — do not authenticate)"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-25722 (GHSA-68p8-j476-8w35) CRITICAL CVSS 9.8 — SQL injection in qanything_kernel/connector/database/mysql/mysql_client.py; affects QAnything before 1.2.0",
+    "CVE-2024-7099 (GHSA-vqmq-g46j-863w) CRITICAL CVSS 9.8 — SQL injection via unsanitized user input concatenated into queries in get_knowledge_base_name/delete_files; affects v1.4.1",
+    "CVE-2024-12866 (GHSA-6ch3-c5vc-j2r6) HIGH CVSS 7.5 — path traversal / local file inclusion allowing unauthenticated remote arbitrary file read; affects v2.0.0",
+    "CVE-2024-12864 (GHSA-w3m9-crxx-972f) HIGH — Denial of Service in the file-upload feature",
+    "CVE-2024-10264 (GHSA-jx9r-x782-9r4m) HIGH — HTTP request smuggling; affects v1.4.1",
+    "CVE-2024-8024 (GHSA-h35f-g2pq-8xq7) HIGH CVSS 7.5 — CORS misconfiguration; affects v1.4.1",
+    "CVE-2024-8026 (GHSA-m62f-m76v-gfwr) HIGH — CSRF in the backend API",
+    "CVE-2024-8027 (GHSA-rv4f-crjq-xjf8) MODERATE — stored XSS"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: the quickstart (`git clone ... && cd QAnything && bash run.sh`) runs docker-compose-linux.yaml, which on master maps the app `\"8777:8777\"` and on qanything-v2 runs it under `network_mode: \"host\"` on 8777, with NO auth-related env var on the qanything_local service (only NCCL_LAUNCH_MODE, GPUID*, USER_IP/Gateway_IP). The official docs/API.md states the access URLs are `http://your_host:8777/qanything/` (frontend) and `http://your_host:8777/api/` with NO Authorization header, token, or API key on any endpoint; user identity is a free-text body parameter only: \"if you don't need to distinguish different users, you can pass user_id='zzp'\". This means a quickstart deployment exposed to the internet yields a fully unauthenticated UI AND REST API. Supporting backing-service tells in the same compose: elasticsearch `xpack.security.enabled=false`, mysql `MYSQL_ROOT_PASSWORD=123456`, minio `MINIO_ACCESS_KEY=minioadmin / MINIO_SECRET_KEY=minioadmin`. In v2 (README): LLM model + OpenAI-compatible API key/base_url are \"automatically saved in the front end settings\" (configured via the unauth web UI, retrievable via get_bot_info), not via a protected env file.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG documents and their raw content / PII — list_files + get_file_base64 return original uploaded files (PDFs, contracts, internal docs) base64-encoded, fully readable unauth",
+    "Upstream LLM API keys and base_url — in v2 the OpenAI-compatible model API key is saved in front-end settings and retrievable via the unauth bot config (get_bot_info / new_bot)",
+    "Knowledge base definitions and business logic — list_knowledge_base / list_files enumerate every kb_id, kb_name, and document inventory by passing any user_id",
+    "Bot / agent definitions — new_bot/get_bot_info expose system prompts, model config, and bound knowledge bases (the business logic of the deployment)",
+    "Conversation / QA capability — local_doc_chat lets an unauth caller query the private corpus and exfiltrate answers (and run up the operator's LLM bill via the stored key)",
+    "Backing-store creds at defaults — minio minioadmin/minioadmin (object store of raw files), mysql root/123456, elasticsearch security disabled (vector/keyword index), Milvus standalone with no auth"
+  ],
+  "sources": [
+    "https://github.com/netease-youdao/QAnything",
+    "https://github.com/netease-youdao/QAnything/blob/master/docker-compose-linux.yaml",
+    "https://github.com/netease-youdao/QAnything/blob/qanything-v2/docker-compose-linux.yaml",
+    "https://github.com/netease-youdao/QAnything/blob/master/docs/API.md",
+    "https://github.com/netease-youdao/QAnything/blob/qanything-v2/docs/API.md",
+    "https://github.com/netease-youdao/QAnything/blob/qanything-v2/README.md",
+    "https://github.com/netease-youdao/QAnything/blob/qanything-v2/front_end/index.html",
+    "https://github.com/advisories?query=QAnything",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-25722",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-7099",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-12866",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-8024",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "platform": "prompt-security",
+  "display_name": "Prompt Security (LLM-agnostic protect API)",
+  "category": "guardrail",
+  "default_ports": [443],
+  "api_paths": ["/v1/protect", "/v1/protect/openai/chat/completions"],
+  "auth_default": "on",
+  "auth_config_env": ["APP_ID", "PROMPT_SECURITY_API_KEY"],
+  "default_creds": [],
+  "install_tell": "SaaS regional endpoints (eu, us, apac, eunorth, useast, apnortheast, apsouth, amxuseast); APP-ID header bearer; BYOS (Bring Your Own Stack) self-hosted modality via byos.* subdomains",
+  "misconfig_patterns": [
+    "Regional split exposes inferable customer geography from connection-target subdomain (eu.prompt.security vs us.prompt.security); operator attribution surface only, no auth bypass implied.",
+    "BYOS deployment scaffold (byos-example, byos-example-staging) suggests templated customer deployments -- review per-tenant subdomain bleed.",
+    "Dev cluster has named-engineer subdomains (yoav-ps.dev, ofek-ps.dev, etc.) resolving to 10.66.x.x private space -- DNS reveals team roster + internal CIDR (operator OSINT)."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"prompt.security\"",
+      "ssl.cert.subject.cn:\"*.prompt.security\""
+    ],
+    "active_probe": {
+      "path": "/v1/protect",
+      "method": "GET",
+      "port": 443,
+      "response_markers": ["No api key provided", "\"status\":false"],
+      "false_positive_check": "JSON body MUST contain status:false AND 'No api key provided' literal; HTML body refutes (apex marketing site)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"prompt.security\"",
+    "strict": "ssl.cert.subject.cn:\"prompt.security\"",
+    "version": "http.html:\"prompt.security\" http.html:\"protect\""
+  },
+  "deployment_tells": [
+    "Cloudflare-fronted regional API endpoints (104.26.0.75 / 104.26.1.75)",
+    "Subdomain population reveals MULTI-REGION rollout: eu, eunorth, us-east, apac, apnortheast, apsouth, amxuseast, global, global-stg, global-useast",
+    "BYOS subdomain pattern: byos-<customer>.prompt.security and *.byos.prompt.security",
+    "MCP product exposed at mcp.prompt.security",
+    "Admin Kibana exposed at admin-kibana.prompt.security and admin-kibana-staging (10.65.8.242 private)",
+    "ArgoCD at argocd.int.prompt.security and argocd.mgmt.prompt.security (private)"
+  ],
+  "pivot_paths": [
+    "GET /v1/protect -- returns JSON {status:false,error:'No api key provided'}; marker for vendor identification + endpoint validation, never exercise with key",
+    "ssl.cert.subject.cn:\"*.prompt.security\" -- enumerates BYOS customer deployments",
+    "DNS hostsearch surfaces internal 10.x.x.x staging IPs (operator infrastructure OSINT only)"
+  ],
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://prompt.security/.well-known/security.txt (404 as of 2026-06-07)",
+    "dmarc_rua": "dmarc@prompt.security",
+    "channel_observed": "self-hosted DMARC inbox"
+  },
+  "sources": [
+    "https://www.prompt.security/",
+    "DNS hostsearch hackertarget 2026-06-07",
+    "passive probe GET /v1/protect -> distinctive JSON 400 2026-06-07"
+  ]
+}

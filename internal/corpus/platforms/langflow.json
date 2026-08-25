@@ -1,0 +1,132 @@
+{
+  "platform": "langflow",
+  "display_name": "Langflow",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    7860
+  ],
+  "api_paths": [
+    "/api/v1/version",
+    "/api/v1/validate/code",
+    "/api/v1/flows/",
+    "/api/v1/auto_login",
+    "/api/v1/build/{flow_id}/flow",
+    "/api/v1/store/",
+    "/api/v1/variables/",
+    "/api/v1/files/",
+    "/health_check",
+    "/api/v1/config",
+    "/api/v1/monitor/messages"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "LANGFLOW_AUTO_LOGIN",
+    "LANGFLOW_SKIP_AUTH_AUTO_LOGIN",
+    "LANGFLOW_SUPERUSER",
+    "LANGFLOW_SUPERUSER_PASSWORD",
+    "LANGFLOW_SECRET_KEY",
+    "LANGFLOW_API_KEY",
+    "LANGFLOW_API_KEY_SOURCE",
+    "LANGFLOW_ENABLE_SUPERUSER_CLI",
+    "LANGFLOW_RATE_LIMIT_PER_MINUTE",
+    "LANGFLOW_SSRF_PROTECTION_ENABLED"
+  ],
+  "default_creds": [
+    {
+      "user": "langflow",
+      "pass": "langflow",
+      "context": "DEFAULT APP SUPERUSER when AUTO_LOGIN=True: AuthSettings.validate_superuser() hard-resets SUPERUSER/SUPERUSER_PASSWORD to DEFAULT_SUPERUSER/DEFAULT_SUPERUSER_PASSWORD (both 'langflow') whenever AUTO_LOGIN=True. Browser receives a 365-day JWT from GET /api/v1/auto_login with zero credentials. ALSO: docker_example/docker-compose.yml ships bundled Postgres with POSTGRES_USER=langflow / POSTGRES_PASSWORD=langflow on port 5432 — same creds, different surface (DB layer)."
+    }
+  ],
+  "install_tell": "docker run -p 7860:7860 langflowai/langflow:latest   (or:  uv pip install langflow -U && uv run langflow run)",
+  "misconfig_patterns": [
+    "AUTO_LOGIN left at default True while port 7860 is internet-exposed (vendor explicitly warns against this) -> open superuser UI",
+    "Pre-1.3.0 instances still online -> wormable unauth RCE (CVE-2025-3248)",
+    "Pre-1.7.0 with default CORS -> CVE-2025-34291 drive-by ATO",
+    "Default/unset LANGFLOW_SECRET_KEY -> forgeable session/encryption material across restarts",
+    "docker_example compose published with 5432 default-cred Postgres reachable",
+    "LANGFLOW_RATE_LIMIT_PER_MINUTE unset uses default 5 but only guards /login; AUTO_LOGIN deploys never see a login form so brute-force protection is moot",
+    "SSRF protection ships disabled (LANGFLOW_SSRF_PROTECTION_ENABLED default false)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Langflow\"",
+      "http.html:\"langflow-ai\"",
+      "http.favicon.hash:-1206067954",
+      "http.html:\"/assets/index\" http.title:\"Langflow\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/version",
+      "method": "GET",
+      "response_markers": [
+        "\"package\":\"Langflow\"",
+        "\"main_version\"",
+        "\"version\""
+      ],
+      "catch_all_guard": "Exclude any host that returns 200 on a nonsense /api/v1 path — it is a catch-all responder, not Langflow. The live discriminator (\"package\":\"Langflow\" on /api/v1/version) must be paired with this negative check. The LBot fleet's /api/v1/version is a Gitea-shaped bait JSON ({\\\"version\\\":\\\"10.0.1+gitea-1.22.0\\\"}) with NO \"package\" key and NO \"langflow\" substring; require json_field \"package\" + body_contains \"langflow\" + body_not_contains \"gitea\".",
+      "false_positive_check": "POISONED DORK: http.title:\"Langflow\" is poisoned by the LBot scanner-poisoning deception fleet (Cat-Langflow 2026-06-18/19) — ~54k Shodan hits, ~100% fleet, ~0 real Langflow. The fleet serves a catch-all 200 on every path (135KB canned HTML titled 'LBot' that itself contains the substrings 'chat', 'db', and 'status', so the health_check triad over-matches it), rotates its Server header per request, and stuffs platform keywords (Langflow/Gitea/Ghost/v2board) to match many title dorks at once. ROBUST LIVE DISCRIMINATOR: the unauthenticated GET /api/v1/version JSON body containing the vendor-unique pair {\\\"package\\\":\\\"Langflow\\\"} plus a semver \\\"main_version\\\" — the fleet returns a Gitea-shaped JSON ({\\\"version\\\":\\\"...gitea-1.22.0\\\"}) and NEVER fakes \"package\":\"Langflow\". Pair it with the catch-all-negative guard above (a nonsense /api/v1 path returning 200 = fleet, exclude). Do NOT fingerprint on generic strings ('flow', 'AI', 'chat', 'workflow') which collide with thousands of unrelated SPAs, and do NOT fingerprint on the health_check triad alone (the LBot HTML contains all three words). Secondary confirm only: GET /health_check returns {\\\"status\\\":\\\"ok\\\",\\\"chat\\\":\\\"ok\\\",\\\"db\\\":\\\"ok\\\"} (Langflow-specific triad) as a small JSON body, never as a 135KB HTML page. The favicon hash -1206067954 appears in the Shodan facet but is shared by the React/Vite default in some builds, so it must be corroborated by /api/v1/version, never used alone. A 200 HTML title 'Langflow' with a redirect to /login (no auto-login) means a hardened AUTO_LOGIN=False deploy, not the default posture — do not classify those as open."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Langflow\"",
+    "strict": "http.title:\"Langflow\" http.html:\"langflow-ai\"",
+    "version": "http.title:\"Langflow\" \"main_version\"",
+    "note": "POISONED: http.title:\"Langflow\" is poisoned by the LBot scanner-poisoning fleet (~54k hits, ~100% fleet, ~0 real). Treat raw title-dork hits as candidates only and verify every one against /api/v1/version 'package':'Langflow' + catch-all-negative guard. AVOID port:7860 as sole qualifier — Traefik-fronted prod deployments serve on 443; port:7860 undersamples the highest-value tier. http.title is port-agnostic and fires on both direct and reverse-proxied instances, but it no longer isolates Langflow on its own."
+  },
+  "survey_note": "Cat-Langflow 2026-06-18/19: http.title:\"Langflow\" (~54,685 Shodan hits) is ~100% FALSE POSITIVE — a coordinated scanner-poisoning DECEPTION FLEET ('LBot'), not Langflow. Fleet signature: (1) catch-all 200 on every path incl. nonsense paths, ~135KB canned HTML titled 'LBot' that embeds 'chat'/'db'/'status' substrings (over-matches the health_check triad); (2) Server-header rotation per request (nws/1.0, Aerlang, Jexus, kangle, istio-envoy, cloudflare, Raspbian...); (3) mega-JSON on /api/v1/version stuffing bait for many scanners at once (fake RCE 'uid=0(root)', Gitea version+commit+stok, TP-Link SetIpMacBindSettings, fabricated JWTs, admin@example.com, totpKey, CSRFToken) — but it NEVER fakes 'package':'Langflow'; (4) platform-keyword + v2board-theme stuffing to match many title dorks; (5) multi-ASN (Aliyun CN, Akamai/Linode US, APNIC AU) serving identical canned JSON (same commit 5bda17e7..., same 'jack' JWT). MITM observation-position gate passed clean (Mullvad exit not rewriting; control hosts returned real content) — the fleet is real, not a local artifact. ROBUST LIVE DISCRIMINATOR: GET /api/v1/version body containing 'package':'Langflow' (json_field package + body_contains langflow + body_not_contains gitea), paired with a catch-all-negative guard (nonsense /api/v1 path returning 200 = fleet, exclude). Only 2 REAL Langflow found in the cohort, both HARDENED: 172.241.24.136:443 v1.5.0.post2 and 24.152.39.20:7860 v1.7.3; 0 open instances. Evidence: AI-LLM-Infrastructure-OSINT/shodan/cat-langflow-2026-06-18/.",
+  "deployment_tells": [
+    "Port 7860 open with React SPA title 'Langflow'",
+    "Bundled Postgres on 5432 with default langflow:langflow creds when docker_example compose is used",
+    "GET /api/v1/version returns {\"package\":\"Langflow\",...}",
+    "No /login redirect on root = AUTO_LOGIN=True default (open superuser UI)",
+    "LANGFLOW_CONFIG_DIR=/app/langflow volume holds langflow.db (SQLite) + secret key when not on Postgres",
+    "MCP server endpoints exposed (LANGFLOW_MCP_COMPOSER_ENABLED default true) — MCP path remains unauth even in 1.5+"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/version -> exact build for CVE scoping (1.3.0 / 1.5 / 1.6.9 / 1.7.0 cut lines)",
+    "GET /api/v1/flows/ -> enumerate flow names/IDs (business-logic + which providers are wired) without touching the LLM keys",
+    "GET /api/v1/variables/ -> list Global Variable NAMES (key inventory) — names are the finding; do not read values",
+    "GET /api/v1/auto_login -> confirm whether default auto-superuser is live (200 with token = open UI)",
+    "GET /health_check -> confirm db:ok and that a backing store is reachable",
+    "GET /api/v1/config -> server config disclosure",
+    "If Postgres 5432 also exposed: langflow:langflow is the documented default — note as a chained read-only DB exposure, do not connect"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-3248 (CVSS 9.8, CISA KEV) — Unauthenticated RCE via /api/v1/validate/code: exec() of attacker Python via decorator/expression bypass; no auth required. Affects < 1.3.0. Mass-exploited to deploy the Flodrix botnet (Trend Micro, Jun 2025).",
+    "CVE-2025-34291 (CVSS 9.4, CISA KEV) — Account takeover + RCE chain: CORS allow_origins='*' with allow_credentials=True plus refresh-token cookie SameSite=None and no CSRF on token refresh; one victim page-visit yields authenticated code-exec. Affects <= 1.6.9, fixed 1.7.0 (GHSA-577h-p2hh-v4mv).",
+    "CVE-2026-33017 (CVSS 9.3 CRITICAL, CISA KEV) — Unauth RCE via POST /api/v1/build_public_tmp/{flow_id}/flow; exploited within 20h of advisory (Sysdig). Affects <= 1.8.2, fixed 1.9.0.",
+    "GHSA-vwmf-pq79-vjvx — Unauthenticated RCE via public flow build endpoint (2026).",
+    "GHSA-v5ff-9q35-q26f — Unauthenticated RCE in shareable playgrounds (2026).",
+    "GHSA-g2j9-7rj2-gm6c — Arbitrary file write -> RCE via v2 API (2026).",
+    "GHSA-9whx-c884-c68q — Path traversal in Knowledge Bases API bulk-delete (2026).",
+    "GHSA-rcjh-r59h-gq37 — Unauthenticated file read in playgrounds (2026).",
+    "GHSA-7grx-3xcx-2xv5 — Unauthenticated IDOR on image downloads (2026).",
+    "GHSA-9c59-2mvc-vfr8 — IDOR/BOLA across 7 Monitor API endpoints (2026)."
+  ],
+  "auth_evidence": "Documented quickstart sets ZERO auth env vars: README.md says `docker run -p 7860:7860 langflowai/langflow:latest` and `uv run langflow run`, both with no LANGFLOW_SUPERUSER/PASSWORD/AUTO_LOGIN. The default code value is LANGFLOW_AUTO_LOGIN=True (confirmed docs.langflow.org/api-keys-and-authentication: 'If LANGFLOW_AUTO_LOGIN=True (default) ... the visual editor automatically signs in all users as superusers'). Result: no login screen, every browser visitor lands in the flow builder as superuser. The shipped `.env.example` leaves LANGFLOW_AUTO_LOGIN=, LANGFLOW_SUPERUSER=, and LANGFLOW_SUPERUSER_PASSWORD= all EMPTY (no admin password is provisioned by default). VERSION SPLIT for the API layer: in Langflow <1.5 the REST API was also fully unauthenticated at default (the population CVE-2025-3248 reaped); v1.5 introduced API-key enforcement; v1.6 default is AUTO_LOGIN=True + SKIP_AUTH_AUTO_LOGIN=False, so UI stays open-superuser while most /api/v1 endpoints require an x-api-key. Vendor's own warning: 'Never expose Langflow ports directly to the internet without proper security measures. Set LANGFLOW_AUTO_LOGIN=False.' Primary sources: README.md quickstart, .env.example, docs.langflow.org/api-keys-and-authentication.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Anthropic/Azure/etc.) stored as Langflow Global Variables and embedded inside flow JSON — readable via /api/v1/variables/ and /api/v1/flows/ when UI/API is open",
+    "Vector-store and database connection strings + credentials wired into RAG components (Pinecone/Astra/pgvector/Chroma) inside flow definitions",
+    "Ingested RAG source documents and any PII/business data uploaded via the File component (/api/v1/files/)",
+    "Full flow/agent definitions revealing proprietary prompt engineering, tool wiring, and business logic (/api/v1/flows/)",
+    "Conversation/playground message history (/api/v1/monitor/messages)",
+    "The bundled Postgres (port 5432, langflow:langflow) holding all of the above when docker_example compose is used",
+    "On <1.5 default or AUTO_LOGIN-open hosts: superuser session = arbitrary Python execution = host RCE and cloud-credential pivot"
+  ],
+  "sources": [
+    "https://github.com/langflow-ai/langflow/blob/main/.env.example",
+    "https://github.com/langflow-ai/langflow/blob/main/README.md",
+    "https://github.com/langflow-ai/langflow/blob/main/docker_example/docker-compose.yml",
+    "https://docs.langflow.org/api-keys-and-authentication",
+    "https://github.com/langflow-ai/langflow/security/advisories",
+    "https://github.com/advisories/GHSA-577h-p2hh-v4mv",
+    "https://nvd.nist.gov/vuln/detail/CVE-2025-3248",
+    "https://nvd.nist.gov/vuln/detail/CVE-2025-34291",
+    "https://github.com/langflow-ai/langflow/security/advisories/GHSA-vwmf-pq79-vjvx",
+    "https://www.trendmicro.com/en_us/research/25/f/langflow-vulnerability-flodric-botnet.html",
+    "https://censys.com/advisory/cve-2025-3248",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

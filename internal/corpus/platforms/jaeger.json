@@ -1,0 +1,72 @@
+{
+  "platform": "jaeger",
+  "display_name": "Jaeger (distributed tracing — CNCF)",
+  "category": "observability/distributed-tracing",
+  "default_ports": [16686, 16685, 16687, 14250, 14268, 14269, 4317, 4318, 6831, 6832, 9411, 5778],
+  "api_paths": [
+    "/api/services",
+    "/api/operations",
+    "/api/traces",
+    "/api/dependencies",
+    "/api/traces/{trace_id}"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "External OAuth proxy (sidecar) — recommended but not shipped",
+    "Apache httpd reverse proxy (documented pattern)",
+    "Jaeger Operator on OpenShift wraps Query in OAuth proxy (only secure default)"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 16686:16686 -p 4317:4317 -p 4318:4318 cr.jaegertracing.io/jaegertracing/jaeger:2.19.0",
+  "misconfig_patterns": [
+    "kubectl expose --type=LoadBalancer on Query Service (most common accident)",
+    "All-in-one image used as production (in-memory storage = traces vanish on restart)",
+    "Ingress without auth annotation",
+    "ES storage backend on same host as Query, unauth (the prize)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Jaeger UI\"",
+      "http.html:\"id=\\\"jaeger-ui-root\\\"\"",
+      "http.html:\"jaegertracing\"",
+      "port:16686 http.status:200"
+    ],
+    "active_probe": {
+      "path": "/api/services",
+      "method": "GET",
+      "response_markers": ["\"data\":", "\"total\":", "\"limit\":", "\"offset\":", "\"errors\":"],
+      "false_positive_check": "data must be JSON array of strings (length>=1 = populated); body_not_contains <html/Sign in/Unauthorized"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Jaeger UI\"",
+    "strict": "http.title:\"Jaeger UI\" http.html:\"jaeger-ui-root\"",
+    "version": "http.title:\"Jaeger UI\" http.favicon.hash:<computed-per-version>"
+  },
+  "deployment_tells": [
+    "<title>Jaeger UI</title> on 16686",
+    "/api/services returns {data:[...],total:N,limit:0,offset:0,errors:null}",
+    "All-in-one: 16686+4317+4318+9411+14268+14250+5778 colisten",
+    "Collector-only: 14250+14268+14269 with NO 16686"
+  ],
+  "pivot_paths": [
+    "/api/services → full microservice topology (Insight #88)",
+    "/api/operations?service=X → endpoint inventory per service",
+    "/api/traces?service=X → spans with http.url+headers+db.statement (PII/secret class)",
+    "/api/dependencies → service call graph (lateral-movement map)",
+    "Shadow port 9200 Elasticsearch → raw jaeger-span-* index (bypass Query, full corpus)"
+  ],
+  "vulnerabilities": [
+    "CVE-2022-25975 — XSS in KeyValuesTable component (Jaeger UI <1.31.0)",
+    "GHSA-2w8w-qhg4-f78j — Stored XSS via injected tag content (2023-07-11)",
+    "CVE-2024-24788 — Transitive Go stdlib DNS DoS (Go <=1.22.2)",
+    "CVE-2025-15467 — OpenSSL stack BoF in Alpine base of Jaeger v2 Docker image"
+  ],
+  "sources": [
+    "CANDIDATE — jaegertracing.io/docs/2.19/deployment/security/",
+    "CANDIDATE — jaegertracing.io/docs/1.45/apis",
+    "CANDIDATE — pkg.go.dev/github.com/jaegertracing/jaeger/ports",
+    "CANDIDATE — github.com/jaegertracing/jaeger/security/advisories",
+    " pre-assessment OSINT 2026-06-09 (cat-54-otel-collector)"
+  ]
+}

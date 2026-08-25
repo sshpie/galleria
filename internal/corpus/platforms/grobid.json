@@ -1,0 +1,73 @@
+{
+  "platform": "grobid",
+  "display_name": "GROBID (academic PDF parser service)",
+  "category": "document_loader",
+  "default_ports": [
+    8070,
+    8071
+  ],
+  "api_paths": [
+    "/api/version",
+    "/api/isalive",
+    "/api/health",
+    "/api/processHeaderDocument",
+    "/api/processFulltextDocument",
+    "/api/processReferences",
+    "/api/processCitation",
+    "/api/referenceAnnotations",
+    "/api/annotatePDF",
+    "/api/modelTraining",
+    "/api/trainingResult"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -t --rm --init -p 8070:8070 -p 8071:8071 lfoppiano/grobid:latest",
+  "misconfig_patterns": [
+    "No authentication mechanism documented or supported by default",
+    "CORS enabled by default for all origins -- any browser can call the API cross-origin",
+    "Admin console at port 8071 exposes metrics, heartbeat, and Prometheus metrics without auth",
+    "/api/modelTraining endpoint allows initiating model training operations without auth",
+    "Processes full-text academic PDFs -- document content (including unpublished research) readable by server operator"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8070 http.html:\"GROBID\"",
+      "port:8070 http.html:\"grobid\"",
+      "port:8070 http.html:\"isalive\""
+    ],
+    "active_probe": {
+      "path": "/api/isalive",
+      "method": "GET",
+      "response_markers": [
+        "true"
+      ],
+      "false_positive_check": "GET /api/isalive must return plain text 'true' with HTTP 200; GET /api/version must return version string in grobid tag format (e.g. 0.9.x)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8070 http.html:\"grobid\"",
+    "strict": "port:8070 \"GROBID\"",
+    "version": "port:8070 http.html:\"grobid\" http.html:\"isalive\""
+  },
+  "deployment_tells": [
+    "GET /api/isalive returns plain text 'true' -- highly specific",
+    "GET /api/version returns version string in git-describe format (e.g. 0.9.0-70-g94429f4e2)",
+    "Admin console at port 8071 with /metrics/prometheus endpoint -- common in academic/research deployments",
+    "Commonly deployed on university HPC clusters and research institution servers"
+  ],
+  "pivot_paths": [
+    "POST /api/processFulltextDocument with arbitrary PDF -> full TEI XML extraction of document content without auth",
+    "GET /api/health at port 8071 -> engine pool metrics -> infer internal processing capacity",
+    "POST /api/modelTraining -> trigger compute-intensive training job without auth -> resource exhaustion",
+    "GET /metrics/prometheus at port 8071 -> system metrics without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://grobid.readthedocs.io/en/latest/Grobid-service/",
+    "https://grobid.readthedocs.io/en/latest/Grobid-docker/"
+  ],
+  "corpus_corrections": [
+    "2026-06-19 verify: /api/isalive->'true', /api/version clean git-describe (CVE scoping). FLEET: 22 confirmed-open v0.7.3-0.9.1, all unauth. No cataloged CVE; unauth /api/modelTraining=DoS. http.html:'grobid' is the live dork (uppercase 'GROBID' plain-string=0-hit)."
+  ]
+}

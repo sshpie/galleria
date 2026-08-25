@@ -1,0 +1,134 @@
+{
+  "platform": "lmdeploy",
+  "display_name": "LMDeploy",
+  "category": "inference_serving",
+  "default_ports": [23333],
+  "api_paths": [
+    "/",
+    "/v1/models",
+    "/v1/chat/completions",
+    "/v1/completions",
+    "/v1/embeddings",
+    "/v1/encode",
+    "/v1/chat/interactive",
+    "/generate",
+    "/health",
+    "/metrics",
+    "/openapi.json",
+    "/terminate",
+    "/sleep",
+    "/wakeup",
+    "/is_sleeping",
+    "/update_weights",
+    "/pooling",
+    "/distserve/engine_info",
+    "/distserve/p2p_initialize",
+    "/distserve/p2p_connect",
+    "/distserve/p2p_drop_connect",
+    "/distserve/free_cache",
+    "/abort_request"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["HUGGING_FACE_HUB_TOKEN", "LMDEPLOY_USE_MODELSCOPE", "LMDEPLOY_USE_OPENMIND_HUB"],
+  "default_creds": [],
+  "install_tell": "lmdeploy serve api_server internlm/internlm2_5-7b-chat --server-port 23333  # or: docker run -p 23333:23333 openmmlab/lmdeploy:latest",
+  "misconfig_patterns": [
+    "api_keys parameter Default to None, which means no authentication required (api_server.py:1486)",
+    "Swagger UI mounted at / (docs_url='/') — interactive API explorer exposed to anyone (api_server.py:1543)",
+    "/openapi.json publicly enumerates every route and request schema",
+    "/terminate endpoint accepts GET — INFERRED denial-of-service when reachable",
+    "/sleep, /wakeup, /update_weights, /abort_request — model-management surface unauthenticated by default",
+    "/distserve/p2p_initialize / p2p_connect / p2p_drop_connect — disaggregated-serving P2P control plane exposed",
+    "/v1/encode — raw token-ID round-trip leaks tokenizer behavior and chat template",
+    "0.0.0.0 default server_name binds all interfaces on port 23333 (api_server.py:1431)",
+    "/health returns 200 OK with no auth, surfaces server liveness",
+    "/metrics exposed under --enable-metrics — lmdeploy: prefixed Prometheus metrics surface GPU cache use, request counts"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:23333 http.html:\"LMDeploy\"",
+      "port:23333 http.html:\"FastAPI\" http.html:\"/openapi.json\"",
+      "http.html:\"lmdeploy\"",
+      "http.html:\"openmmlab\""
+    ],
+    "active_probe": {
+      "path": "/openapi.json",
+      "method": "GET",
+      "response_markers": [
+        "\"/distserve/engine_info\"",
+        "\"/v1/chat/interactive\"",
+        "\"/v1/encode\"",
+        "\"/is_sleeping\""
+      ],
+      "false_positive_check": "openapi.json must contain at least 2 of: /distserve/*, /v1/encode, /v1/chat/interactive, /is_sleeping — these route names are LMDeploy-unique (not in vLLM, SGLang, TGI, AIBrix)"
+    },
+    "secondary_probe": {
+      "path": "/metrics",
+      "method": "GET",
+      "response_markers": ["lmdeploy:num_requests_running", "lmdeploy:gpu_cache_usage_perc", "lmdeploy:backend_config"],
+      "note": "Only present when --enable-metrics flag set at launch; absence does not refute LMDeploy"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:23333 http.html:\"LMDeploy\"",
+    "strict": "port:23333 http.html:\"/distserve/engine_info\"",
+    "version": "port:23333 http.html:\"openmmlab/lmdeploy\" http.html:\"version\""
+  },
+  "censys_queries": {
+    "basic": "services.port:23333 and services.http.response.body:\"LMDeploy\"",
+    "strict": "services.http.response.body:\"/distserve/engine_info\" or services.http.response.body:\"/v1/chat/interactive\"",
+    "swagger": "services.port:23333 and services.http.response.body:\"swagger-ui\" and services.http.response.body:\"openapi.json\""
+  },
+  "deployment_tells": [
+    "Default port 23333 (server_port: int = 23333 in api_server.py:1432)",
+    "Default bind 0.0.0.0 (api_server.py:1431)",
+    "Swagger UI HTML served at root / by FastAPI (docs_url='/')",
+    "Docker image openmmlab/lmdeploy:latest (Docker Hub)",
+    "TurboMind backend or PyTorch backend selector visible in startup logs",
+    "/openapi.json title field contains 'LMDeploy' or model name",
+    "Server: uvicorn response header (FastAPI default)",
+    "Anthropic-compat router mounted alongside OpenAI router (/v1/messages endpoints)",
+    "Distinctive route family: /distserve/* for prefill/decode disaggregation",
+    "/sleep + /wakeup + /is_sleeping triplet — model-eviction control",
+    "Prometheus metrics with lmdeploy: prefix when --enable-metrics set"
+  ],
+  "pivot_paths": [
+    "GET / -> Swagger UI HTML -> click 'Try it out' executes against the same server with no auth",
+    "GET /openapi.json -> full route + schema dump including model name in info section",
+    "GET /v1/models -> served model name (often org/model from HuggingFace) -> attribution + HF account pivot",
+    "POST /v1/chat/completions with model from /v1/models -> verify unauth inference -> compute cost theft + prompt-injection surface",
+    "POST /v1/encode -> tokenizer probe reveals chat template structure and any system prompt leak via render",
+    "GET /distserve/engine_info -> reveals tensor parallel size, kv cache config, backend type (turbomind vs pytorch)",
+    "GET /metrics -> lmdeploy:gpu_cache_usage_perc + lmdeploy:num_requests_running -> infer GPU footprint",
+    "POST /sleep then /wakeup -> denial-of-service pivot (model unloaded mid-traffic)",
+    "POST /update_weights -> if URL/path scheme exposed, model-substitution attack — INFERRED, needs source verification on accepted payload",
+    "Anthropic-compat /v1/messages endpoint mounted on same port — second auth surface, same null default"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "github.com/InternLM/lmdeploy README.md @ sha 3b12b2634a75c68154118e95d70fe4dc08bfaecd",
+    "github.com/InternLM/lmdeploy lmdeploy/serve/openai/api_server.py (line 1432: server_port=23333; line 1486: api_keys default None; line 1543: docs_url='/')",
+    "github.com/InternLM/lmdeploy lmdeploy/metrics/loggers.py (line 149+ lmdeploy: Prometheus prefixes)",
+    "github.com/InternLM/lmdeploy docs/en/llm/api_server.md",
+    "github.com/InternLM/lmdeploy docs/en/advance/metrics.md",
+    "Docker Hub: openmmlab/lmdeploy"
+  ],
+  "registry_mentions": {
+    "discovery_dork": "\"LMDeploy\"",
+    "namespace_pattern": "openmmlab/lmdeploy, lmdeploy/*",
+    "verification_method": "single-request GET /v2/_catalog, 200 + no Www-Authenticate",
+    "hosts": [
+      "115.191.10.126:443",
+      "124.163.255.214:5000",
+      "65.108.11.238:8804 (HA twin :8808)",
+      "46.62.204.42:80"
+    ],
+    "surveyed_at": "2026-06-09",
+    "survey_ref": "shodan/cat-syllabus-leads-2026-06-09/findings-breakdown.txt",
+    "insight_ref": "methodology/insight-95-oss-platform-name-as-registry-dork.md",
+    "note": "Image name string \"LMDeploy\" surfaced 3 unauth Docker registry hits on Shodan; cross-confirmed with the broader 4-host cohort from the parallel \"aibrix\" dork. Platform itself NOT verified live at these IPs — these are lateral mentions per Insight #95, not LMDeploy instances. Status stays CANDIDATE."
+  },
+  "status": "CANDIDATE",
+  "discovered_at": "2026-06-09",
+  "notes": "Auth-on-default OFF — direct quote from api_server.py:1486: 'Default to None, which means no' authentication. 7890 stars, very active (push 2026-06-09), Shanghai AI Lab + MMRazor/MMDeploy. The /distserve/* and /v1/encode and /v1/chat/interactive routes are unique enough that an openapi.json fetch is the cleanest single-probe fingerprint. Highest-yield Shodan dork because port 23333 is non-standard — minimal background noise. Anthropic-compat router added 2026 expands attack surface."
+}

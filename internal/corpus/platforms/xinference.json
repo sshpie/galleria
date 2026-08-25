@@ -1,0 +1,59 @@
+{
+  "platform": "xinference",
+  "display_name": "Xinference (Xorbits Inference)",
+  "category": "embedding_serving",
+  "default_ports": [9997, 80, 8080],
+  "api_paths": ["/v1/models", "/v1/embeddings", "/v1/chat/completions", "/v1/rerank", "/v1/models/{model_uid}", "/metrics", "/ui/", "/docs"],
+  "auth_default": "none",
+  "auth_config_env": ["XINFERENCE_TOKEN"],
+  "default_creds": [],
+  "install_tell": "xinference-local --host 0.0.0.0 --port 9997",
+  "misconfig_patterns": [
+    "Default quickstart exposes all endpoints without authentication",
+    "GET /v1/models lists all loaded models (LLMs, embeddings, rerankers, image, audio, video) without auth",
+    "POST /v1/embeddings open — embedding oracle at population scale",
+    "POST /v1/chat/completions open when LLM loaded alongside embedding model — full LLM inference free",
+    "React web UI at /ui/ exposes model launch controls — arbitrary model loading may be possible without auth",
+    "Prometheus /metrics exposes request counts and latency without auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"xinference\"",
+      "title:\"Xinference\"",
+      "http.html:\"xorbits\""
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": ["model_uid", "model_name", "model_type", "xinference"],
+      "false_positive_check": "response must be JSON array containing model_uid and model_type fields; title:Xinference in HTML root is high-confidence"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"xinference\"",
+    "strict": "title:\"Xinference\"",
+    "version": "http.html:\"xinference\" http.html:\"xorbits\""
+  },
+  "deployment_tells": [
+    "484 Shodan hits on http.html:\"xinference\" (2026-05-09 survey) — largest single-platform embedding hit count",
+    "Chinese-origin platform from Xorbits; Chinese cloud providers dominant (Alibaba, Tencent, Huawei)",
+    "Multi-modal: supports LLM + embedding + reranker + image + audio + video model types simultaneously",
+    "React web UI at /ui/ with model launch/stop controls — no auth gate on default deploy",
+    "Often co-deployed with Ollama or LightRAG as the embedding backend",
+    "XINFERENCE_TOKEN env var enables bearer-token auth but not set by default"
+  ],
+  "pivot_paths": [
+    "GET /v1/models → model_uid, model_name, model_type, model_format → identify all loaded models",
+    "GET /v1/models/{uid} → model detail → context_length, dimensions, quantization",
+    "POST /v1/embeddings {model: uid, input: [text]} → confirm embedding oracle open",
+    "GET /ui/ → React bundle → JS secrets extraction (XINFERENCE_TOKEN, API keys in env-injected config)",
+    "GET /metrics → Prometheus → request volume per model_uid"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    " — Cat-27 Embedding Services 2026-06-18",
+    "https://github.com/xorbitsai/inference",
+    "Shodan: 484 hits http.html:xinference (2026-05-09 survey, 27-embedding-services.md)"
+  ],
+  "status": "CANDIDATE"
+}

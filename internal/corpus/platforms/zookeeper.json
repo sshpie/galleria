@@ -1,0 +1,72 @@
+{
+  "platform": "zookeeper",
+  "display_name": "Apache ZooKeeper",
+  "category": "distributed_coordination",
+  "default_ports": [
+    2181,
+    2888,
+    3888,
+    8080
+  ],
+  "api_paths": [
+    "/",
+    "/commands",
+    "/commands/mntr"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ZOO_4LW_COMMANDS_WHITELIST",
+    "ZOOKEEPER_CLIENT_PORT"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 2181:2181 zookeeper:latest (bundled by Kafka/Solr/Druid/Pinot/HBase installs)",
+  "misconfig_patterns": [
+    "Pre-3.5.3 (still common — Kafka bundles ship old ZK): ALL 4lw commands enabled, no whitelist mechanism exists",
+    "3.5.3+: 4lw.commands.whitelist defaults to 'srvr' only, but ops guides for Kafka Manager/Burrow/Datadog instruct adding 'mntr,ruok,stat,dump,cons,wchs' — whitelist gets widened back open in practice",
+    "AdminServer HTTP interface (default port 8080, distinct from client 2181) exposes /commands/<cmd> as an unauth REST endpoint — same data, different vector, often missed by port-2181-only scanners",
+    "wchs/dump commands leak client session IDs and watch paths — session hijack surface",
+    "srvr/mntr leak version string for CVE scoping without any auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:2181",
+      "port:8080 \"Zookeeper\"",
+      "\"Zookeeper version\""
+    ],
+    "active_probe": {
+      "path": "srvr",
+      "method": "4LW",
+      "response_markers": [
+        "Zookeeper version:",
+        "Latency min/avg/max:",
+        "Mode:"
+      ],
+      "false_positive_check": "raw TCP write of 4-byte command word (no HTTP framing) — response must include 'Zookeeper version:' line; distinguishes from generic TCP echo services on 2181"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:2181",
+    "strict": "port:2181 \"Zookeeper version\"",
+    "version": "port:2181 \"Zookeeper version:3\""
+  },
+  "deployment_tells": [
+    "raw TCP 'srvr' write to :2181 returns plaintext server stats without auth (4lw)",
+    "raw TCP 'mntr' returns Prometheus-style key-value metrics including zk_followers, zk_synced_followers — cluster topology leak",
+    "AdminServer REST at :8080/commands/mntr returns same data as JSON, unauth",
+    "'dump' 4lw leaks active session list + ephemeral znode owners"
+  ],
+  "pivot_paths": [
+    "4LW 'wchs' -> watch paths -> often reveals application znode namespace (e.g. /kafka, /solr, /druid, /helix cluster names)",
+    "4LW 'cons' -> connected client IP list -> maps which app servers depend on this ZK ensemble",
+    "znode tree walk (if zkCli/native client reachable past the coordination-only 4lw surface) -> full cluster config, ACLs, service registry"
+  ],
+  "vulnerabilities": [
+    "CVE-2019-8676 (informational disclosure via unrestricted 4lw pre-3.5.3 patch)",
+    "CVE-2023-44981 (ZooKeeper SASL quorum auth bypass, unrelated to 4lw but relevant to ensemble compromise chain)"
+  ],
+  "sources": [
+    "https://zookeeper.apache.org/doc/r3.6.0/zookeeperAdmin.html",
+    "https://issues.apache.org/jira/browse/ZOOKEEPER-2764",
+    "[CANDIDATE —  cat-distributed-coordination survey 2026-07-30; new category, not yet population-verified]"
+  ]
+}

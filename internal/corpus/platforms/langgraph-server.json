@@ -1,0 +1,246 @@
+{
+  "platform": "langgraph-server",
+  "display_name": "LangGraph Server",
+  "category": "agent_framework",
+  "github": "https://github.com/langchain-ai/langgraph",
+  "description": "REST API server for hosting compiled LangGraph agents. FastAPI on uvicorn. Manages assistants, threads, runs, cron jobs, and persistent key-value store. Requires Postgres (pgvector/pgvector:pg16) and Redis (redis:6) as backing services.",
+  "default_ports": [8000, 8123, 2024],
+  "port_notes": "Container-internal port is always 8000. `langgraph up` publishes host 8123->container 8000 on 0.0.0.0. Dev mode (`langgraph dev`) binds 127.0.0.1:2024 (lo-dark, not internet-reachable). Exposed population routes through port 8123 or custom host mappings.",
+  "protocols": ["http", "https"],
+  "api_paths": [
+    {"method": "GET",    "path": "/ok",                                              "notes": "Liveness probe. Returns {\"ok\": true}. No auth required even when auth is configured. Primary fingerprint anchor."},
+    {"method": "GET",    "path": "/info",                                             "notes": "Returns langgraph_py_version, langgraph_api_version, graphs map (graph_id -> {description, input_schema, output_schema, state_schema, context_schema}). Confirms deployment and leaks graph topology."},
+    {"method": "GET",    "path": "/docs",                                             "notes": "FastAPI Swagger UI. Present on all deployments. Lists all operationIds including search_assistants_assistants_search_post."},
+    {"method": "GET",    "path": "/openapi.json",                                     "notes": "Full OpenAPI schema. Contains all route definitions and operationIds. Discriminating marker for active-probe (not Shodan-crawled)."},
+    {"method": "GET",    "path": "/assistants/{assistant_id}",                        "notes": "Get assistant by ID."},
+    {"method": "POST",   "path": "/assistants",                                       "notes": "Create new assistant. Payload: graph_id, config, metadata, name, description."},
+    {"method": "PATCH",  "path": "/assistants/{assistant_id}",                        "notes": "Update assistant."},
+    {"method": "DELETE", "path": "/assistants/{assistant_id}",                        "notes": "Delete assistant. Param: delete_threads=true removes all associated threads."},
+    {"method": "POST",   "path": "/assistants/search",                                "notes": "Search assistants by metadata, graph_id, name. Returns list or paginated object. LangGraph-unique operationId: search_assistants_assistants_search_post."},
+    {"method": "POST",   "path": "/assistants/count",                                 "notes": "Count assistants matching filters."},
+    {"method": "GET",    "path": "/assistants/{assistant_id}/graph",                  "notes": "Returns graph node/edge structure. Leaks full agent architecture: node IDs, types, edges. xray param exposes subgraph internals."},
+    {"method": "GET",    "path": "/assistants/{assistant_id}/schemas",                "notes": "Returns state_schema, context_schema, input/output type definitions."},
+    {"method": "GET",    "path": "/assistants/{assistant_id}/subgraphs",              "notes": "Returns nested subgraph schemas."},
+    {"method": "GET",    "path": "/assistants/{assistant_id}/subgraphs/{namespace}",  "notes": "Returns specific subgraph schema by namespace."},
+    {"method": "POST",   "path": "/assistants/{assistant_id}/versions",               "notes": "List all versions of an assistant."},
+    {"method": "POST",   "path": "/assistants/{assistant_id}/latest",                 "notes": "Set the active version of an assistant."},
+    {"method": "GET",    "path": "/threads/{thread_id}",                              "notes": "Get thread by ID. include=ttl reveals TTL config."},
+    {"method": "POST",   "path": "/threads",                                          "notes": "Create thread. Payload: thread_id, metadata, if_exists, supersteps, graph_id, ttl."},
+    {"method": "PATCH",  "path": "/threads/{thread_id}",                              "notes": "Update thread metadata and TTL."},
+    {"method": "DELETE", "path": "/threads/{thread_id}",                              "notes": "Delete thread."},
+    {"method": "POST",   "path": "/threads/search",                                   "notes": "Search threads by metadata, values (state), status, ids. LangGraph-unique endpoint."},
+    {"method": "POST",   "path": "/threads/count",                                    "notes": "Count threads matching filters."},
+    {"method": "POST",   "path": "/threads/{thread_id}/copy",                         "notes": "Copy a thread."},
+    {"method": "POST",   "path": "/threads/prune",                                    "notes": "Bulk-delete or keep-latest-checkpoint threads by ID list."},
+    {"method": "GET",    "path": "/threads/{thread_id}/state",                        "notes": "Get current thread state (values, next nodes, checkpoint, metadata). Contains all agent memory including messages, PII."},
+    {"method": "GET",    "path": "/threads/{thread_id}/state/{checkpoint_id}",        "notes": "Get thread state at a specific checkpoint."},
+    {"method": "POST",   "path": "/threads/{thread_id}/state",                        "notes": "Update thread state. Allows injecting arbitrary values as if a node had executed."},
+    {"method": "POST",   "path": "/threads/{thread_id}/state/checkpoint",             "notes": "Get thread state at a specific checkpoint (POST variant)."},
+    {"method": "POST",   "path": "/threads/{thread_id}/history",                      "notes": "Get full checkpoint history of a thread. Leaks all prior states including deleted/overwritten messages."},
+    {"method": "GET",    "path": "/threads/{thread_id}/stream",                       "notes": "SSE stream for thread events (GET join_stream)."},
+    {"method": "GET",    "path": "/threads/{thread_id}/runs",                         "notes": "List runs for a thread."},
+    {"method": "POST",   "path": "/threads/{thread_id}/runs",                         "notes": "Create background run on a thread."},
+    {"method": "POST",   "path": "/threads/{thread_id}/runs/stream",                  "notes": "Create run and stream results via SSE."},
+    {"method": "POST",   "path": "/threads/{thread_id}/runs/wait",                    "notes": "Create run and block until complete, return final state."},
+    {"method": "GET",    "path": "/threads/{thread_id}/runs/{run_id}",                "notes": "Get run by ID."},
+    {"method": "DELETE", "path": "/threads/{thread_id}/runs/{run_id}",                "notes": "Delete a run."},
+    {"method": "POST",   "path": "/threads/{thread_id}/runs/{run_id}/cancel",         "notes": "Cancel a run. Actions: interrupt or rollback."},
+    {"method": "GET",    "path": "/threads/{thread_id}/runs/{run_id}/join",           "notes": "Block until run completes, return final thread state."},
+    {"method": "GET",    "path": "/threads/{thread_id}/runs/{run_id}/stream",         "notes": "SSE stream for an existing run."},
+    {"method": "POST",   "path": "/threads/{thread_id}/runs/crons",                   "notes": "Create cron job scoped to a thread."},
+    {"method": "POST",   "path": "/runs",                                             "notes": "Create stateless background run (no persistent thread)."},
+    {"method": "POST",   "path": "/runs/stream",                                      "notes": "Create stateless run and stream via SSE."},
+    {"method": "POST",   "path": "/runs/wait",                                        "notes": "Create stateless run, block until done."},
+    {"method": "POST",   "path": "/runs/batch",                                       "notes": "Create batch of stateless background runs."},
+    {"method": "POST",   "path": "/runs/cancel",                                      "notes": "Bulk-cancel runs by thread_id, run_ids, or status filter."},
+    {"method": "POST",   "path": "/runs/crons",                                       "notes": "Create stateless cron job."},
+    {"method": "DELETE", "path": "/runs/crons/{cron_id}",                             "notes": "Delete cron job."},
+    {"method": "PATCH",  "path": "/runs/crons/{cron_id}",                             "notes": "Update cron job schedule, input, config."},
+    {"method": "POST",   "path": "/runs/crons/search",                                "notes": "Search cron jobs by assistant_id, thread_id, enabled, metadata."},
+    {"method": "POST",   "path": "/runs/crons/count",                                 "notes": "Count cron jobs matching filters."},
+    {"method": "PUT",    "path": "/store/items",                                      "notes": "Write item to persistent store (namespace + key + value). Survives thread deletion."},
+    {"method": "GET",    "path": "/store/items",                                      "notes": "Read item from store by namespace + key. Contains cross-run persistent agent memory."},
+    {"method": "DELETE", "path": "/store/items",                                      "notes": "Delete store item."},
+    {"method": "POST",   "path": "/store/items/search",                               "notes": "Semantic or filter search across store items. Natural language query supported if vector store configured."},
+    {"method": "POST",   "path": "/store/namespaces",                                 "notes": "List store namespaces (structured like user-scoped paths when auth is in use)."}
+  ],
+  "auth_default": "open-by-default",
+  "auth_notes": "Auth is opt-in. Without an `auth` block in langgraph.json, the server accepts all requests with no authentication. Auth is implemented via a user-supplied Python module registered as `auth.path` in langgraph.json. The module instantiates `Auth()` from `langgraph_sdk` and registers `@auth.authenticate` and `@auth.on.*` handlers. If no global handler is set (`@auth.on`) and no resource-specific handler matches, requests are accepted by default. LangGraph Studio users (StudioUser kind) bypass even configured auth handlers.",
+  "auth_config_env": [
+    "LANGGRAPH_API_KEY",
+    "LANGSMITH_API_KEY",
+    "LANGCHAIN_API_KEY"
+  ],
+  "auth_config_env_notes": "API key loaded client-side for SDK calls (checked in order: LANGGRAPH_API_KEY > LANGSMITH_API_KEY > LANGCHAIN_API_KEY). Server-side: no env var enables built-in auth. Auth is only active when langgraph.json contains `auth.path` pointing to a Python module with Auth() handlers. REDIS_URI and POSTGRES_URI are required infrastructure env vars, not auth controls.",
+  "default_creds": [],
+  "install_tell": "pip install langgraph-sdk langgraph-cli; langgraph up / langgraph dev. Docker image: langchain/langgraph-api (Python) or langchain/langgraphjs-api (JS). Debugger companion: langchain/langgraph-debugger. Healthcheck script at /api/healthcheck.py inside container.",
+  "misconfig_patterns": [
+    "langgraph.json has no `auth` block -> zero authentication on all endpoints including /threads/*/state (agent memory), /store/items (persistent KV), /assistants/*/graph (architecture leak)",
+    "LangGraph Studio bypass: StudioUser requests skip @auth.authenticate entirely even when auth is configured; no way to disable Studio bypass in OSS",
+    "No global @auth.on deny handler -> default-accept policy; only specific resource+action handlers enforce access control, everything else passes",
+    "`langgraph up` publishes port 0.0.0.0:8123 by default; dev mode (2024) binds localhost only but explicit --host 0.0.0.0 overrides",
+    "Worker nodes expose POSTGRES_URI and REDIS_URI as environment variables accessible via /threads/*/state on custom-tool assistants",
+    "LANGSMITH_API_KEY available in worker environment -> readable via code-exec tools if assistant has a code-execution node",
+    "Default Postgres credentials (postgres/postgres) in docker-compose generated by `langgraph up`; Postgres exposed on host port 5433"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"langgraph\"",
+      "server:uvicorn http.html:\"langgraph\" port:8000",
+      "http.html:\"langgraph_workflow_service\"",
+      "\"engine\":\"LangGraph\""
+    ],
+    "passive_notes": "Shodan-BANNER-dark by construction. Port 8000/8123 server returns JSON at / ({\"ok\": true}), not HTML. Discriminating markers (langgraph_py_version, search_assistants_assistants_search_post operationId) live at /info and /openapi.json which Shodan never crawls. http.html:\"LangGraph\" ~590 hits but dominated by docs pages, marketing sites, and product pages embedding the framework name. Real servers return JSON, not HTML. Route to Censys + active-probe, NOT Shodan HTML dork.",
+    "active_probe": {
+      "path": "/ok",
+      "method": "GET",
+      "response_markers": [
+        "{\"ok\": true}",
+        "server: uvicorn",
+        "content-type: application/json"
+      ],
+      "confirm_with": "/info for langgraph_py_version field or /openapi.json for search_assistants_assistants_search_post operationId",
+      "false_positive_check": "http.html:\"langgraph\" returns ~590 hits; ~3.2% are live servers. Require: uvicorn server header + JSON body at / containing 'ok' key OR /info returning langgraph_py_version. Do not fingerprint on langgraph HTML alone. \"langgraph_workflow_service\" service_type field = custom Chinese-market wrapper, confirms LangGraph lineage."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"langgraph\"",
+    "strict": "server:uvicorn http.html:\"langgraph\" port:8000",
+    "version": "\"engine\":\"LangGraph\"",
+    "custom_wrapper": "http.html:\"langgraph_workflow_service\"",
+    "notes": "All dorks are low-yield due to Shodan-BANNER-dark architecture. 499 hits on basic dork; 16/499 (~3.2%) verified live. Conjunctive: server:uvicorn + port:8000 + langgraph body = highest precision but still catches docs deployments. Primary harvest route: Censys + active-probe sweep."
+  },
+  "deployment_tells": [
+    "Docker Compose service name: langgraph-api",
+    "Docker image: langchain/langgraph-api (Python), langchain/langgraphjs-api (JS)",
+    "Healthcheck script: /api/healthcheck.py",
+    "Default Postgres service: langgraph-postgres on port 5433 (host)",
+    "Default Redis service: langgraph-redis on port 6379 (internal)",
+    "Config file: langgraph.json (defines graphs, auth path, env vars, python_version, api_version)",
+    "pip packages: langgraph-api, langgraph-cli, langgraph-sdk",
+    "Debugger companion: langchain/langgraph-debugger image, port 3968",
+    "x-trace-id response header (LangChain cloud infra only, not self-hosted)"
+  ],
+  "pivot_paths": [
+    "GET /info -> graph topology map (all graph_id names, state/input/output schemas)",
+    "GET /assistants/{id}/graph?xray=1 -> full recursive node+edge architecture with subgraph internals",
+    "GET /assistants/{id}/schemas -> state_schema reveals all tracked state fields (often includes user_id, messages, session data)",
+    "GET /threads/{id}/state -> full current agent memory blob (messages, tool call history, PII)",
+    "POST /threads/{id}/history -> complete checkpoint history including overwritten/deleted state",
+    "GET /store/items?namespace=...&key=... -> persistent cross-run KV store (long-lived agent memory, user profiles)",
+    "POST /store/namespaces -> enumerate all namespace paths (reveals user ID structure when auth-scoped)",
+    "POST /store/items/search -> semantic search across all stored agent memories",
+    "GET /openapi.json -> full route manifest + schema definitions including custom graph-specific fields",
+    "POST /runs/stream with tool-calling assistant_id -> code execution if assistant has code-exec node"
+  ],
+  "vulnerabilities": [
+    {
+      "id": "UNAUTH-DEFAULT",
+      "description": "No authentication in default configuration. All endpoints including agent memory (/threads/*/state), persistent store (/store/items), graph architecture (/assistants/*/graph), and run creation (/runs/stream) are publicly accessible without credentials.",
+      "severity": "CRITICAL",
+      "verified": true,
+      "evidence": "Source: langgraph_sdk/auth/__init__.py - Auth class is instantiated only if user provides auth.path in langgraph.json. No built-in auth middleware. Auth handler defaults to accept when no @auth.on global handler is set."
+    },
+    {
+      "id": "STUDIO-BYPASS",
+      "description": "LangGraph Studio users (StudioUser kind) bypass @auth.authenticate handler entirely per documented behavior. is_studio_user() check in auth module confirms bypass logic is built in.",
+      "severity": "HIGH",
+      "verified": true,
+      "evidence": "Source: langgraph_sdk/auth/__init__.py - is_studio_user() function; auth types.py - StudioUser class; documented in Auth class docstring."
+    },
+    {
+      "id": "ENV-EXPOSURE",
+      "description": "Worker environment contains POSTGRES_URI, REDIS_URI, LANGSMITH_API_KEY, and any user-defined env vars from langgraph.json env block. Accessible via code-execution tools in custom assistant nodes on unauth deployments.",
+      "severity": "HIGH",
+      "verified": false,
+      "evidence": "Source: docker.py compose_as_dict() - REDIS_URI and POSTGRES_URI injected into langgraph-api environment; langgraph.json env block passes user-defined secrets to worker."
+    },
+    {
+      "id": "DEFAULT-POSTGRES-CREDS",
+      "description": "Generated docker-compose uses postgres/postgres credentials for Postgres, exposed on host port 5433. Any host-reachable attacker can connect directly to the database bypassing the LangGraph API layer entirely.",
+      "severity": "HIGH",
+      "verified": false,
+      "evidence": "Source: docker.py DEFAULT_POSTGRES_URI = 'postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable'; ports: '5433:5432'."
+    },
+    {
+      "id": "CVE-2025-64439-CANDIDATE",
+      "cve": "CVE-2025-64439",
+      "description": "CANDIDATE (unverified). langgraph-checkpoint <3.0: JsonPlusSerializer JSON mode _reviver executes arbitrary Python during checkpoint load, enabling RCE via deserialized checkpoint data.",
+      "severity": "HIGH",
+      "cvss": "7.4",
+      "component": "langgraph-checkpoint <3.0",
+      "fixed_in": "langgraph-checkpoint 3.0 / langgraph-api 0.5+",
+      "verified": false,
+      "evidence": "Secondary source only (CSA research note, GitHub advisory). Not confirmed against primary source. Verify before codifying."
+    },
+    {
+      "id": "CVE-2025-67644-CANDIDATE",
+      "cve": "CVE-2025-67644",
+      "description": "CANDIDATE (unverified). langgraph-checkpoint-sqlite <3.0.1: metadata filter key SQL injection in SQLite checkpoint backend.",
+      "severity": "HIGH",
+      "cvss": "7.3",
+      "component": "langgraph-checkpoint-sqlite <3.0.1",
+      "fixed_in": "langgraph-checkpoint-sqlite 3.0.1",
+      "verified": false,
+      "evidence": "Secondary source only. Not confirmed against primary source. Verify before codifying."
+    }
+  ],
+  "auth_evidence": "16 of 499 candidates (3.2%) verified as live servers; all 16 returned HTTP 200 on /ok and /threads/search with no authentication. FastAPI/uvicorn on port 8000/8123 with no auth middleware in default LangGraph server config. Auth requires explicit opt-in via langgraph.json auth.path field.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "/threads/{id}/state - full current agent memory: messages, tool call outputs, user identifiers, session state",
+    "/threads/{id}/history - complete checkpoint history across all prior runs on the thread",
+    "/store/items - persistent cross-run key-value store, typically holds long-term user memory and profiles",
+    "/assistants/{id}/graph - complete agent architecture: node graph, tool definitions, subgraph structure",
+    "/assistants/{id}/schemas - state field definitions, reveals data model and tracked PII fields",
+    "/info - deployed graph inventory, version strings, schema definitions",
+    "Worker environment (LANGSMITH_API_KEY, POSTGRES_URI, REDIS_URI, custom secrets from langgraph.json env block)"
+  ],
+  "stacked_exposure": {
+    "observed": true,
+    "notes": "7 of 16 confirmed hosts had additional unauth services on the same VPS. Common co-residents: Qdrant (6333), Redis Commander (8081), n8n (5678), Ollama (11434), Langfuse (3000/3001). Worst stack confirmed: n8n + LangGraph Server + Qdrant all unauth on 72.56.96.229.",
+    "common_co_residents": ["Qdrant", "Redis Commander", "n8n", "Ollama", "Langfuse", "Langchain Serve", "ChromaDB"]
+  },
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "aimap_probes": [
+    {
+      "path": "/ok",
+      "method": "GET",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "json_field", "field": "ok"},
+        {"type": "body_contains", "value": "true"}
+      ]
+    },
+    {
+      "path": "/info",
+      "method": "GET",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "json_field", "field": "langgraph_py_version"}
+      ]
+    },
+    {
+      "path": "/assistants/search",
+      "method": "POST",
+      "notes": "POST /assistants/search with empty body {} confirms LangGraph-unique endpoint. Returns list of assistants including graph_id and config on unauth deployments."
+    }
+  ],
+  "research_date": "2026-06-26",
+  "sources": [
+    "https://github.com/langchain-ai/langgraph - primary source, SDK and CLI",
+    "libs/sdk-py/langgraph_sdk/_async/assistants.py - all /assistants/* routes",
+    "libs/sdk-py/langgraph_sdk/_async/threads.py - all /threads/* routes",
+    "libs/sdk-py/langgraph_sdk/_async/runs.py - all /runs/* routes",
+    "libs/sdk-py/langgraph_sdk/_async/store.py - all /store/* routes",
+    "libs/sdk-py/langgraph_sdk/_async/cron.py - all /runs/crons/* routes",
+    "libs/sdk-py/langgraph_sdk/_async/client.py - auth env var priority chain",
+    "libs/sdk-py/langgraph_sdk/auth/__init__.py - Auth class, authenticate decorator, StudioUser bypass",
+    "libs/cli/langgraph_cli/docker.py - Docker image names, compose structure, default creds, port mapping",
+    "libs/cli/langgraph_cli/schemas/schema.json - langgraph.json config schema including auth.path field",
+    " cat-agent-platforms survey 2026-06-19: 499 Shodan candidates, 16 verified live, all 16 unauth",
+    "Stacked exposure confirmed on 72.56.96.229 (n8n + LangGraph + Qdrant)"
+  ]
+}

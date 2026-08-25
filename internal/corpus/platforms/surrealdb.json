@@ -1,0 +1,68 @@
+{
+  "platform": "surrealdb",
+  "display_name": "SurrealDB",
+  "category": "vector_db",
+  "default_ports": [
+    8000
+  ],
+  "api_paths": [
+    "/version",
+    "/health",
+    "/sql",
+    "/key/{table}"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "SURREAL_USER",
+    "SURREAL_PASS",
+    "SURREAL_AUTH"
+  ],
+  "default_creds": [
+    {
+      "user": "root",
+      "pass": "root",
+      "context": "quickstart default"
+    }
+  ],
+  "install_tell": "docker run -p 8000:8000 surrealdb/surrealdb:latest start --log debug --user root --pass root memory",
+  "misconfig_patterns": [
+    "No --auth flag in pre-2.x versions — all endpoints accessible without credentials",
+    "Default root:root credentials in quickstart deployments",
+    "vector<float,N> schema columns detectable via SHOW TABLES",
+    "431 IPs observed in live population, 13% confirmed unauth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"surrealdb\" port:8000",
+      "http.html:\"surrealdb\""
+    ],
+    "active_probe": {
+      "path": "/version",
+      "method": "GET",
+      "response_markers": [
+        "surrealdb-"
+      ],
+      "false_positive_check": "response must begin with surrealdb- version string"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"surrealdb\" port:8000",
+    "strict": "\"surrealdb\" port:8000",
+    "version": "\"surrealdb-\" port:8000"
+  },
+  "deployment_tells": [
+    "GET /version returns surrealdb-<version> string unauthenticated",
+    "SQL endpoint POST /sql accepts queries without auth in pre-2.x",
+    "vector<float,N> type in schema indicates AI workload"
+  ],
+  "pivot_paths": [
+    "GET /version → version string for CVE matching",
+    "POST /sql INFO FOR DB; → namespace/table list without auth (pre-2.x)",
+    "POST /sql SHOW TABLES; → detect vector<float,N> columns"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://surrealdb.com/docs/surrealdb/cli/start",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed; 431 IPs, 13% unauth]"
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "platform": "proxis",
+  "display_name": "Proxis (AI email agent \u2014 soft outbound gate)",
+  "category": "ai_email_guardrails",
+  "subcategory": "application-layer email agent w/ confidence-gated auto-send (boundary)",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Enterprise AI email agent: auto-drafts/auto-sends in the user's tone from CRM/Slack context, with a confidence-based hold-for-review. YC S2024, funding undisclosed. proxis.ai.",
+  "misconfig_patterns": [
+    "Boundary case: Proxis is a PRODUCER of mail with a self-gate (confidence threshold), not a guardrail layer sitting between an arbitrary agent and the recipient. Cataloged as boundary/app-layer, not category-core."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"proxis.ai\"",
+      "http.html:\"Proxis\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Proxis",
+        "email agent"
+      ],
+      "false_positive_check": "proxis.ai apex + 'email agent'; 'proxis' is otherwise generic."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"proxis.ai\"",
+    "strict": "ssl.cert.subject.cn:\"proxis.ai\" http.html:\"Proxis\""
+  },
+  "deployment_tells": [
+    "App-layer; rides a substrate; CRM/Slack context ingestion."
+  ],
+  "pivot_paths": [
+    "Self-gate (confidence-hold) is the only safety primitive; classify as soft outbound gate, not a guardrail."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "application-layer email agent; soft outbound gate (confidence-hold), not a guardrail",
+    "differentiator": "Mail producer with a self-review threshold rather than an interposed safety layer."
+  },
+  "sources": [
+    "https://proxis.ai/ (PRIMARY) [CONFIRMED product]",
+    "https://www.ycombinator.com/launches/OnD-proxis-ai-email-agents (YC S2024) [CONFIRMED]",
+    "boundary classification [app-layer, not category-core]",
+    "OSINT Platoon sweep 2026-06-23 (YC/funded lane)"
+  ]
+}

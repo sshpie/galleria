@@ -1,0 +1,63 @@
+{
+  "platform": "redis-coordination",
+  "display_name": "Redis (coordination role — Sentinel / cluster / distributed-lock)",
+  "category": "distributed_coordination",
+  "default_ports": [
+    26379,
+    16379,
+    6379
+  ],
+  "api_paths": [],
+  "auth_default": "none",
+  "auth_config_env": [
+    "REDIS_PASSWORD",
+    "REQUIREPASS"
+  ],
+  "default_creds": [],
+  "install_tell": "redis-sentinel /etc/redis-sentinel.conf (port 26379) or redis-server --cluster-enabled yes (cluster bus on data-port+10000, e.g. 16379 for a 6379 node) -- distinct role from the already-tracked 'redis-vector' (RedisSearch/RediStack vector-store use case) and generic cache deployments",
+  "misconfig_patterns": [
+    "Sentinel historically ships with no requirepass -- SENTINEL commands (masters, replicas, get-master-addr-by-name) readable unauth on 26379",
+    "Cluster bus port (data-port + 10000) is a separate binary-gossip-protocol listener, rarely firewalled independently of the main data port",
+    "SOFT SIGNAL ONLY (per dispatch scope) -- a bare 6379 Redis instance is not inherently 'coordination role'; classify as coordination-candidate only on: (a) a paired 26379 Sentinel on the same host/subnet, (b) CLUSTER INFO returning cluster_enabled:1, or (c) key namespace scan showing lock:/leader:/election:/lease: prefixed keys -- flag, do not force-classify",
+    "app-specific coordination keys (e.g. Redlock-pattern lock keys, Bull/BullMQ queue leader keys, Zookeeper-replacement libraries using Redis for leader election) are invisible to a port/banner scan and require a KEYS/SCAN pattern probe -- out of scope for this harvest-only phase, flagged for the scan-phase agent"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:26379",
+      "port:16379",
+      "product:\"Redis\" port:26379"
+    ],
+    "active_probe": {
+      "path": "SENTINEL masters",
+      "method": "RESP",
+      "response_markers": [
+        "master-group-name",
+        "quorum"
+      ],
+      "false_positive_check": "SENTINEL masters over raw RESP protocol on 26379 returning a monitored-master array (vs error/empty) confirms coordination role directly and unambiguously -- this is the hard fingerprint the soft 6379-only signal cannot provide"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:26379",
+    "strict": "port:26379 product:\"Redis\"",
+    "version": "port:26379 \"redis_version\""
+  },
+  "deployment_tells": [
+    "port 26379 open + RESP PING replies +PONG unauth -- Sentinel confirmed",
+    "port 16379 (or data-port+10000) open alongside 6379 -- cluster bus, strong cluster-mode signal",
+    "6379 INFO replication showing role:master with multiple connected_slaves + a paired 26379 -- HA topology, coordination-adjacent even if not pure metadata store",
+    "6379-only with no 26379/cluster-bus and no lock-namespace keys -- do NOT classify as coordination role, route to cache/vector categories instead"
+  ],
+  "pivot_paths": [
+    "SENTINEL get-master-addr-by-name <name> -> live master IP:port -> pivots directly to the primary data node behind the HA pair",
+    "SENTINEL masters -> monitored master group names -> often leak application/service naming convention (attribution signal)",
+    "CLUSTER NODES (if cluster-bus reachable) -> full ring topology, all node IP:ports in one unauth call"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-49844 (RediShell, CVSS 10.0) -- core Redis RCE, applies equally to coordination-role instances, cross-reference with 'redis-vector' entry"
+  ],
+  "sources": [
+    "https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/",
+    "[CANDIDATE —  cat-distributed-coordination survey 2026-07-30; new category, soft-signal platform per dispatch (\"flag candidates, don't force a classification\"); distinct tome entry from 'redis-vector' and 'redisinsight' to avoid corpus collision]"
+  ]
+}

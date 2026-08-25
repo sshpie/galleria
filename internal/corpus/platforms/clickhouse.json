@@ -1,0 +1,67 @@
+{
+  "platform": "clickhouse",
+  "display_name": "ClickHouse",
+  "category": "vector_feature",
+  "default_ports": [
+    8123,
+    9000
+  ],
+  "api_paths": [
+    "/",
+    "/?query=SELECT+1",
+    "/?query=SHOW+DATABASES"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CLICKHOUSE_PASSWORD",
+    "CLICKHOUSE_USER"
+  ],
+  "default_creds": [
+    {
+      "user": "default",
+      "pass": "",
+      "context": "default HTTP interface — no password"
+    }
+  ],
+  "install_tell": "docker run -p 8123:8123 -p 9000:9000 clickhouse/clickhouse-server:latest",
+  "misconfig_patterns": [
+    "default user with empty password in default deployment",
+    "GET /?query=SELECT+1 returns Ok. without any credentials",
+    "Vector indexes (annoy/usearch, ClickHouse 23.5+) detectable via SHOW CREATE TABLE",
+    "5,208 confirmed instances in prior  survey"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8123 \"Ok.\"",
+      "http.html:\"Ok.\" port:8123"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Ok."
+      ],
+      "false_positive_check": "response must be exactly Ok.\\n — uniquely identifies ClickHouse HTTP interface"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8123 \"Ok.\"",
+    "strict": "port:8123 \"Ok.\"",
+    "version": "port:8123 \"Ok.\" \"ClickHouse\""
+  },
+  "deployment_tells": [
+    "GET / returns Ok. (literal) without auth — unique to ClickHouse HTTP interface",
+    "GET /?query=SELECT+version() returns ClickHouse version string",
+    "SHOW CREATE TABLE {t} exposes annoy() or usearch() vector index DDL"
+  ],
+  "pivot_paths": [
+    "GET /?query=SHOW+DATABASES → database list without auth",
+    "GET /?query=SELECT+*+FROM+system.tables → all tables across all databases",
+    "GET /?query=SHOW+CREATE+TABLE+{t} → detect annoy/usearch vector index DDL"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://clickhouse.com/docs",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed; 5,208 instances prior survey]"
+  ]
+}

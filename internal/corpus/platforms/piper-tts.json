@@ -1,0 +1,91 @@
+{
+  "name": "Piper / wyoming-piper TTS",
+  "slug": "piper-tts",
+  "category": "voice-tts-conversational",
+  "description": "Fast local neural text-to-speech (rhasspy/piper, now OHF-Voice/piper1-gpl) built on VITS ONNX voices, most commonly exposed as a Wyoming-protocol server (wyoming-piper) for Home Assistant voice on TCP 10200. A binary/JSONL Wyoming protocol — NOT HTTP by default. An optional HTTP demo server (script/run_http) and third-party OpenAI-compatible HTTP wrappers also exist. No authentication in any variant.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in wyoming-piper, the Piper HTTP demo server, or common OpenAI-compat wrappers. The Wyoming protocol on TCP 10200 has no auth handshake at all — any client that speaks the JSONL protocol gets a full model description and can synthesize. Home Assistant add-on deployments assume the port is bound to a trusted LAN; hobbyist/self-host deployments frequently expose 10200 (or the 5000 HTTP demo) directly to the internet. Operators are expected to front it with a reverse proxy for any auth; most do not.",
+  "default_ports": [
+    10200,
+    5000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:10200",
+      "rationale": "Wyoming protocol default port. High recall but low precision — 10200 is the whole Wyoming ecosystem (piper/whisper/openwakeword). Wyoming is a raw JSONL/binary TCP protocol, so HTTP http.html/http.title filters return 0 here; confirm the piper role via a Wyoming describe handshake at the banner/Censys layer, not the HTTP body."
+    },
+    {
+      "tier": "basic",
+      "query": "port:5000 http.html:\"piper\" http.title:\"Piper\"",
+      "rationale": "The optional Piper HTTP demo server (script/run_http, port 5000) renders a simple synth form referencing Piper; HTML-body match. Low volume — most deployments run Wyoming, not the HTTP demo. FP risk: 5000 is a very busy port (Flask default, UPnP); the piper keyword narrows it."
+    },
+    {
+      "tier": "strict",
+      "query": "port:10200 \"piper\"",
+      "rationale": "Banner/raw-payload match on the Wyoming info response, which enumerates piper voice models. This is a Censys-route signal (Censys services.banner) more than a Shodan HTML signal; the string 'piper' plus a voice name in the TCP payload is the discriminator against whisper/openwakeword Wyoming servers on the same port."
+    },
+    {
+      "tier": "strict",
+      "query": "port:10200 \"en_US-lessac\" \"onnx\"",
+      "rationale": "Piper voice model naming convention (<lang>_<REGION>-<name>-<quality>, e.g. en_US-lessac-medium.onnx) appears in the Wyoming describe/info payload and uniquely identifies a Piper voice server versus other Wyoming roles. Censys-route (banner content), not Shodan HTML."
+    },
+    {
+      "tier": "version",
+      "query": "port:5000 http.html:\"piper\" http.html:\"version\"",
+      "rationale": "Version disclosure via the HTTP demo page or a wrapper /info route. Wyoming-piper version itself is only recoverable from the protocol describe payload (attribution.version field) — Censys-route for the TCP variant."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 10200,
+    "http_path": "/",
+    "title_contains": "Piper",
+    "response_body_contains": [
+      "piper",
+      "en_US-lessac-medium",
+      ".onnx",
+      "wyoming",
+      "synthesize"
+    ],
+    "http_header": "server: werkzeug"
+  },
+  "api_paths": [
+    "TCP 10200 Wyoming: {\"type\": \"describe\"} -> info (voices, attribution)",
+    "TCP 10200 Wyoming: {\"type\": \"synthesize\", \"data\": {\"text\": \"...\"}} -> audio-start/audio-chunk/audio-stop",
+    "GET / (HTTP demo server, port 5000)",
+    "POST / (HTTP demo synth form)",
+    "GET /api/voices (some wrappers)",
+    "POST /api/tts (some wrappers)",
+    "POST /v1/audio/speech (OpenAI-compat wrappers)"
+  ],
+  "known_vulns": [
+    "No authentication on the Wyoming TCP 10200 protocol — any client speaking JSONL can enumerate voices and synthesize unlimited audio at operator compute cost",
+    "No rate limiting — CPU/GPU compute-theft via automated synthesize floods; Piper is CPU-cheap but bulk abuse still exhausts host resources and enables mass audio generation",
+    "HTTP demo server (script/run_http, Werkzeug/Flask) is explicitly a demo — no auth, no input validation, not hardened for exposure",
+    "TTS-abuse: open synthesis endpoint is a free voice-generation backend for robocall/IVR spoofing, disinformation audio, and spam voicemail at scale",
+    "Model/voice enumeration leaks operator configuration (installed voices, languages) via the Wyoming describe response with no access control",
+    "Home Assistant add-on deployments that port-forward 10200 expose the voice pipeline of the whole smart-home to arbitrary synthesis injection"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) TTS-abuse — an open Piper/Wyoming endpoint is a free, unlogged, no-auth voice synthesis backend ideal for robocall scripts, vishing IVR prompts, and bulk disinformation audio; Piper's CPU-only speed makes high-volume abuse cheap for the attacker and costly (compute + reputation) for the operator. (2) Compute theft — no rate limiting means automated synthesize floods. (3) Configuration leak — the Wyoming describe response enumerates installed voices/languages with zero auth, aiding operator fingerprinting. (4) Smart-home pivot — Home Assistant deployments that forward 10200 expose the household voice pipeline. Lower data-sensitivity than STT/whisper (no inbound audio PII), but high abuse-as-a-service value. NOTE: the dominant deployment is a raw Wyoming TCP protocol, so Shodan HTTP-body dorks largely miss it — route population discovery through Censys banner content / active Wyoming describe probes.",
+  "deployment_notes": "Dominant deployment is the Home Assistant 'Piper' add-on / rhasspy/wyoming-piper Docker image speaking the Wyoming protocol on TCP 10200 (binary + JSONL, NOT HTTP) — this is the exposure most 10200 hits represent. The OHF-Voice/wyoming-piper repo is the current upstream (rhasspy/wyoming-piper redirects there). An optional HTTP demo web server (script/setup --http then script/run_http) serves a Werkzeug/Flask form on port 5000 for browser testing — not intended for production. Third-party OpenAI-compatible HTTP shims (exposing /v1/audio/speech) and n8n integrations exist but are non-canonical. Voices are VITS ONNX files named <lang>_<REGION>-<name>-<quality> (e.g. en_US-lessac-medium). CPU-first: runs acceptably without a GPU, which is why it is the default HA TTS and why exposed instances are common on small VPS/SBC hosts.",
+  "docker_images": [
+    "rhasspy/wyoming-piper",
+    "lscr.io/linuxserver/piper",
+    "ghcr.io/ohf-voice/wyoming-piper"
+  ],
+  "github_repos": [
+    "OHF-Voice/wyoming-piper",
+    "rhasspy/wyoming-piper",
+    "rhasspy/piper",
+    "OHF-Voice/piper1-gpl",
+    "rhasspy/piper-voices"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

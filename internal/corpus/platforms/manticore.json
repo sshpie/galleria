@@ -1,0 +1,58 @@
+{
+  "platform": "manticore",
+  "display_name": "Manticore Search",
+  "category": "vector_db",
+  "default_ports": [
+    9308,
+    9306
+  ],
+  "api_paths": [
+    "/sql",
+    "/json/search",
+    "/json/insert",
+    "/json/replace"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 9306:9306 -p 9308:9308 manticoresearch/manticore:latest",
+  "misconfig_patterns": [
+    "No authentication mechanism exists in open-source version",
+    "HTTP API at :9308 and MySQL wire at :9306 both fully open by default",
+    "SHOW TABLES enumerates all indexes without credentials"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.headers:\"Manticore\" port:9308",
+      "http.html:\"Manticore\""
+    ],
+    "active_probe": {
+      "path": "/sql",
+      "method": "POST",
+      "response_markers": [
+        "X-Powered-By: Manticore Search"
+      ],
+      "false_positive_check": "X-Powered-By header must equal Manticore Search"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.headers:\"Manticore\" port:9308",
+    "strict": "http.headers:\"Manticore Search\" port:9308",
+    "version": "http.headers:\"Manticore\" port:9308"
+  },
+  "deployment_tells": [
+    "X-Powered-By: Manticore Search header on all :9308 responses",
+    "MySQL wire protocol at :9306 — connect with mysql client, no password",
+    "POST /sql with SHOW TABLES enumerates all indexes"
+  ],
+  "pivot_paths": [
+    "POST /sql body=SHOW+TABLES → index list without auth",
+    "POST /sql body=DESCRIBE+{table} → schema including vector columns",
+    "MySQL :9306 → mysql -h host -P 9306 -u root (no password)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://manual.manticoresearch.com",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

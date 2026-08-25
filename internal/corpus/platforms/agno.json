@@ -1,0 +1,132 @@
+{
+  "platform": "agno",
+  "display_name": "Agno (formerly Phidata)",
+  "category": "agent_framework",
+  "default_ports": [7777, 3000],
+  "api_paths": [
+    "/",
+    "/health",
+    "/info",
+    "/config",
+    "/models",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/agents",
+    "/agents/{agent_id}",
+    "/agents/{agent_id}/runs",
+    "/agents/{agent_id}/runs/{run_id}",
+    "/agents/{agent_id}/runs/{run_id}/cancel",
+    "/agents/{agent_id}/runs/{run_id}/continue",
+    "/agents/{agent_id}/runs/{run_id}/resume",
+    "/agents/{agent_id}/runs/{run_id}/checkpoints",
+    "/agents/{agent_id}/runs/{run_id}/checkpoints/{message_index}",
+    "/agents/{agent_id}/sessions/{session_id}/fork",
+    "/teams",
+    "/teams/{team_id}",
+    "/teams/{team_id}/runs",
+    "/workflows",
+    "/workflows/{workflow_id}",
+    "/workflows/{workflow_id}/runs",
+    "/workflows/ws",
+    "/schedules",
+    "/schedules/{schedule_id}",
+    "/session",
+    "/memory",
+    "/knowledge",
+    "/traces",
+    "/evals",
+    "/metrics",
+    "/approvals",
+    "/agui",
+    "/status",
+    "/mcp"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "OS_SECURITY_KEY",
+    "JWT_VERIFICATION_KEY",
+    "JWT_JWKS_FILE",
+    "JWT_JWKS",
+    "AUTHORIZATION_ENABLED",
+    "AGENT_OS_PORT",
+    "AGENT_OS_HOST",
+    "DOCS_ENABLED"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install agno  (pip install 'agno[os]' for server mode; AgentOS served via agent_os.serve() on localhost:7777 by default; AGENT_OS_PORT overrides)",
+  "misconfig_patterns": [
+    "AgentOS deployed with no OS_SECURITY_KEY and no JWT config -> all /agents, /teams, /workflows, /config, /schedules endpoints fully open (auth OFF by default per agno/os/auth.py)",
+    "Default CORS whitelist includes app.agno.com -- any agno.com subpath can reach a local dev instance if port 7777 is exposed",
+    "DOCS_ENABLED defaults true -- GET /openapi.json exposes full API surface unauthenticated; GET /docs renders interactive Swagger on open instances",
+    "authorization=True flag required on AgentOS() to enforce JWT RBAC -- default is False even when JWT middleware is wired",
+    "Telemetry calls to os-api.agno.com are separate from local auth; agent metadata flows to Agno cloud by default"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"agno-agents\"",
+      "http.title:\"Agent UI\"",
+      "http.title:\"Agno\"",
+      "http.title:\"AgentOS\"",
+      "http.html:\"agno-agi\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": [
+        "\"status\":\"ok\"",
+        "\"instantiated_at\""
+      ],
+      "false_positive_check": "The /health {\"status\":\"ok\",\"instantiated_at\":\"<ISO8601>\"} pair is distinctive -- the instantiated_at field is Agno-specific. Corroborate with GET / returning {\"name\":\"AgentOS API\",\"id\":\"...\",\"version\":\"1.0.0\"} for high confidence. GET /info is unauthenticated and returns agno_version + agent/team/workflow counts -- a vendor-unique response schema. Do NOT rely on http.title:\"Agent UI\" alone -- it is generic SPA branding (Agent UI is the separate hosted frontend at app.agno.com, not served by AgentOS itself). http.html:\"agno-agents\" is the canonical Shodan dork (Python package name appearing in bundled JS when Agent UI frontend is self-hosted); verify with /health instantiated_at before classifying. NOTE: Complete brand transition from Phidata to Agno as of early 2025 -- all Phidata/phidatahq dorks return zero. ssl:\"agno.com\" hits vendor infra only, not third-party deployments."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"agno-agents\"",
+    "strict": "http.html:\"agno-agents\" http.title:\"Agent UI\"",
+    "version": "http.html:\"agno-agents\" \"instantiated_at\"",
+    "note": "Phidata-era dorks return zero -- brand transition to Agno complete 2025. 'agno' bare = 262 hits (polluted: Philippine municipality + abbreviation). http.html:\"agno\" = 70 hits (noisy). http.html:\"agno-agents\" = 21 hits (CANONICAL -- Python package name in bundled JS, low noise). http.title:\"Agno\" = 11 hits (secondary). ssl:\"agno.com\" = 6 hits (vendor infra only, not third-party). Verify all hits with /health instantiated_at discriminator. Multiple confirmed http.title:\"Agent UI\" returning HTTP 200 in survey."
+  },
+  "deployment_tells": [
+    "Port 7777 open with FastAPI JSON at / returning {\"name\":\"AgentOS API\",\"id\":\"...\",\"version\":\"1.0.0\"} (default port, AGENT_OS_HOST=localhost by default -- internet exposure requires explicit 0.0.0.0 bind or proxy)",
+    "GET /health returns {\"status\":\"ok\",\"instantiated_at\":\"<ISO8601>\"} -- Agno-unique timestamp field",
+    "GET /info returns agno_version + agent/team/workflow/model counts unauthenticated",
+    "GET /openapi.json exposes full API schema (DOCS_ENABLED=true by default)",
+    "SvelteKit Agent UI frontend at localhost:3000 connecting to AgentOS backend on 7777",
+    "Swagger docs at /docs titled 'Agno AgentOS' on default deploys",
+    "WebSocket /workflows/ws endpoint active with authenticate/start-workflow action protocol"
+  ],
+  "pivot_paths": [
+    "GET /info -> agno_version + registered agent/team/workflow counts (unauthenticated, high value for scoping)",
+    "GET /openapi.json -> full API schema enumeration including all route paths and schemas (unauthenticated default)",
+    "GET /agents -> enumerate all registered agent IDs and display names",
+    "GET /config -> full OS config including all registered agents/teams/models (requires auth on hardened deploy, open on default)",
+    "GET /models -> LLM provider inventory (reveals which cloud APIs are wired)",
+    "GET /agents/{agent_id}/runs -> agent execution history and session content",
+    "GET /schedules -> reveal scheduled agent jobs and their configurations"
+  ],
+  "vulnerabilities": [],
+  "auth_evidence": "libs/agno/agno/os/auth.py: get_authentication_dependency() returns a passthrough (allows all requests) when OS_SECURITY_KEY is unset AND JWT is not configured. AgentOS constructor default is authorization=False. JWT middleware requires explicit opt-in via authorization=True on AgentOS() or manual middleware setup. OS_SECURITY_KEY bearer token is the simpler path but must be set by operator -- not provisioned by default. Default AGENT_OS_HOST=localhost provides implicit protection on same-machine deploys; however cookbook examples and Docker deploys commonly bind 0.0.0.0. Result: any internet-exposed AgentOS with default env vars = fully open REST API + WebSocket. Agno cloud Agent UI (app.agno.com) is in the CORS whitelist by default.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Registered agent definitions via GET /agents (system prompts, tool wiring, model provider selection)",
+    "Full OS configuration via GET /config (agent definitions, model API keys potentially embedded in config objects)",
+    "Agent/team/workflow run history and session content via run listing endpoints",
+    "LLM provider inventory via GET /models (reveals which cloud APIs are in use)",
+    "Scheduled job definitions and execution history via /schedules",
+    "Memory and knowledge base contents via /memory and /knowledge",
+    "Real-time agent execution via POST /agents/{id}/runs on unauthenticated default deploy (SSE streaming execution without auth)"
+  ],
+  "sources": [
+    "https://github.com/agno-agi/agno",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/os/app.py",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/os/auth.py",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/os/router.py",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/os/routers/agents/router.py",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/os/routers/health.py",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/os/settings.py",
+    "https://github.com/agno-agi/agno/blob/main/libs/agno/agno/api/settings.py",
+    "https://github.com/agno-agi/agno/blob/main/cookbook/01_demo/run.py",
+    "https://pypi.org/project/agno/",
+    "CANDIDATE:  platform research 2026-06-26 -- Shodan dork survey: http.html:\"agno-agents\"=21 hits (canonical), http.title:\"Agno\"=11 hits, ssl:\"agno.com\"=6 hits (vendor infra only). Multiple confirmed http.title:\"Agent UI\" returning HTTP 200. Auth-open posture confirmed from source (auth.py + app.py). Port 7777 default confirmed. No live third-party host verified yet."
+  ]
+}

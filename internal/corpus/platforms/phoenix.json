@@ -1,0 +1,62 @@
+{
+  "platform": "phoenix",
+  "display_name": "Arize Phoenix",
+  "category": "observability",
+  "default_ports": [6006, 4317],
+  "api_paths": ["/graphql", "/v1/traces", "/healthz", "/arize-phoenix-version"],
+  "auth_default": "off",
+  "auth_config_env": [
+    "PHOENIX_ENABLE_AUTH",
+    "PHOENIX_SECRET",
+    "PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD"
+  ],
+  "default_creds": [
+    {"user": "admin@localhost", "pass": "admin", "context": "first-login when PHOENIX_ENABLE_AUTH=true; forced change on login"}
+  ],
+  "install_tell": "docker run -p 6006:6006 -p 4317:4317 arizephoenix/phoenix:latest",
+  "misconfig_patterns": [
+    "PHOENIX_ENABLE_AUTH not set — default is off, all trace data and API endpoints open with no credentials",
+    "Port 6006 bound to 0.0.0.0 by default (PHOENIX_HOST default), exposed beyond localhost",
+    "gRPC OTLP collector on port 4317 open for unauthenticated trace ingestion by default",
+    "Default admin password 'admin' active if auth enabled without PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD override",
+    "GraphQL endpoint at /graphql returns full span/trace data including prompts and completions when auth is off"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:6006 http.html:\"Phoenix\"",
+      "port:6006 http.title:\"Phoenix\"",
+      "port:6006 product:\"arize-phoenix\""
+    ],
+    "active_probe": {
+      "path": "/graphql",
+      "method": "POST",
+      "response_markers": ["data", "projects", "traces", "spans"],
+      "false_positive_check": "Response must include GraphQL shape with 'data' key and trace/span fields — not generic GraphQL server"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:6006 http.html:\"Phoenix\"",
+    "strict": "port:6006 http.title:\"Phoenix\" http.html:\"arize\"",
+    "version": "port:6006 http.html:\"arize-phoenix\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "HTTP title contains 'Phoenix' on port 6006",
+    "GET /arize-phoenix-version returns JSON with version string",
+    "GET /healthz returns 200 OK",
+    "Docker image arizephoenix/phoenix on Docker Hub"
+  ],
+  "pivot_paths": [
+    "POST /graphql with traces query -> full prompt+completion history across all projects without auth",
+    "GET /v1/traces -> OTLP-formatted span data including input/output messages",
+    "Port 4317 gRPC -> inject synthetic traces or read existing span stream",
+    "GraphQL introspection -> full schema enumeration including datasets and experiments"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://arize.com/docs/phoenix/self-hosting/features/authentication",
+    "https://arize.com/docs/phoenix/self-hosting/configuration",
+    "https://github.com/Arize-ai/phoenix/wiki/Auth-Tech-Spec",
+    "https://github.com/Arize-ai/phoenix/blob/main/docker-compose.yml",
+    "https://github.com/advisories?query=arize-phoenix"
+  ]
+}

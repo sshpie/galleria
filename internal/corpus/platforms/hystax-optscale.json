@@ -1,0 +1,47 @@
+{
+  "platform": "hystax-optscale",
+  "display_name": "Hystax OptScale",
+  "category": "cost-allocation",
+  "default_ports": [4433, 443],
+  "api_paths": [
+    "/restapi/v2/",
+    "/"
+  ],
+  "auth_default": "login",
+  "auth_config_env": ["cluster_secret", "service_credentials"],
+  "default_creds": [],
+  "install_tell": "helm via runkube.py (single-cluster; 8 CPU/16GB min; etcd+RabbitMQ+MongoDB behind nginx)",
+  "misconfig_patterns": [
+    "Login-gated by design — CANDIDATE not CONFIRMED-open",
+    "Exposure risk lives in misconfigured deploys, not default",
+    "High deploy complexity -> fewer casual exposures"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"OptScale\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["OptScale"],
+      "false_positive_check": "nginx-served login page branded OptScale; /restapi/v2/ behind auth"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"OptScale\"",
+    "strict": "http.title:\"OptScale\"",
+    "version": "http.html:\"OptScale\""
+  },
+  "deployment_tells": [
+    "nginx front-end, heavy microservice stack",
+    "login page branded OptScale",
+    "auth-ON — mark CANDIDATE until 200-with-data confirms open"
+  ],
+  "pivot_paths": [
+    "GET /restapi/v2/ (post-auth) -> cost analytics, anomaly detection, budgets across AWS/Azure/GCP/Alibaba/K8s"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

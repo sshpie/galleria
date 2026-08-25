@@ -1,0 +1,54 @@
+{
+  "platform": "infinity-emb",
+  "display_name": "Infinity Embedding Server (michaelfeil/infinity)",
+  "category": "embedding_serving",
+  "default_ports": [7997, 8000],
+  "api_paths": ["/v1/embeddings", "/v1/models", "/v1/rerank", "/v1/classify", "/openapi.json", "/health"],
+  "auth_default": "none",
+  "auth_config_env": ["INFINITY_API_KEY"],
+  "default_creds": [],
+  "install_tell": "docker run -p 7997:7997 michaelf34/infinity:latest v2 --model-name-or-path BAAI/bge-small-en-v1.5",
+  "misconfig_patterns": [
+    "No auth in default deployment — all /v1/* endpoints open",
+    "GET /v1/models returns model list including model path on disk",
+    "POST /v1/embeddings open — embedding oracle without key",
+    "INFINITY_API_KEY not required by default; must be explicitly set"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:7997",
+      "http.html:\"Infinity Emb\"",
+      "http.html:\"infinity\" http.html:\"/v1/embeddings\""
+    ],
+    "active_probe": {
+      "path": "/openapi.json",
+      "method": "GET",
+      "response_markers": ["Infinity Emb", "infinity_emb"],
+      "false_positive_check": "OpenAPI title must be 'Infinity Emb' — uniquely identifies michaelfeil/infinity, not InfiniFlow vector DB (port 23820) or generic infinity string"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:7997",
+    "strict": "http.html:\"Infinity Emb\"",
+    "version": "port:7997 http.html:\"embedding\""
+  },
+  "deployment_tells": [
+    "Shodan-dark — port 7997 is the default but rarely HTTP-crawled; JSON root not HTML",
+    "OpenAI-compatible API: /v1/embeddings accepts {model, input} same as OpenAI spec",
+    "Supports reranking (/v1/rerank) and classification (/v1/classify) alongside embeddings",
+    "Often used as drop-in OpenAI embedding replacement in LlamaIndex and LangChain pipelines",
+    "NOTE: completely different from InfiniFlow/Infinity (port 23820, vector database) — name collision"
+  ],
+  "pivot_paths": [
+    "GET /v1/models → model list → identifies HuggingFace model paths (BAAI/bge-*, nomic-embed-*)",
+    "GET /openapi.json → routes + schemas → confirm endpoint set",
+    "GET /health → uptime + model load status"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    " — Cat-27 Embedding Services 2026-06-18",
+    "https://github.com/michaelfeil/infinity",
+    " OSINT dork file: shodan/queries/27-embedding-services.md"
+  ],
+  "status": "CANDIDATE"
+}

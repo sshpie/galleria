@@ -1,0 +1,99 @@
+{
+  "platform": "apache-tika",
+  "display_name": "Apache Tika Server",
+  "category": "document_loader",
+  "default_ports": [
+    9998
+  ],
+  "api_paths": [
+    "/tika",
+    "/meta",
+    "/rmeta",
+    "/unpack",
+    "/detect/stream",
+    "/language/stream",
+    "/language/string",
+    "/mime-types",
+    "/detectors",
+    "/parsers",
+    "/parsers/details",
+    "/status"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "java -jar tika-server-standard-x.x.x.jar --port 9998 --host 0.0.0.0",
+  "misconfig_patterns": [
+    "Bound to 0.0.0.0 by default \u2014 no auth, no firewall = full parse surface exposed",
+    "Docker deployments commonly expose 9998 publicly without network policy",
+    "Tika 1.x still in production in RAG pipelines; versions 1.7-1.17 carry CVE-2018-1335 command injection",
+    "tika-core 1.13-3.2.1 vulnerable to CVE-2025-66516 XXE via XFA-in-PDF",
+    "-enableFileUrl flag (removed in 2.x) allowed arbitrary file:// URL reads when present in 1.x",
+    "No version endpoint \u2014 version only visible in startup log; operators unaware of running version"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:\"Apache Tika\"",
+      "port:9998 http.html:\"Tika Server\"",
+      "port:9998 http.html:\"This is Tika Server\"",
+      "port:9998"
+    ],
+    "active_probe": {
+      "path": "/tika",
+      "method": "GET",
+      "response_markers": [
+        "This is Tika Server",
+        "Please PUT"
+      ],
+      "false_positive_check": "Response body must contain exact string 'This is Tika Server. Please PUT' \u2014 any other response body is FP"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9998 http.html:\"Tika Server\"",
+    "strict": "port:9998 \"This is Tika Server\"",
+    "version": "port:9998 product:\"Apache Tika\""
+  },
+  "deployment_tells": [
+    "GET /tika returns 'This is Tika Server. Please PUT' body \u2014 high specificity",
+    "X-Tika-OCR* and X-Tika-PDF* request headers accepted as command pass-through in 1.x",
+    "No Authorization header required on any endpoint by default",
+    "Common in Open WebUI, LangChain RAG, and Solr Tika integration deployments",
+    "Censys identified ~565 exposed instances as of December 2025"
+  ],
+  "pivot_paths": [
+    "CVE-2025-66516 XXE via malicious PDF (XFA payload) -> file:///etc/passwd read or SSRF -> cloud IMDS at 169.254.169.254",
+    "CVE-2018-1335 (<=1.17): PUT /meta with X-Tika-OCRTesseractPath header -> OS command execution on server",
+    "PUT /rmeta with recursive archive (quine) -> CVE-2019-10094 StackOverflow -> DoS or process crash",
+    "PUT /unpack -> extract embedded files -> enumerate document structure / exfil embedded payloads",
+    "GET /parsers/details -> full parser inventory -> identify which file types trigger dangerous code paths"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-66516: XXE via XFA embedded in PDF; tika-core 1.13-3.2.1, tika-pdf-module 2.0.0-3.2.1, tika-parsers 1.13-1.28.5; CVSS 9.8 (NIST)/8.4 (Apache CNA); enables arbitrary file read, SSRF, conditional RCE; fixed in 3.2.2",
+    "CVE-2025-54988: predecessor advisory for same XFA/PDF XXE; superseded by CVE-2025-66516 which identified tika-core as root cause",
+    "CVE-2021-44228 (Log4Shell): Tika 2.0.0-BETA through 2.1.0 used vulnerable log4j2; JNDI lookup RCE; fixed in Tika 2.2.0",
+    "CVE-2021-44832: log4j2 JDBC Appender RCE; Tika 2.0.0-BETA through 2.2.1; lower severity (requires config modify); fixed in Tika 2.2.1",
+    "CVE-2019-10094: StackOverflow in RecursiveParserWrapper via self-referencing archive quine; Tika 1.7-1.21; CVSS 7.8 HIGH; fixed in 1.22",
+    "CVE-2018-1335: command injection via X-Tika-OCR* HTTP headers passed to TesseractOCRParser/ProcessBuilder; Tika 1.7-1.17; CVSS HIGH; fixed in 1.18",
+    "CVE-2018-1339: infinite loop in ChmParser via crafted CHM file; Tika before 1.18; CVSS 5.5 MEDIUM; fixed in 1.18",
+    "CVE-2018-1338: infinite loop in BPGParser via crafted BPG file; Tika before 1.18; CVSS 5.5 MEDIUM; fixed in 1.18",
+    "CVE-2016-6809: Java RCE via deserialization in MATLAB (.mat) parser using jmatio; Tika 1.6-1.13; CVSS 9.8 CRITICAL; fixed in 1.14",
+    "CVE-2016-4434: XXE in OOXML spreadsheet and PDF XMP metadata parsers due to improper XML parser init; Tika 0.10-1.12; CVSS 7.8 HIGH; fixed in 1.13",
+    "CVE-2022-30973: ReDoS in StandardsExtractingContentHandler; Tika before 1.28.3; CVSS 5.5 MEDIUM; only affects non-default handler; fixed in 1.28.3"
+  ],
+  "sources": [
+    "https://tika.apache.org/security.html",
+    "https://nvd.nist.gov/vuln/detail/CVE-2025-66516",
+    "https://nvd.nist.gov/vuln/detail/CVE-2018-1338",
+    "https://nvd.nist.gov/vuln/detail/CVE-2018-1339",
+    "https://nvd.nist.gov/vuln/detail/CVE-2019-10094",
+    "https://nvd.nist.gov/vuln/detail/CVE-2016-6809",
+    "https://nvd.nist.gov/vuln/detail/CVE-2016-4434",
+    "https://nvd.nist.gov/vuln/detail/CVE-2022-30973",
+    "https://rhinosecuritylabs.com/application-security/exploiting-cve-2018-1335-apache-tika/",
+    "https://cwiki.apache.org/confluence/display/TIKA/TikaServer",
+    "https://cybersecuritynews.com/apache-tika-xxe-attack-exposed-online/"
+  ],
+  "corpus_corrections": [
+    "2026-06-19 verify: DROP http.headers:X-Tika-OCR (request header, 0-hit). product:'Apache Tika' weak (facet unpopulated). No /version endpoint -> version-tier dork unreliable; Shodan-dark via greeting (Shodan crawls root, not /tika). Censys ~565 baseline."
+  ]
+}

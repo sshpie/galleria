@@ -1,0 +1,68 @@
+{
+  "platform": "unstructured-api",
+  "display_name": "Unstructured API (self-hosted)",
+  "category": "document_loader",
+  "default_ports": [
+    8000
+  ],
+  "api_paths": [
+    "/general/v0/general",
+    "/general/{api_version}/general"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "UNSTRUCTURED_API_KEY",
+    "UNSTRUCTURED_MEMORY_FREE_MINIMUM_MB",
+    "MAX_LIFETIME_SECONDS",
+    "UNSTRUCTURED_PARALLEL_MODE_ENABLED"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8000:8000 -d --rm --name unstructured-api downloads.unstructured.io/unstructured-io/unstructured-api:latest",
+  "misconfig_patterns": [
+    "UNSTRUCTURED_API_KEY not set by default -- any caller can submit documents for processing without auth",
+    "Port 8000 is a high-collision port (also Django dev, other Python services) -- FP rate elevated on Shodan",
+    "Document content submitted to /general/v0/general is processed in-memory on the server -- PII in uploaded docs transits unauthenticated",
+    "Parallel PDF processing mode can be triggered by unauthenticated callers to exhaust compute"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8000 http.html:\"unstructured\"",
+      "port:8000 http.title:\"unstructured\""
+    ],
+    "active_probe": {
+      "path": "/general/v0/general",
+      "method": "GET",
+      "response_markers": [
+        "405",
+        "Method Not Allowed",
+        "unstructured"
+      ],
+      "false_positive_check": "GET to /general/v0/general must return HTTP 405; confirm response body or header references 'unstructured-api-key' auth scheme"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8000 http.html:\"unstructured\"",
+    "strict": "port:8000 \"unstructured-api-key\"",
+    "version": "port:8000 http.html:\"unstructured\" http.html:\"/general/v0/general\""
+  },
+  "deployment_tells": [
+    "POST /general/v0/general accepts multipart/form-data file upload with no auth when UNSTRUCTURED_API_KEY unset",
+    "Custom auth header name is 'unstructured-api-key' (not Authorization: Bearer) -- distinguishes from generic APIs",
+    "FastAPI app with no custom title -- Swagger UI accessible at /docs if debug mode on",
+    "Returns application/json list of element dicts with type/text/metadata fields per document element"
+  ],
+  "pivot_paths": [
+    "POST /general/v0/general with arbitrary PDF/DOCX -> full text extraction -> exfil document content without auth",
+    "Submit specially crafted document -> trigger parser memory exhaustion via UNSTRUCTURED_MEMORY_FREE_MINIMUM_MB bypass",
+    "If Swagger /docs exposed -> enumerate all routes and schema without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://github.com/Unstructured-IO/unstructured-api",
+    "https://github.com/Unstructured-IO/unstructured-api/issues/321",
+    "https://github.com/Unstructured-IO/unstructured-api/blob/main/prepline_general/api/general.py"
+  ],
+  "corpus_corrections": [
+    "2026-06-19 verify: Swagger at /general/docs (NOT /docs); OpenAPI /general/openapi.json title 'Unstructured Pipeline API'. CVE-2025-64712 path-trav->RCE 9.8 in the unstructured LIBRARY (fix>=0.18.18), reachable via api. 'unstructured-api-key' dork ~0-hit (request-header name)."
+  ]
+}

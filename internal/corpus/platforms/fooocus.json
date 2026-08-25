@@ -1,0 +1,91 @@
+{
+    "platform": "fooocus",
+    "display_name": "Fooocus",
+    "category": "generative_ai_image_ui",
+    "default_ports": [
+        7865
+    ],
+    "api_paths": [
+        "/",
+        "/config",
+        "/api/predict",
+        "/queue/join",
+        "/queue/data",
+        "/file=",
+        "/v1/generation/text-to-image",
+        "/v1/generation/image-upscale-vary",
+        "/v1/generation/image-prompt",
+        "/v1/generation/image-inpaint-outpaint",
+        "/v1/generation/query-job",
+        "/docs"
+    ],
+    "auth_default": "none-by-design",
+    "auth_config_env": [
+        "AUTH_FILENAME (auth.json, user/pass pairs, template auth-example.json)"
+    ],
+    "default_creds": [],
+    "install_tell": "python entry_with_update.py --listen",
+    "misconfig_patterns": [
+        "auth=check_auth if (args.share or args.listen) and auth_enabled else None — auth only engages when BOTH a network-exposure flag is set AND an auth.json file exists; the common '--listen' launch recipe alone ships fully unauth",
+        "Operators expose --listen 0.0.0.0 (or --listen with a bind IP) without ever creating auth.json — auth_enabled defaults false, so the conditional never triggers",
+        "GET / discloses gr.Blocks title 'Fooocus {version}' — version-fingerprintable without auth",
+        "GET /config discloses full Gradio component graph: installed presets, model/LoRA dropdown contents, style list, resolution presets, advanced params — operator's model/LoRA library disclosure",
+        "POST /api/predict and /queue/join accept arbitrary generation jobs — compute theft on operator GPU",
+        "GET /file=<path> (Gradio file-serving route) can read files under the allowed_paths root (modules.config.path_outputs is explicitly allow-listed; constants.AUTH_FILENAME is explicitly block-listed, implying other paths were NOT hardened before that patch)",
+        "CVE-2025-31114 (GHSL-2024-196): load_parameter_button_click() feeds EXIF-embedded JSON metadata from an uploaded image into eval() via get_list()/get_resolution()/get_adm_guidance()/get_freeu() — RCE on any user (unauth or not) who can reach the 'load metadata from image' UI action; no CVSS assigned; unpatched at disclosure, upstream unresponsive since Aug 2024, public fix PR posted 2026-07-24",
+        "--share flag registers a public *.gradio.live tunnel — auth conditional applies here too, so shared links are unauth by default unless auth.json exists"
+    ],
+    "fingerprint": {
+        "passive": [
+            "http.title:\"Fooocus\"",
+            "http.html:\"Fooocus\" port:7865",
+            "http.html:\"fooocus_version\"",
+            "http.title:\"Fooocus\" -http.title:\"ComfyUI\""
+        ],
+        "active_probe": {
+            "path": "/config",
+            "method": "GET",
+            "response_markers": [
+                "\"title\": \"Fooocus",
+                "\"version\""
+            ],
+            "false_positive_check": "Generic Gradio /config returns the same JSON shape (theme, components, version) for ANY Gradio app — the distinguishing marker is the \"title\" value starting with \"Fooocus\" (embeds fooocus_version.version at build time), not the presence of /config itself. Confirm against GET / HTML <title> tag matching before labeling Fooocus vs. generic Gradio/other-Gradio-app-on-7860."
+        }
+    },
+    "shodan_dorks": {
+        "basic": "http.title:\"Fooocus\"",
+        "strict": "http.title:\"Fooocus\" port:7865",
+        "version": "http.html:\"fooocus_version\""
+    },
+    "deployment_tells": [
+        "Default port 7865 (GRADIO_SERVER_PORT env set by launch.py if unset) distinguishes stock Fooocus from generic Gradio's 7860 default — a 7865 hit is Fooocus-likely before any content check; a 7860 hit requires title/content disambiguation against the already-surveyed generic-Gradio population (gradio-port-7860-survey-2026-05.md)",
+        "GPU-rental / cloud-proxy deployments (RunPod, Vast.ai, Colab-tunneled) commonly remap the port — same population-skew pattern documented for ComfyUI; port-7865-only dorking will undercount",
+        "Fooocus-API (mrhan1993/Fooocus-API) fork wraps stock Fooocus with a FastAPI layer on a separate port and exposes /v1/generation/* + /docs (OpenAPI/Swagger) — distinct install, distinct fingerprint, should be tracked as a related-but-separate platform entry if population is material",
+        "SimpleSDXL (metercai/SimpleSDXL) is a Fooocus fork targeting Chinese-market cloud deployment — will title-fingerprint differently, worth a follow-up dork variant",
+        "--share mode instances live on *.gradio.live subdomains, not the operator's own IP — requires Gradio-share-link enumeration, not IP-space scanning, to find"
+    ],
+    "pivot_paths": [
+        "GET / → HTML <title> 'Fooocus {version}' (identity + version fingerprint)",
+        "GET /config → full component graph: model list, LoRA list, style presets, resolution presets, default params (operator model-library disclosure)",
+        "POST /api/predict, POST /queue/join → arbitrary generation job submission (compute theft on operator GPU)",
+        "GET /file=<path within allow-listed output dir> → generated image output retrieval (product-IP / prompt-content disclosure via EXIF metadata embedded in outputs)",
+        "Upload-metadata-from-image UI action → CVE-2025-31114 eval() RCE chain (get_list/get_resolution/get_adm_guidance/get_freeu) → full instance compromise, pivot to host/GPU",
+        "Fooocus-API fork: GET /docs → OpenAPI schema → POST /v1/generation/text-to-image and siblings → same compute-theft class via REST instead of Gradio queue protocol"
+    ],
+    "vulnerabilities": [
+        "CVE-2025-31114 / GHSL-2024-196 — Remote Code Execution via unsafe eval() on image-EXIF-embedded metadata JSON, reachable through the 'load parameter from image' feature in load_parameter_button_click(); reported by Kevin Stubbings (GitHub Security Lab), issue opened 2024-08-21, maintainer unresponsive through private disclosure 2024-10-02, public fix PR posted 2026-07-24; no CVSS published, no confirmed patched release as of this survey",
+        "No-auth-by-design baseline — auth is opt-in via auth.json AND requires --listen/--share to even be checked; the framework ships with no forced auth gate on network exposure"
+    ],
+    "sources": [
+        "https://github.com/lllyasviel/Fooocus",
+        "https://github.com/lllyasviel/Fooocus/blob/main/launch.py",
+        "https://github.com/lllyasviel/Fooocus/blob/main/webui.py",
+        "https://github.com/lllyasviel/Fooocus/blob/main/args_manager.py",
+        "https://securitylab.github.com/advisories/GHSL-2024-196_Fooocus/",
+        "https://github.com/mrhan1993/Fooocus-API",
+        "https://github.com/mrhan1993/Fooocus-API/blob/main/docs/api_doc_en.md",
+        "https://github.com/metercai/SimpleSDXL",
+        "https://en.wikipedia.org/wiki/Fooocus",
+        "case-studies/commercial/gradio-port-7860-survey-2026-05.md (16 confirmed Gradio-class deployments, generic-Gradio baseline population)"
+    ]
+}

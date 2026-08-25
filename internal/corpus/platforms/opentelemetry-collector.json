@@ -1,0 +1,76 @@
+{
+  "platform": "opentelemetry-collector",
+  "display_name": "OpenTelemetry Collector (otelcol / otelcol-contrib)",
+  "category": "observability/telemetry-ingest",
+  "default_ports": [4317, 4318, 8888, 8889, 13133, 55679, 1777],
+  "api_paths": [
+    "/v1/traces",
+    "/v1/metrics",
+    "/v1/logs",
+    "/debug/tracez",
+    "/debug/pipelinez",
+    "/debug/servicez",
+    "/debug/extensionz",
+    "/debug/featurez",
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "bearertokenauth extension (opt-in)",
+    "basicauth extension (opt-in)",
+    "oidcauth extension (opt-in)"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 4318:4318 -p 55679:55679 otel/opentelemetry-collector-contrib",
+  "misconfig_patterns": [
+    "endpoint: 0.0.0.0:4318 copied from docs (binds publicly)",
+    "DaemonSet with hostNetwork:true or hostPort:4318 leaking node interfaces",
+    "zPages (55679) left enabled in production — full pipeline + span samples readable",
+    "awsfirehosereceiver CVE-2024-45043 — configured access_key silently ignored",
+    "self-metrics port 8888 leaks downstream exporter destinations via labels"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Trace Spans\" port:55679",
+      "http.html:\"otelcol_receiver_accepted_spans\"",
+      "http.html:\"otelcol_exporter_sent_spans\"",
+      "http.html:\"pipelinez\" http.html:\"extensionz\""
+    ],
+    "active_probe": {
+      "path": "/v1/traces",
+      "method": "POST",
+      "headers": {"Content-Type": "application/json"},
+      "body": "{\"resourceSpans\":[]}",
+      "response_markers": ["{}", "partialSuccess"],
+      "false_positive_check": "GET /v1/traces must return 405; body_not_contains jaeger/tempo/<html"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:4318 http.html:\"Method Not Allowed\"",
+    "strict": "http.html:\"Trace Spans\" port:55679",
+    "version": "http.html:\"otelcol_receiver_accepted_spans\" port:8888"
+  },
+  "deployment_tells": [
+    "otelcol_ metric prefix on /metrics (binary self-identifies)",
+    "zpages 55679 with /debug/tracez /debug/pipelinez /debug/servicez index",
+    "13133 health_check returns 200 with body {}",
+    "OTLP 4317 gRPC + 4318 HTTP co-listening"
+  ],
+  "pivot_paths": [
+    "/debug/pipelinez → full receiver/processor/exporter DAG (configuration leak)",
+    "/debug/tracez → live span samples carrying gen_ai.prompt / gen_ai.completion / http.url / db.statement attrs",
+    "8888 /metrics exporter labels reveal downstream destination (datadog/honeycomb/custom OTLP)",
+    "1777 pprof → heap dumps with secret strings, goroutine state"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-36129 (CVSS 7.5) — confighttp/configgrpc zip decompression bomb DoS, fixed collector 0.102.1",
+    "CVE-2024-45043 (CVSS 5.3) — contrib awsfirehosereceiver access_key silently ignored, fixed 0.108.0"
+  ],
+  "sources": [
+    "CANDIDATE — opentelemetry.io/docs/collector/configuration/",
+    "CANDIDATE — github.com/open-telemetry/opentelemetry-collector receiver/otlpreceiver",
+    "CANDIDATE — github.com/open-telemetry/opentelemetry-helm-charts charts/opentelemetry-collector",
+    "CANDIDATE — opentelemetry.io/blog/2024/cve-2024-36129/",
+    " pre-assessment OSINT 2026-06-09 (cat-54-otel-collector)"
+  ]
+}

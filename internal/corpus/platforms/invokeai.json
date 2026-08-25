@@ -1,0 +1,102 @@
+{
+  "platform": "invokeai",
+  "display_name": "InvokeAI",
+  "category": "generative_ai_workflow_ui",
+  "default_ports": [
+    9090
+  ],
+  "api_paths": [
+    "/",
+    "/docs",
+    "/api/v1/app/version",
+    "/api/v1/app/runtime_config",
+    "/api/v1/app/logging",
+    "/api/v1/app/app_deps",
+    "/api/v1/images/",
+    "/api/v1/images/upload",
+    "/api/v1/boards/",
+    "/api/v1/queue/{queue_id}/status",
+    "/api/v1/queue/{queue_id}/list",
+    "/api/v2/models/",
+    "/api/v2/models/install",
+    "/api/v2/models/scan_folder",
+    "/api/v2/models/hugging_face"
+  ],
+  "auth_default": "auth-off-default",
+  "auth_config_env": [
+    "INVOKEAI_MULTIUSER (invokeai.yaml: multiuser, default false — disabled means single-user mode with a default admin-privileged account and no login)",
+    "INVOKEAI_STRICT_PASSWORD_CHECKING (invokeai.yaml: strict_password_checking, default false — only relevant once multiuser is enabled)"
+  ],
+  "default_creds": [],
+  "install_tell": "invokeai-web --host 0.0.0.0",
+  "misconfig_patterns": [
+    "multiuser defaults to false — operators who set host: 0.0.0.0 (or --host 0.0.0.0) for LAN/remote access expose a fully-privileged default admin session to anyone who connects, no login screen",
+    "Pre-6.13.7: GET /api/v1/app/runtime_config could disclose invokeai.yaml and api_keys.yaml contents (model-download bearer tokens for Civitai/HuggingFace, remote image-gen provider keys for OpenAI/Alibaba/etc.) to any network-reachable client when host was bound 0.0.0.0 — fixed by response redaction (_redact_config_secrets) in 6.13.7",
+    "Unauthenticated POST /api/v2/models/install accepted attacker-supplied model files deserialized via torch.load with no validation — CVE-2024-12029, RCE, CVSS 9.8/9.0, versions 5.3.1-5.4.2",
+    "Unauthenticated POST /api/v1/images/upload multipart-boundary parsing DoS — CVE-2024-10821",
+    "Unauthenticated PATCH /api/v1/boards/{board_id} with oversized board_name payload — CVE-2024-11043 resource exhaustion",
+    "Unauthenticated path traversal via media/output directory endpoints allowed arbitrary file read outside the intended directory, versions <6.7.0 — CVE-2025-6237",
+    "GET /api/v1/images/ and board listing endpoints disclose generated image history, prompts, and output filenames — product-IP and potential NSFW/PII content class disclosure",
+    "GET /api/v2/models/ enumerates full installed-model inventory, fingerprinting operator's compute/workflow investment"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Invoke - Community Edition\"",
+      "http.html:\"invokeai\" port:9090",
+      "port:9090 \"InvokeAI\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/app/version",
+      "method": "GET",
+      "response_markers": [
+        "\"version\""
+      ],
+      "false_positive_check": "Response must be JSON with a single top-level \"version\" key holding a semver-like string (e.g. \"5.x.x\", \"6.x.x\"); confirm platform identity by chaining a second GET to /api/v1/app/app_deps or /api/v2/models/ (installed-model list) before labeling — bare {\"version\":...} alone is a weak marker shared by many FastAPI apps"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Invoke - Community Edition\"",
+    "strict": "http.title:\"Invoke - Community Edition\" port:9090",
+    "version": "http.title:\"Invoke - Community Edition\" \"invokeai\""
+  },
+  "deployment_tells": [
+    "[INFERRED — not confirmed by a  survey] Default port 9090, but by ComfyUI-sibling precedent expect a meaningful share on alt/proxied ports via cloud GPU rental platforms (RunPod, Vast.ai, Modal) since InvokeAI targets the same self-hosted Stable Diffusion operator base",
+    "[INFERRED] Same operator profile as ComfyUI — hobbyist/prosumer GPU owners running on residential ISPs with host:0.0.0.0 for phone/tablet access to the web UI, no reverse proxy",
+    "[INFERRED] multiuser=false is the overwhelmingly common real-world state since it is the shipped default and enabling it requires deliberate config-file or env-var action",
+    "Docker distributions exist with bundled auth wrappers (e.g. ai-dock/invokeai adds Nginx basic-auth) — presence of a basic-auth prompt in front of the UI indicates a hardened deployment, absence indicates default posture"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/app/version → InvokeAI version string (CVE-scoping: <5.4.3rc2 = CVE-2024-12029 candidate, <6.7.0 = CVE-2025-6237 candidate, <6.13.7 = config-disclosure candidate)",
+    "GET /api/v1/app/runtime_config → full app config (redacted for secrets on patched builds; unredacted on pre-6.13.7 builds reachable at 0.0.0.0)",
+    "GET /api/v2/models/ → installed model inventory (compute/workflow fingerprint)",
+    "POST /api/v2/models/install → unauth model-file install path; RCE vector on unpatched versions (CVE-2024-12029)",
+    "GET /api/v1/images/ → generated image history + metadata (prompt/output disclosure)",
+    "GET /api/v1/boards/ → board (project/collection) listing, operator activity organization",
+    "POST /api/v1/images/upload → unauth multipart upload surface (DoS vector on unpatched versions, CVE-2024-10821)",
+    "GET /api/v1/queue/{queue_id}/list → pending/active generation jobs (operator activity, compute theft surface if enqueue also reachable)"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-12029 — Deserialization of Untrusted Data (torch.load, no validation) in POST /api/v2/models/install; unauthenticated RCE; CVSS 9.8; affects 5.3.1-5.4.2; fixed 5.4.3rc2",
+    "CVE-2024-10821 — Uncontrolled Resource Consumption / DoS via malformed multipart boundary in POST /api/v1/images/upload; unauthenticated",
+    "CVE-2024-11043 — Uncontrolled Resource Consumption / DoS via oversized board_name in PATCH /api/v1/boards/{board_id}, observed v5.0.2",
+    "CVE-2025-6237 — Path Traversal allowing unauthenticated arbitrary file read outside the intended media directory; affects <6.7.0; fixed 6.7.0",
+    "Unnumbered (fixed 6.13.7, no CVE ID located) — invokeai.yaml / api_keys.yaml (model-download tokens, remote image-gen provider API keys) recoverable by a network-reachable client via config endpoints on hosts bound 0.0.0.0 through 6.13.6; fixed by response secret-redaction in 6.13.7"
+  ],
+  "sources": [
+    "https://github.com/invoke-ai/InvokeAI",
+    "https://github.com/advisories/GHSA-mcrp-whpw-jp68",
+    "https://advisories.gitlab.com/pkg/pypi/invokeai/CVE-2024-10821/",
+    "https://www.miggo.io/vulnerability-database/cve/CVE-2024-11043",
+    "https://www.miggo.io/vulnerability-database/cve/CVE-2025-6237",
+    "https://www.offsec.com/blog/cve-2024-12029/",
+    "https://github.com/rapid7/metasploit-framework/pull/19883",
+    "https://invoke.ai/configuration/invokeai-yaml/",
+    "https://invoke.ai/releases/",
+    "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/invokeai/app/api/routers/app_info.py",
+    "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/invokeai/app/api/routers/model_manager.py",
+    "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/invokeai/app/api_app.py",
+    "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/invokeai/app/services/config/config_default.py",
+    "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/invokeai/frontend/web/index.html",
+    "[NO  survey of InvokeAI exists yet — this entry is Stage -1 OSINT Platoon research only, not a population survey]"
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "platform": "grok2api",
+  "display_name": "Grok2API (OpenAI-compatible Grok credential proxy)",
+  "category": "llm_jacking_proxy",
+  "default_ports": [8000, 8080],
+  "api_paths": [
+    "/v1/chat/completions",
+    "/v1/images/generations",
+    "/v1/images/edits",
+    "/v1/models",
+    "/v1/responses",
+    "/v1/videos",
+    "/v1/video/extend",
+    "/v1/files/image/{filename}",
+    "/v1/function/voice/token",
+    "/v1/function/imagine/{op}",
+    "/v1/admin/config",
+    "/v1/admin/storage",
+    "/v1/admin/tokens",
+    "/v1/admin/cache/list",
+    "/v1/admin/batch",
+    "/openapi.json"
+  ],
+  "auth_default": "api_key_declared",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "FastAPI app fronted by granian (Rust ASGI) on port 8000; OpenAPI title \"Grok2API\" version 0.1.0",
+  "misconfig_patterns": [
+    "/v1/admin/* surface reachable without bearer-key check — token pool, cache, config disclosure",
+    "Pooled X.ai/Grok credentials concentrated behind one frontend = attribution laundering (per Insight #39)",
+    "Co-located admin endpoints + payment scaffolding = proxy-SaaS-colocation pattern"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Grok2API\"",
+      "http.html:\"Grok2API\"",
+      "port:8000 http.html:\"/v1/function/imagine\"",
+      "port:8000 http.html:\"/v1/function/voice/token\""
+    ],
+    "active_probe": {
+      "path": "/openapi.json",
+      "method": "GET",
+      "response_markers": ["\"title\":\"Grok2API\"", "/v1/function/imagine", "/v1/function/voice/token"],
+      "false_positive_check": "openapi.json must include Grok-specific function routes and not generic OpenAI-compat schema alone"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"Grok2API\"",
+    "strict": "http.html:\"Grok2API\" port:8000",
+    "version": "http.html:\"Grok2API\" http.html:\"v0.1\""
+  },
+  "deployment_tells": [
+    "granian server header (Rust ASGI, rare) + FastAPI + 35+ route count",
+    "Co-located with Sub2API frontend on same host (payment + Cloudflare Turnstile)",
+    "Grok-specific function names (/v1/function/imagine, /v1/function/voice/token) absent in vanilla OpenAI-compat"
+  ],
+  "pivot_paths": [
+    "GET /v1/admin/cache/list -> pooled token pool disclosure if auth-off",
+    "GET /v1/admin/config -> backend configuration including upstream X.ai credentials",
+    "GET /openapi.json -> route discovery + admin path enumeration"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "syllabus wandb-sweep follow-up 2026-06-09 (137.184.42.189)",
+    "CANDIDATE — drafted from single-host observation; population-verification pending"
+  ]
+}

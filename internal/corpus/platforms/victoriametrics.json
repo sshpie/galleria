@@ -1,0 +1,136 @@
+{
+  "platform": "victoriametrics",
+  "display_name": "VictoriaMetrics",
+  "category": "time_series_db",
+  "default_ports": [
+    8428,
+    8429,
+    8480,
+    8481,
+    8482,
+    8400,
+    8401,
+    8880
+  ],
+  "default_port_notes": {
+    "8428": "vmsingle (single-node binary) HTTP",
+    "8429": "vmagent HTTP (also VMSingle on operator deployments per upstream issue #1343)",
+    "8480": "vminsert (cluster) write API",
+    "8481": "vmselect (cluster) read API",
+    "8482": "vmstorage (cluster) HTTP control plane",
+    "8400": "vmstorage vminsertAddr (gRPC-style ingestion from vminsert)",
+    "8401": "vmstorage vmselectAddr (RPC from vmselect)",
+    "8880": "vmalert HTTP"
+  },
+  "api_paths": [
+    "/",
+    "/vmui/",
+    "/metrics",
+    "/api/v1/status/buildinfo",
+    "/api/v1/status/tsdb",
+    "/api/v1/labels",
+    "/api/v1/label/__name__/values",
+    "/api/v1/series",
+    "/api/v1/query",
+    "/api/v1/query_range",
+    "/api/v1/targets",
+    "/api/v1/rules",
+    "/api/v1/alerts",
+    "/api/v1/import",
+    "/api/v1/import/prometheus",
+    "/api/v1/admin/tsdb/delete_series",
+    "/api/v1/admin/tsdb/snapshot/create",
+    "/debug/pprof/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "-httpAuth.username",
+    "-httpAuth.password",
+    "-deleteAuthKey",
+    "-snapshotAuthKey",
+    "-reloadAuthKey",
+    "vmauth (separate reverse-proxy component)"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8428:8428 victoriametrics/victoria-metrics:latest",
+  "misconfig_patterns": [
+    "Default deployment exposes :8428 with no auth; all metrics read + query without credentials",
+    "Write surface (/api/v1/import, /api/v1/import/prometheus) accepts unauthenticated writes by default — allows metric injection / data corruption",
+    "Admin endpoints (/api/v1/admin/tsdb/delete_series, snapshot/create) protected only by -deleteAuthKey / -snapshotAuthKey if set; default empty allows authenticated-equivalent admin",
+    "/debug/pprof/ exposed by default even with -httpAuth set (per upstream issue #3060) — leaks runtime state and stack traces",
+    "vmui (web UI) at /vmui/ runs queries against the same unauth API surface",
+    "/api/v1/status/tsdb reveals series counts, label cardinality, churn rate — operator workload size inference",
+    "/api/v1/label/__name__/values returns FULL list of metric names — perfect schema-disclosure for operator profiling",
+    "Cluster mode (vmstorage/vmselect/vminsert) exposes 8480/8481/8482 with no auth; vminsert accepts unauth writes from anywhere"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:VictoriaMetrics",
+      "port:8428 http.html:\"VictoriaMetrics\"",
+      "port:8428 http.title:\"vmui\"",
+      "http.html:\"/api/v1/status/tsdb\"",
+      "http.favicon.hash:?"
+    ],
+    "active_probe": {
+      "path": "/api/v1/status/buildinfo",
+      "method": "GET",
+      "response_markers": [
+        "VictoriaMetrics",
+        "vm_version",
+        "buildinfo"
+      ],
+      "false_positive_check": "response body must include the literal string 'VictoriaMetrics' AND a 'version' field starting with 'v'; Prometheus also exposes /api/v1/status/buildinfo with similar shape, so the brand-name string is the discriminator"
+    },
+    "fingerprint_oracle": {
+      "path": "/api/v1/status/tsdb",
+      "discriminator": "VictoriaMetrics returns top label-value-count series with seriesCountByMetricName, seriesCountByLabelValuePair; Prometheus returns headStats + seriesCountByMetricName but different envelope",
+      "version_endpoint": "/api/v1/status/buildinfo returns {\"version\":\"v1.X.Y\", \"branch\":\"master\", \"revision\":\"...\"}"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"VictoriaMetrics\" port:8428",
+    "strict": "port:8428 http.title:\"vmui\"",
+    "version": "http.html:\"vm_version\"",
+    "cluster_insert": "port:8480 http.html:\"VictoriaMetrics\"",
+    "cluster_select": "port:8481 http.html:\"VictoriaMetrics\"",
+    "vmagent": "port:8429 http.html:\"vmagent\"",
+    "vmalert": "port:8880 http.html:\"vmalert\""
+  },
+  "deployment_tells": [
+    "vmui SPA at /vmui/ identifies VictoriaMetrics uniquely (Prometheus has no equivalent UI bundled)",
+    "/api/v1/status/buildinfo returns 'VictoriaMetrics' brand string in 'version' field",
+    "Server response header 'X-Server-Hostname' often present (config-dependent)",
+    "Metric names with vm_ prefix (vm_rows, vm_data_size_bytes, vm_app_uptime_seconds) in /metrics output",
+    "/metrics output includes 'vm_app_version' label with VictoriaMetrics build info"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/label/__name__/values -> full metric-name catalog -> operator stack inference (e.g., 'kube_pod_*' means K8s, 'kafka_consumer_*' means Kafka, 'mysql_global_*' means MySQL)",
+    "GET /api/v1/series?match[]={__name__=~'.+'} -> full series catalog with labels -> per-target hostname/instance disclosure",
+    "GET /api/v1/query?query=up -> currently-monitored targets with up/down status -> production-instance inventory",
+    "GET /api/v1/status/tsdb -> top series by label-value-pair -> highest-cardinality workload signatures",
+    "POST /api/v1/import (unauth write surface) -> inject arbitrary metrics; corrupt monitoring / poison alerting",
+    "POST /api/v1/admin/tsdb/delete_series (if -deleteAuthKey empty) -> wipe historical data",
+    "POST /api/v1/admin/tsdb/snapshot/create -> trigger filesystem snapshot (DoS via disk fill)"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-65942 (GHSA-66jq-2c23-2xh5): Snappy decoder ignores request size limits, malformed block triggers OOM DoS on write path. Affects <1.110.23, 1.111.0-<1.122.8, 1.123.0-<1.129.1; patched 1.110.23/1.122.8/1.129.1. Reachable via the unauth /api/v1/import write surface = remote unauth DoS.",
+    "Issue #3060: -httpAuth flags do not apply to /debug/pprof/ — auth bypass on profiling endpoint reveals runtime internals",
+    "Design choice (NOT a CVE): no authentication on default deployment; documented in upstream SECURITY.md as 'operator responsibility' to deploy vmauth or restrict network access",
+    "Metric injection via /api/v1/import (unauth write): attacker forges metrics, poisons SLO / autoscale / alert systems downstream"
+  ],
+  "auth_default_thesis": "AUTH-OFF-DEFAULT confirmed: VictoriaMetrics ships with no -httpAuth set; operators must explicitly add auth or run behind vmauth proxy. Per upstream docs 'By default, port 8428 is not protected in any way nor is encrypted.' Direct analog to ChromaDB's posture: open by design, auth is the operator's job.",
+  "sources": [
+    "[CANDIDATE —  platform brief 2026-06-08; survey pending]",
+    "VictoriaMetrics SECURITY.md (master branch, github.com/VictoriaMetrics/VictoriaMetrics)",
+    "VictoriaMetrics vmauth docs (docs.victoriametrics.com/vmauth.html)",
+    "Operator issue #220 (default port discussion), #1343 (vmsingle 8428 vs 8429)",
+    "Operator issue #3060 (httpAuth bypass on pprof)",
+    "GHSA-66jq-2c23-2xh5 (Snappy DoS)"
+  ],
+  "research_questions": [
+    "What share of internet-exposed VictoriaMetrics has /api/v1/import accepting writes without auth? (population-scale write-surface metric)",
+    "What share has /debug/pprof/ exposed regardless of -httpAuth setting? (the upstream issue #3060 pattern)",
+    "How does VictoriaMetrics population auth-on-default rate compare to Prometheus (the platform it's replacing)?",
+    "What operator-attribution signal can be extracted from /api/v1/label/__name__/values catalogs at scale? (the 'metric-names-as-org-chart' pretext-payload hypothesis)"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "platform": "kafka-rest-proxy",
+  "display_name": "Confluent Kafka REST Proxy",
+  "category": "event_streaming",
+  "default_ports": [8082],
+  "api_paths": ["/topics", "/brokers", "/consumers/{group}"],
+  "auth_default": "none",
+  "auth_config_env": ["KAFKA_REST_AUTHENTICATION_METHOD"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8082:8082 confluentinc/cp-kafka-rest:latest — no auth by default",
+  "misconfig_patterns": [
+    "GET /topics unauthenticated returns full topic catalog",
+    "POST /topics/{name} unauthenticated allows message production"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.headers:\"vnd.kafka.v2+json\"",
+      "\"vnd.kafka\""
+    ],
+    "active_probe": {
+      "path": "/topics",
+      "method": "GET",
+      "response_markers": ["bare JSON array of topic names", "Content-Type: application/vnd.kafka.v2+json"],
+      "false_positive_check": "Content-Type header must be vnd.kafka.v2+json — vendor-unique, no collision"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"vnd.kafka\"",
+    "strict": "http.headers:\"vnd.kafka.v2+json\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "HTTP bridge in front of a Kafka cluster — often exposed when the binary 9092 port is firewalled but this REST bridge is not"
+  ],
+  "pivot_paths": [
+    "GET /topics -> topic catalog",
+    "POST /topics/{name} -> produce arbitrary messages",
+    "GET consumer endpoints -> read payloads without binary client tooling"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.confluent.io/platform/current/kafka-rest/index.html",
+    "[CANDIDATE —  cat-event-streaming Stage -1, 2026-07-14]"
+  ]
+}

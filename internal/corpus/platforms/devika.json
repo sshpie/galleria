@@ -1,0 +1,99 @@
+{
+  "platform": "devika",
+  "display_name": "Devika",
+  "category": "agent_framework",
+  "default_ports": [1337, 3000, 3001],
+  "api_paths": [
+    "/api/data",
+    "/api/messages",
+    "/api/is-agent-active",
+    "/api/get-agent-state",
+    "/api/get-browser-snapshot",
+    "/api/get-browser-session",
+    "/api/get-terminal-session",
+    "/api/run-code",
+    "/api/calculate-tokens",
+    "/api/token-usage",
+    "/api/logs",
+    "/api/settings",
+    "/api/status",
+    "/api/get-project-files",
+    "/api/create-project",
+    "/api/delete-project",
+    "/api/download-project",
+    "/api/download-project-pdf"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "git clone https://github.com/stitionai/devika && python devika.py  (Flask+gevent on 0.0.0.0:1337; SvelteKit frontend on :3000)",
+  "misconfig_patterns": [
+    "Backend port 1337 internet-exposed -- zero auth on every API endpoint",
+    "GET /api/settings returns full config.toml contents including all third-party API keys (OpenAI, Claude, Gemini, Groq, Mistral, Netlify, Bing, Google Search) with no auth",
+    "GET /api/logs returns full application log file unauthenticated",
+    "GET /api/get-browser-snapshot?snapshot_path=<path> takes an arbitrary filesystem path parameter with no sanitization -- potential arbitrary file read",
+    "POST /api/settings writes to config with no auth -- attacker can overwrite LLM provider endpoints (SSRF via Ollama/LM_Studio endpoint config)",
+    "CORS hardcoded to localhost:3000 only -- trivially bypassed with direct requests (curl/httpx)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Devika\"",
+      "http.html:\"stitionai\"",
+      "http.html:\"Devika AI\""
+    ],
+    "active_probe": {
+      "path": "/api/status",
+      "method": "GET",
+      "response_markers": [
+        "\"status\":\"server is running!\""
+      ],
+      "false_positive_check": "http.title:\"Devika\" is most trustworthy (4 Shodan hits vs 19 for http.html:\"Devika\" which is polluted by South Asian personal name in unrelated content). Negation chains do not reliably strip the personal-name pollution -- the polluting pages do not contain profile/wedding/name tokens. Anchor on GET /api/status returning exactly {\"status\": \"server is running!\"} as the live discriminator -- this is a Devika-specific string. Secondary confirm: GET /api/data returns {\"models\": [...], \"projects\": [...], \"search_engines\": [\"Bing\", \"Google\", \"DuckDuckGo\"]} which is unique to Devika. http.html:\"stitionai\" = 0 hits on Shodan (GitHub org names do not surface). Do not use bare 'Devika' = 3 hits (origin uncertain)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Devika\"",
+    "strict": "http.title:\"Devika\" port:1337",
+    "version": null,
+    "note": "http.title:\"Devika\" = 4 hits (most trustworthy -- personal name collision in HTML body avoided). http.html:\"devika\" = 19 hits (POLLUTED -- South Asian personal name in unrelated content; negation chains don't clean it). \"Devika\" bare = 3 hits (origin uncertain). http.html:\"stitionai\" = 0 (GitHub org names don't surface in Shodan). Title dork is the primary gate; verify every hit with GET /api/status discriminator before asserting Devika."
+  },
+  "deployment_tells": [
+    "Port 1337 open with Flask JSON responses (socketio.run(app, port=1337, host='0.0.0.0'))",
+    "Port 3000 open with SvelteKit frontend titled 'Devika AI' (Docker) or port 3001 (local dev)",
+    "GET /api/status returns exactly: {\"status\": \"server is running!\"}",
+    "GET /api/data returns models list + search_engines: [\"Bing\", \"Google\", \"DuckDuckGo\"]",
+    "Socket.IO connection on port 1337 with 'socket_connect' event emitting 'socket_response'",
+    "Docker compose maps both 1337:1337 and 3000:3000 with Ollama sidecar on separate service"
+  ],
+  "pivot_paths": [
+    "GET /api/settings -> full config.toml read including all third-party API keys (HIGHEST VALUE -- no auth)",
+    "GET /api/logs -> full application log file (agent task history, LLM prompts/responses, key usage)",
+    "GET /api/data -> model list (reveals which LLM providers are configured) + project names",
+    "GET /api/token-usage -> per-project token consumption (activity inference)",
+    "GET /api/get-project-files -> list files written by agent in each project",
+    "GET /api/get-browser-snapshot?snapshot_path=<target> -> arbitrary file read candidate (verify path validation before exercising)"
+  ],
+  "vulnerabilities": [
+    "Unauthenticated config read: GET /api/settings returns all provider API keys from config.toml (OpenAI, Anthropic, Gemini, Groq, Mistral, Netlify, Bing, Google) -- zero auth, zero scrubbing.",
+    "Unauthenticated config write: POST /api/settings overwrites config with no auth -- can redirect Ollama/LM_Studio endpoints to attacker-controlled host (SSRF primitive).",
+    "Potential arbitrary file read: GET /api/get-browser-snapshot?snapshot_path=<path> -- no path sanitization observed in source; serves file contents from arbitrary path parameter.",
+    "Full log exposure: GET /api/logs returns complete application log unauthenticated -- leaks agent task content, LLM interactions, and potentially embedded key material."
+  ],
+  "auth_evidence": "devika.py source: Flask app initialized with no auth decorator, no login_required, no token validation on any route. CORS configured via flask_cors but restricted to localhost:3000 origins only -- browser-origin enforcement, not API security. Socket.IO initialized with cors_allowed_origins=['http://localhost:3000', 'https://localhost:3000']. No session management, no middleware, no environment variable for auth config. Config keys stored in config.toml (read/written via /api/settings with no auth). The CORS restriction is the only access control and it is trivially bypassed by direct HTTP requests.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "All third-party LLM provider API keys via GET /api/settings (OpenAI, Anthropic Claude, Google Gemini, Groq, Mistral, Bing Search, Google Search, Netlify)",
+    "Agent execution logs and LLM conversation content via GET /api/logs",
+    "Agent-generated project files and code outputs via GET /api/get-project-files and GET /api/download-project",
+    "Terminal session state and browser session state via /api/get-terminal-session and /api/get-browser-session",
+    "Arbitrary file read via GET /api/get-browser-snapshot?snapshot_path= (unvalidated path parameter)"
+  ],
+  "sources": [
+    "https://github.com/stitionai/devika",
+    "https://github.com/stitionai/devika/blob/main/devika.py",
+    "https://github.com/stitionai/devika/blob/main/src/apis/project.py",
+    "https://github.com/stitionai/devika/blob/main/src/config.py",
+    "https://github.com/stitionai/devika/blob/main/ui/package.json",
+    "https://github.com/stitionai/devika/blob/main/ui/src/app.html",
+    "CANDIDATE:  platform research 2026-06-26 -- Shodan dork survey: http.title:\"Devika\"=4 hits (most trustworthy), http.html:\"devika\"=19 hits (polluted). Auth-open posture confirmed from source. /api/status discriminator string confirmed from devika.py. No live host verified yet."
+  ]
+}

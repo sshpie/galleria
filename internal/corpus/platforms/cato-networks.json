@@ -1,0 +1,60 @@
+{
+  "platform": "cato-networks",
+  "display_name": "Cato Networks AI Security (firewall analyze endpoint)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "Cato Networks Ltd (SASE / SD-WAN)",
+  "apex": {
+    "corporate": "catonetworks.com",
+    "product": "aisec.catonetworks.com"
+  },
+  "default_ports": [443],
+  "api_paths": [
+    "/fw/v1/analyze"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "Bearer (CATO_API_KEY); HTTP and WebSocket modes (wss://api.aisec.catonetworks.com for streaming analyze)",
+  "auth_config_env": ["CATO_API_KEY", "CATO_API_BASE"],
+  "default_creds": [],
+  "default_api_base": "https://api.aisec.catonetworks.com",
+  "install_tell": "LiteLLM guardrail_hooks/cato_networks POSTs to /fw/v1/analyze (path naming gives away the firewall lineage); WebSocket variant ws_api_base for streaming; user_email + key_alias propagated to Cato for analytics",
+  "misconfig_patterns": [
+    "ssl_verify=False optional argument disables WSS TLS verification when set explicitly.",
+    "user_email leak to Cato: LiteLLM user_api_key_dict.user_email is sent in analyze payload -- cross-org attribution surface.",
+    "Fronted by Imperva DNS (impervadns.net) -- WAF in path may rewrite or cache analyze responses."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"aisec.catonetworks.com\"",
+      "ssl.cert.subject.cn:\"api.aisec.catonetworks.com\"",
+      "ssl:\"catonetworks.com\""
+    ],
+    "active_probe": {
+      "path": "/fw/v1/analyze",
+      "method": "POST",
+      "port": 443,
+      "notes": "Customer tenant fronted by Imperva; identity-fingerprint only"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"aisec.catonetworks.com\"",
+    "strict": "ssl.cert.subject.cn:\"api.aisec.catonetworks.com\"",
+    "version": "ssl:\"catonetworks.com\" port:443"
+  },
+  "deployment_tells": [
+    "api.aisec.catonetworks.com -> 5ui55m8.ng.impervadns.net (Imperva WAF) -> 107.154.249.90",
+    "WSS variant: wss://api.aisec.catonetworks.com for streaming analyze",
+    "URL path /fw/v1/analyze inherits Cato firewall product lineage"
+  ],
+  "dmarc": "p=quarantine rua=vali.email",
+  "mx_provider": "Microsoft Exchange Online Protection (catonetworks-com.mail.protection.outlook.com)",
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.catonetworks.com/.well-known/security.txt (verify)",
+    "channel_observed": "vali.email aggregation"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py",
+    "DNS dig 2026-06-07"
+  ]
+}

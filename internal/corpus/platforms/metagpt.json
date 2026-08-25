@@ -1,0 +1,63 @@
+{
+  "platform": "metagpt",
+  "display_name": "MetaGPT",
+  "category": "agent_framework",
+  "default_ports": [],
+  "api_paths": [],
+  "auth_default": "N/A-cli-tool",
+  "auth_config_env": [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install metagpt  (CLI: metagpt 'your requirement'; no web server, no socket bind, no EXPOSE in Dockerfile)",
+  "misconfig_patterns": [
+    "Provider API keys committed to config/config2.yaml or ~/.metagpt/config2.yaml in public repos -- primary exposure vector (no web service to scan, only leaked-file route)",
+    "config2.yaml llm.api_key field holds raw provider key (OpenAI sk-/sk-proj-, openrouter sk-or-v1-, deepseek/moonshot/dashscope-class) -- LLMjacking direct from committed config",
+    "config2.example.yaml placeholder (YOUR_API_KEY) is the negative-control anchor -- gate on entropy+prefix to strip placeholders",
+    "CVE-2024-23750 (<=0.6.6): OS command injection in RunCode action at runtime -- not a web-service CVE but applies to any execution environment"
+  ],
+  "fingerprint": {
+    "passive": [
+      "filename:config2.yaml \"api_key:\""
+    ],
+    "active_probe": {
+      "path": "N/A",
+      "method": "N/A",
+      "response_markers": [],
+      "false_positive_check": "No HTTP listener -- fingerprinting is GitHub code-search only (leaked-file route). Active probe not applicable. Negative-control: exclude any hit where api_key value matches YOUR_API_KEY/sk-xxx/example placeholder; require Shannon entropy >= 3.2 + min 12 distinct chars + known provider prefix for high-confidence call.  cat-agent-platforms 2026-06-19 round-2: 148 hits inspected -> 17 non-placeholder keys (12 prefixed high/med + 5 opaque)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"metagpt\"",
+    "strict": null,
+    "version": null,
+    "note": "http.html:\"metagpt\" = 3 hits (near-zero -- CLI tool, no web service). Shodan fingerprinting not viable at scale. Primary discovery route is GitHub code-search for committed config2.yaml keys: filename:config2.yaml \"api_key:\" NOT \"YOUR_API_KEY\". Negative-control gate required -- placeholder majority dominates raw hits."
+  },
+  "deployment_tells": [
+    "No web listener -- no port, no socket, Dockerfile CMD is 'tail -f /dev/null' with no EXPOSE",
+    "config2.yaml or ~/.metagpt/config2.yaml present with llm.api_type and llm.api_key fields",
+    "GitHub repos containing committed config2.yaml with non-placeholder api_key values"
+  ],
+  "pivot_paths": [
+    "GitHub code search: filename:config2.yaml \"api_key:\" NOT \"YOUR_API_KEY\" -- enumerate committed provider keys",
+    "filename:config2.yaml \"api_type:\" \"base_url:\" NOT \"YOUR_API_KEY\" -- strict version with provider confirmation",
+    "Entropy + provider-prefix gate on extracted values before asserting key material"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-23750 (CVSS unscored, affects <=0.6.6): OS command injection in RunCode action -- attacker-controlled code passed to execution environment without sanitization."
+  ],
+  "auth_evidence": "No authentication surface -- MetaGPT is a CLI library with no HTTP listener. The sole exposure vector is committed config2.yaml containing provider API keys in public repositories.  cat-agent-platforms survey 2026-06-19 round-2: 148 GitHub repos inspected, 17 with non-placeholder provider keys committed. Placeholder majority dominated by config2.example.yaml echoes.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Provider API keys in committed config2.yaml (OpenAI, OpenRouter, DeepSeek, Moonshot, DashScope, Anthropic) -- LLMjacking primitive",
+    "LLM base_url overrides in config2.yaml (reveals internal or proxy LLM endpoints)"
+  ],
+  "sources": [
+    "https://github.com/geekan/MetaGPT",
+    "https://github.com/geekan/MetaGPT/blob/main/config/config2.yaml",
+    "https://github.com/geekan/MetaGPT/blob/main/config/config2.example.yaml",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-23750",
+    "CONFIRMED leaked-file:  cat-agent-platforms survey 2026-06-19 round-2 -- 17 public repos with non-placeholder provider keys in committed config2.yaml (repo names enumerated, key values never extracted/used, no provider-API verification call). Restraint: metadata-only, names are the finding."
+  ]
+}

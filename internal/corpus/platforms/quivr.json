@@ -1,0 +1,128 @@
+{
+  "platform": "quivr",
+  "display_name": "Quivr",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000,
+    5050,
+    5555,
+    6379
+  ],
+  "api_paths": [
+    "/healthz",
+    "/brain",
+    "/chat",
+    "/crawl",
+    "/upload",
+    "/knowledge",
+    "/assistant",
+    "/sync",
+    "/onboarding",
+    "/api-keys",
+    "/user/identity",
+    "/models",
+    "/prompt",
+    "/subscription",
+    "/analytics"
+  ],
+  "auth_default": "configurable-default-on",
+  "auth_config_env": [
+    "AUTHENTICATE",
+    "JWT_SECRET_KEY",
+    "SUPABASE_SERVICE_KEY",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "SUPABASE_URL",
+    "NEXT_PUBLIC_AUTH_MODES",
+    "PG_DATABASE_URL"
+  ],
+  "default_creds": [
+    {
+      "user": "admin@quivr.app",
+      "pass": "(no password - hardcoded test user returned when AUTHENTICATE=false)",
+      "context": "auth_bearer.py get_test_user(): id=39418e3b-0258-4452-af60-7acfcc1263ff. Returned for EVERY request when AUTHENTICATE env=false."
+    },
+    {
+      "user": "(forged JWT, any user_id)",
+      "pass": "super-secret-jwt-token-with-at-least-32-characters-long",
+      "context": "Default JWT_SECRET_KEY in .env.example = public Supabase demo secret. Sign any HS256 token with role:authenticated and a sub/user_id to pass jwt_token_handler.verify_token (verify_aud:False)."
+    }
+  ],
+  "install_tell": "Legacy full-stack (internet-exposed population): git clone https://github.com/QuivrHQ/quivr && cp .env.example .env && docker compose pull && docker compose up (frontend:3000, backend-api:5050, flower:5555, redis:6379). Current library: pip install quivr-core (no server).",
+  "misconfig_patterns": [],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Quivr\"",
+      "http.html:\"NEXT_PUBLIC_SUPABASE\"",
+      "http.component:\"Next.js\" http.html:\"quivr\"",
+      "ssl.cert.subject.cn:\"quivr.app\""
+    ],
+    "active_probe": {
+      "path": "/healthz",
+      "method": "GET",
+      "response_markers": [
+        "backend-api on :5050 returns 200 on /healthz (FastAPI uvicorn)",
+        "GET / on :5050 -> FastAPI default; OpenAPI at /docs and /openapi.json lists vendor-unique routers: brain_router, chat_router, crawl_router, assistant_router, sync_router, onboarding_router, knowledge_router, api_key_router",
+        "GET /user/identity or /chat with no token -> 401 {\"detail\":...} when AUTHENTICATE=true (gated), 200 when AUTHENTICATE=false (open admin)",
+        "frontend :3000 HTML contains NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_BACKEND_URL Next.js env injection and 'Quivr' title",
+        "Flower dashboard on :5555 (Celery) title 'Flower'"
+      ],
+      "false_positive_check": "'Quivr' and 'chat'/'AI' collide widely; do NOT fingerprint on those alone. Confirm the STACK SHAPE: (1) FastAPI/uvicorn on 5050 whose /openapi.json enumerates the vendor-unique router set brain+crawl+assistant+knowledge+onboarding+api_key together (no other product has that exact combo), AND (2) a Next.js frontend on 3000 that injects NEXT_PUBLIC_SUPABASE_* + NEXT_PUBLIC_BACKEND_URL pointing at :5050. The Supabase anon key alone is shared across every Supabase app, so it is NOT discriminating on its own. The /openapi.json router-name set is the load-bearing discriminator. quivr-core (the new PyPI library) has no listener, so any live HTTP host is by definition the legacy full-stack app."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Quivr\"",
+    "strict": "http.html:\"NEXT_PUBLIC_SUPABASE\" http.html:\"quivr\"",
+    "version": "http.html:\"NEXT_PUBLIC_BACKEND_URL\" http.html:\"quivr\" port:3000,5050"
+  },
+  "deployment_tells": [
+    "docker-compose container_name set: web, backend-api, worker, notifier, beat, flower, redis",
+    "backend image stangirard/quivr-backend-prebuilt:latest; frontend image quivr-frontend-prebuilt",
+    "Ports 3000 (Next.js front), 5050 (FastAPI uvicorn backend, /healthz), 5555 (Celery Flower), 6379 (Redis) co-located on one host",
+    "Celery + Redis broker (CELERY_BROKER_URL redis://redis:6379/0, queue quivr-preview.fifo)",
+    "FastAPI /openapi.json router set unique to Quivr (brain/crawl/assistant/knowledge/onboarding/api_key)",
+    "extra_hosts host.docker.internal:host-gateway pattern pointing Supabase at :54321/:54322",
+    "TELEMETRY_ENABLED=true default beacons to Quivr (PostHog/sentry hooks present)"
+  ],
+  "pivot_paths": [
+    "GET :5050/openapi.json and /docs (FastAPI) to enumerate full route surface unauthenticated regardless of AUTHENTICATE",
+    "GET :5050/healthz to confirm liveness without auth",
+    "If AUTHENTICATE=false: GET /user/identity, /chat, /brain, /knowledge as the implicit admin@quivr.app with no token (read brains, chats, uploaded docs)",
+    "If AUTHENTICATE=true but default JWT secret unchanged: forge HS256 token signed with 'super-secret-jwt-token-with-at-least-32-characters-long' (role:authenticated, arbitrary sub) and read any user's brains/chats - read-only confirm via /user/identity echo",
+    "Flower :5555 dashboard - read Celery task args/results (may leak file paths, brain ids, doc names) with no auth",
+    "Front-end :3000 JS bundle - extract NEXT_PUBLIC_SUPABASE_URL/ANON_KEY + NEXT_PUBLIC_BACKEND_URL to confirm Supabase project and backend location",
+    "If self-hosted Supabase reachable: PostgREST on :54321 with the demo service_role key = full DB read"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-9229 (CVSS 7.5 HIGH): Unauthenticated DoS via crafted multipart boundary in the file-upload endpoint causes uncontrolled resource consumption (CWE-400). Affected: stangirard/quivr v0.0.298.",
+    "CVE-2024-6583: Path traversal in upload allows writing files to arbitrary paths in the backing S3 bucket via '..' in the upload path. Affected: latest stangirard/quivr at disclosure.",
+    "CVE-2024-4851: SSRF in the /crawl endpoint ('url' param in backend/routes/crawl_routes.py) lets an attacker reach internal networks. Affected: stangirard/quivr v0.0.204.",
+    "Design weakness (not a CVE): default .env.example ships the public Supabase demo JWT_SECRET_KEY and demo service/anon keys -> forgeable HS256 auth tokens; AUTHENTICATE=false returns a hardcoded admin@quivr.app for all requests; Flower (5555) exposed without auth in default compose."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: default .env.example at tag v0.0.317 (commit 3523665) sets `AUTHENTICATE=true`, so the legacy full-stack app (frontend:3000 + FastAPI backend-api:5050, both `ports:`-exposed in the default docker-compose.yml) does gate the API behind a Supabase HS256 JWT by default. BUT the same .env.example ships the publicly-known Supabase local-dev secrets verbatim: `JWT_SECRET_KEY=super-secret-jwt-token-with-at-least-32-characters-long`, `SUPABASE_SERVICE_KEY=eyJ...role:service_role iss:supabase-demo`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...role:anon iss:supabase-demo` (the exact documented Supabase demo keys). backend/api/quivr_api/middlewares/auth/jwt_token_handler.py decodes with `jwt.decode(token, SECRET_KEY, algorithms=['HS256'], options={'verify_aud': False})` reading SECRET_KEY from JWT_SECRET_KEY. So an operator who runs the quickstart unchanged exposes a backend whose JWT secret is a public constant: any attacker can forge an HS256 token for any user_id and pass auth (aud unverified). Separately, auth_bearer.py honors `AUTHENTICATE=false` by returning a hardcoded admin (`UserIdentity(email='admin@quivr.app', id='39418e3b-0258-4452-af60-7acfcc1263ff')`) for every request with no credentials. The Celery Flower monitor (port 5555) ships with no auth in the default compose. Posture is configurable-default-on in name, but the shipped default secret renders it effectively forgeable-unauth. NOTE: current repo `main` is now the `quivr-core` PyPI library (`pip install quivr-core`) which is a code library with NO server/listener/auth surface; the internet-exposed population is the pre-refactor full-stack app.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, COHERE_API_KEY, BRAVE_SEARCH_API_KEY) held server-side in .env and reachable via chat/model routes",
+    "Ingested RAG documents ('brains') and their chunked text / embeddings - user-uploaded knowledge base content, potential PII/business docs",
+    "Conversation/chat history per brain (chat_router) - prompts and model answers",
+    "Brain/assistant/workflow definitions revealing business logic (brain_router, assistant_router, retrieval_config_workflow.yaml)",
+    "Supabase Postgres + pgvector store (PG_DATABASE_URL postgres:postgres) holding users, brains, vectors",
+    "Google Drive / SharePoint / Notion sync OAuth client secrets (GOOGLE_CLIENT_SECRET, SHAREPOINT_CLIENT_ID) and synced tenant documents (sync_router)",
+    "API keys minted via api_key_router; SMTP/Resend credentials"
+  ],
+  "sources": [
+    "https://github.com/QuivrHQ/quivr/blob/v0.0.317/docker-compose.yml",
+    "https://github.com/QuivrHQ/quivr/blob/v0.0.317/.env.example",
+    "https://github.com/QuivrHQ/quivr/blob/35236654a040c9a33ad3acdd927732e480f563a9/backend/api/quivr_api/middlewares/auth/auth_bearer.py",
+    "https://github.com/QuivrHQ/quivr/blob/35236654a040c9a33ad3acdd927732e480f563a9/backend/api/quivr_api/middlewares/auth/jwt_token_handler.py",
+    "https://github.com/QuivrHQ/quivr/blob/35236654a040c9a33ad3acdd927732e480f563a9/backend/api/quivr_api/main.py",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-9229",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-6583",
+    "https://www.cvedetails.com/cve/CVE-2024-6583/",
+    "https://advisories.gitlab.com/pkg/pypi/quivr-core/CVE-2024-9229",
+    "https://supabase.com/docs/guides/auth/jwts",
+    "https://docs.quivr.app/install",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

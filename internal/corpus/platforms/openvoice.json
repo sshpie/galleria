@@ -1,0 +1,95 @@
+{
+  "name": "OpenVoice",
+  "slug": "openvoice",
+  "category": "voice-tts-conversational",
+  "description": "OpenVoice (myshell-ai/OpenVoice) — instant voice-cloning framework that replicates a reference speaker's timbre from a single short clip and generates multilingual speech with control over emotion, accent, rhythm and intonation, including zero-shot cross-lingual cloning (V2). Shipped primarily as a Gradio demo (openvoice_app.py, `python -m openvoice_app --share`) on Gradio's default port 7860, and frequently wrapped in third-party FastAPI/Gradio API servers. Gradio provides no authentication unless auth= is set, which the demo does not.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The reference openvoice_app.py launches a Gradio Blocks demo with no auth= argument; the documented run command uses --share, which additionally publishes a public *.gradio.live tunnel. Bound to 0.0.0.0 (common in Docker and Colab), port 7860 is fully unauthenticated — any visitor uploads reference audio and synthesizes cloned speech. Popular third-party wrappers (R3gm/openvoice_package, self-hosted OpenVoice API servers) expose REST endpoints with no key by default. No login, no token, no session in the upstream demo.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio\"",
+      "rationale": "Gradio default port; broad Gradio marker shared with many ML demos. Pair with strict tier — 7860/gradio alone is not OpenVoice-specific"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"gradio\" http.html:\"OpenVoice\"",
+      "rationale": "Project name rendered in the Gradio markdown header; disambiguates OpenVoice from RVC/Applio Gradio apps"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"gradio\" http.html:\"OpenVoice\" http.html:\"Reference Speaker\"",
+      "rationale": "OpenVoice demo label 'Reference Speaker' plus project name in the Gradio SPA body; near-unique to openvoice_app.py"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"gradio\" http.html:\"tone color\" http.html:\"accent\"",
+      "rationale": "OpenVoice's 'tone color converter' / accent-and-emotion control labels are specific to its style-control UI; distinguishes it from timbre-only converters"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"OpenVoice\" http.html:\"V2\" http.html:\"gradio\"",
+      "rationale": "V2 marker (MeloTTS base, cross-lingual) for version-targeted enumeration; swap to V1 token as needed"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/config",
+    "title_contains": "OpenVoice",
+    "response_body_contains": [
+      "gradio",
+      "OpenVoice",
+      "Reference Speaker",
+      "tone color",
+      "accent",
+      "emotion"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "GET /info",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "GET /file=",
+    "POST /component_server",
+    "POST /base_tts",
+    "POST /change_voice"
+  ],
+  "known_vulns": [
+    "Gradio demo launched without auth= — unauthenticated voice cloning and reference-audio upload on port 7860",
+    "Documented --share launch publishes a public *.gradio.live tunnel bypassing host/cloud firewalls",
+    "Gradio CVE-2023-51449 — /file path traversal (Gradio <4.11.0) reads arbitrary host files and /proc/self/environ",
+    "Gradio CVE-2024-1561 — arbitrary local file read via /component_server (Gradio 4.3-4.12)",
+    "Gradio SSRF CVE-2024-4325 / CVE-2024-47167 — /queue/join save_url_to_cache fetches attacker URLs (internal-network / cloud-metadata pivot)",
+    "Gradio /config discloses full component tree and app metadata with no auth",
+    "Third-party FastAPI wrappers (openvoice_package and forks) expose /base_tts and /change_voice with no auth key by default",
+    "No rate limiting — GPU compute exhaustion via automated cloning requests at operator cost",
+    "Reference-speaker audio and extracted tone-color .pth embeddings are readable through the Gradio file components"
+  ],
+  "default_creds": [],
+  "risk_notes": "OpenVoice performs instant cloning from a single reference clip, so an open 7860 demo is a one-upload impersonation tool with fine-grained style control (emotion/accent/rhythm) that makes the fakes more convincing. (1) Non-consensual voice cloning / biometric-identity theft — any visitor clones a target voice from one sample and cross-lingual output (V2) lets an English-only sample speak other languages, widening fraud reach. (2) Fraud / vishing / disinformation — emotion and accent control produce persuasive scam and deepfake audio; the tone-color converter re-voices existing recordings. (3) Reference-audio & embedding exposure — uploaded reference speakers and extracted tone-color embeddings are the biometric material; they are reachable through the Gradio file components and the Gradio file-read CVEs (CVE-2023-51449 / CVE-2024-1561), which also leak /proc/self/environ (HF/MyShell tokens, cloud keys). (4) Compute theft — unauth GPU synthesis is automatable against /api/predict and /queue/join. (5) SSRF pivot via Gradio /queue/join into internal services and metadata endpoints. (6) --share tunnels put the demo on the public internet under a throwaway gradio.live host, invisible to perimeter scanning. Shares the Gradio fingerprint with RVC and Applio — disambiguate on OpenVoice-specific labels (Reference Speaker, tone color, accent/emotion).",
+  "deployment_notes": "Python/conda or Docker on CUDA GPU hosts; Colab notebooks and the documented `python -m openvoice_app --share` launch are the dominant paths, so many exposed instances are demo/hobbyist and use public gradio.live tunnels not visible to port scanners. HuggingFace Spaces host the official and many forked OpenVoice demos, publicly indexed with no auth. V1 uses a base-speaker TTS + tone-color converter; V2 (Apr 2024) swaps in MeloTTS for the base and adds native cross-lingual cloning. Third-party API servers (R3gm/openvoice_package, self-rolled FastAPI wrappers) expose REST cloning endpoints on assorted ports (7860/8000/5000) with no auth. Because the framework is import-and-wrap, exposed instances vary in port and endpoint shape — confirm via /config component labels rather than port alone.",
+  "docker_images": [
+    "ghcr.io/myshell-ai/openvoice",
+    "myshell/openvoice"
+  ],
+  "github_repos": [
+    "myshell-ai/OpenVoice",
+    "R3gm/openvoice_package",
+    "myshell-ai/MeloTTS"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

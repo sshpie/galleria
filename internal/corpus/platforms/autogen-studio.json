@@ -1,0 +1,213 @@
+{
+  "platform": "autogen-studio",
+  "display_name": "AutoGen Studio",
+  "category": "agent_framework",
+  "default_ports": [8081, 8080, 8084, 80, 443],
+  "api_paths": [
+    "/api/version",
+    "/api/health",
+    "/api/sessions/",
+    "/api/sessions/{session_id}",
+    "/api/runs/",
+    "/api/runs/{run_id}",
+    "/api/teams/",
+    "/api/teams/{team_id}",
+    "/api/settings/",
+    "/api/gallery/",
+    "/api/validate/",
+    "/api/mcp/",
+    "/api/ws/runs/{run_id}",
+    "/api/auth/type",
+    "/api/auth/login-url",
+    "/api/auth/callback",
+    "/api/auth/callback-handler",
+    "/files/",
+    "/api/docs"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "AUTOGENSTUDIO_AUTH_TYPE",
+    "AUTOGENSTUDIO_AUTH_CONFIG",
+    "AUTOGENSTUDIO_JWT_SECRET",
+    "AUTOGENSTUDIO_TOKEN_EXPIRY",
+    "AUTOGENSTUDIO_GITHUB_CLIENT_ID",
+    "AUTOGENSTUDIO_GITHUB_CLIENT_SECRET",
+    "AUTOGENSTUDIO_GITHUB_CALLBACK_URL",
+    "AUTOGENSTUDIO_HOST",
+    "AUTOGENSTUDIO_PORT",
+    "AUTOGENSTUDIO_DATABASE_URI",
+    "AUTOGENSTUDIO_APPDIR",
+    "AUTOGENSTUDIO_API_DOCS"
+  ],
+  "default_creds": [],
+  "install_tell": "FastAPI/uvicorn app binding :8081 by default (CLI: autogenstudio ui); startup log 'Navigate to http://127.0.0.1:8081'; /api/version returns JSON {\"status\":true,\"message\":\"Version retrieved successfully\",\"data\":{\"version\":\"0.4.x\"}}; /api/health returns {\"status\":true,\"message\":\"Service is healthy\"}; static files served from / (React SPA); SQLite default at ./autogen04203.db",
+  "misconfig_patterns": [
+    "AUTOGENSTUDIO_AUTH_TYPE=none (default, hardcoded in AuthConfig model) -- no authentication required; all requests authenticated as guestuser@gmail.com",
+    "Default bind host 127.0.0.1 -- but container/cloud deploys commonly override to 0.0.0.0 making it internet-accessible",
+    "No JWT secret required when auth_type=none -- jwt_secret=None means any token accepted if jwt_secret missing",
+    "AUTH_CONFIG not set -- falls back to NoAuthProvider() on any provider init failure",
+    "SQLite default database (autogen04203.db) in CWD -- all agent/team/session data in a flat file",
+    "API_DOCS=True by default in CLI -- /api/docs (Swagger) exposed with no auth gate",
+    "AUTOGENSTUDIO_DEFAULT_USER_ID='guestuser@gmail.com' -- all data namespaced under this shared identity in no-auth mode",
+    "WebSocket endpoint /api/ws/runs/{run_id} passes through AuthMiddleware without token check when auth_type=none",
+    "MCP route /api/mcp/ exposed -- arbitrary MCP server connections can be initiated if auth disabled"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"AutoGen Studio\"",
+      "http.html:\"autogen\"",
+      "\"version retrieved successfully\" in http.html (hardcoded string from /api/version response cached by Shodan)",
+      "\"service is healthy\" in http.html",
+      "Server: uvicorn",
+      "X-Powered-By: AutoGen (unverified -- check via live sampling)"
+    ],
+    "active_probe": {
+      "path": "/api/version",
+      "method": "GET",
+      "expected_status": 200,
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "body_contains", "value": "version retrieved successfully"},
+        {"type": "json_field", "field": "data.version"}
+      ],
+      "secondary_probe": {
+        "path": "/api/health",
+        "conditions": [
+          {"type": "status_code", "value": "200"},
+          {"type": "body_contains", "value": "service is healthy"},
+          {"type": "json_field", "field": "status"}
+        ]
+      },
+      "auth_bypass_tell": "200-with-data on /api/sessions/?user_id=guestuser@gmail.com with no Authorization header = auth_type=none confirmed",
+      "notes": "Both /api/version and /api/health are in exclude_paths in AuthConfig -- they return 200 even when auth is enabled. Use /api/sessions/ or /api/teams/ with user_id param to confirm auth state. auth_type=none sets request.state.user = User(id='guestuser@gmail.com') for all requests."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"version retrieved successfully\"",
+    "strict": "http.html:\"version retrieved successfully\" http.html:\"service is healthy\"",
+    "version": "\"data\":{\"version\":\""
+  },
+  "deployment_tells": [
+    "CLI launch: autogenstudio ui --host 0.0.0.0 --port 8081 (default localhost-dark; must override host for internet exposure)",
+    "Serve mode: autogenstudio serve --port 8084 (single-team endpoint, no UI)",
+    "Lite mode: autogenstudio lite --port 8080 (quick experimentation, auto-browser-open)",
+    "uvicorn ASGI server; single worker default",
+    "SQLite database: ./autogen04203.db (or ~/.autogenstudio/ dir)",
+    "Config dir: ~/.autogenstudio/temp_env_vars.env (CLI writes env vars here for uvicorn workers)",
+    "React SPA served from / (static build); /api mounted as sub-application",
+    "WebSocket endpoint /api/ws/runs/{run_id} for live agent execution streaming",
+    "MCP integration via /api/mcp/ WebSocket bridge for tool server connections"
+  ],
+  "pivot_paths": [
+    "/api/sessions/?user_id=guestuser@gmail.com -- all sessions (auth check: 200=unauth, 401=auth required)",
+    "/api/teams/?user_id=guestuser@gmail.com -- team/agent configurations with full component specs",
+    "/api/runs/?user_id=guestuser@gmail.com -- all agent run history including task and team_result fields",
+    "/api/settings/?user_id=guestuser@gmail.com -- user settings including LLM model config",
+    "/api/gallery/ -- built-in gallery components including team templates",
+    "/api/mcp/ -- MCP server connection bridge (stdio/SSE/HTTP); may expose internal tool server params",
+    "/api/docs -- Swagger UI (exposed when API_DOCS=True, default); reveals all route schemas",
+    "/files/ -- static file directory (StaticFiles mount); may expose workspace artifacts"
+  ],
+  "vulnerabilities": [
+    {
+      "id": "AUTOGENSTUDIO-AUTH-NONE-DEFAULT",
+      "title": "auth_type=none default -- all routes accessible as guestuser@gmail.com",
+      "severity": "critical",
+      "details": "AuthConfig model default: type='none'. AuthMiddleware: 'if self.auth_manager.config.type == \"none\": request.state.user = await self.auth_manager.authenticate_request(request)'. authenticate_request() with type=none returns User(id='guestuser@gmail.com', name='Default User', provider='none'). No token required. All agent/team/session/run data is accessible. NoAuthProvider() also used as fallback on any provider init failure.",
+      "source_path": "autogenstudio/web/auth/manager.py, autogenstudio/web/auth/models.py, autogenstudio/web/auth/middleware.py"
+    },
+    {
+      "id": "AUTOGENSTUDIO-NO-JWT-SECRET-ACCEPTS-ALL",
+      "title": "Missing JWT secret accepts all tokens in auth-enabled modes",
+      "severity": "high",
+      "details": "AuthManager.is_valid_token(): 'if not self.config.jwt_secret: return True'. create_token() with no jwt_secret: 'return \"dummy_token_\" + user.id'. If AUTOGENSTUDIO_JWT_SECRET is not set and auth is nominally enabled, any string is a valid token.",
+      "source_path": "autogenstudio/web/auth/manager.py"
+    },
+    {
+      "id": "AUTOGENSTUDIO-SHARED-GUESTUSER-IDENTITY",
+      "title": "Single shared identity guestuser@gmail.com in no-auth mode",
+      "severity": "high",
+      "details": "All data created in no-auth mode is namespaced under user_id='guestuser@gmail.com'. Any unauthenticated accessor reaches all sessions, teams, runs, and settings created by any user. No per-user isolation.",
+      "source_path": "autogenstudio/web/config.py (DEFAULT_USER_ID), autogenstudio/web/auth/manager.py"
+    },
+    {
+      "id": "AUTOGENSTUDIO-MCP-UNAUTH-BRIDGE",
+      "title": "Unauthenticated MCP WebSocket bridge allows arbitrary tool server connections",
+      "severity": "high",
+      "details": "When auth_type=none, /api/mcp/ routes (WebSocket bridge for stdio/SSE/HTTP MCP servers) are accessible without credentials. An attacker can initiate connections to arbitrary MCP servers from the host running AutoGen Studio, potentially pivoting to internal services.",
+      "source_path": "autogenstudio/web/routes/mcp.py"
+    },
+    {
+      "id": "AUTOGENSTUDIO-SQLITE-DEFAULT",
+      "title": "SQLite database in CWD with predictable name",
+      "severity": "medium",
+      "details": "Default DATABASE_URI='sqlite:///./autogen04203.db'. Database filename is hardcoded in config. May be directly accessible via /files/ static mount if CWD and static root overlap in misconfigured deploys.",
+      "source_path": "autogenstudio/web/config.py"
+    }
+  ],
+  "auth_evidence": "autogenstudio/web/auth/models.py AuthConfig: 'type: Literal[\"none\", \"github\", \"msal\", \"firebase\"] = \"none\"'. autogenstudio/web/auth/manager.py authenticate_request(): 'if self.config.type == \"none\": return User(id=\"guestuser@gmail.com\", name=\"Default User\", provider=\"none\")'. AuthMiddleware: auth_type=none path skips all token extraction and validation. AUTOGENSTUDIO_AUTH_TYPE env var must be explicitly set to enable auth.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Agent team definitions and component configurations (agent roles, model assignments, tool configs)",
+    "All session and run history including full agent message transcripts",
+    "LLM model API keys stored in settings (AUTOGENSTUDIO_* env or settings route)",
+    "MCP server connection parameters (may include internal service URLs and credentials)",
+    "Tool execution outputs and inter-agent message payloads",
+    "SQLite database (autogen04203.db) -- complete data store for all above"
+  ],
+  "sources": [
+    {
+      "url": "https://github.com/microsoft/autogen",
+      "type": "primary",
+      "status": "CONFIRMED"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/models.py",
+      "type": "auth_source",
+      "status": "CONFIRMED",
+      "notes": "AuthConfig default type='none'; providers github/msal/firebase; jwt_secret=None default"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/manager.py",
+      "type": "auth_source",
+      "status": "CONFIRMED",
+      "notes": "authenticate_request() returns guestuser@gmail.com when type=none; is_valid_token() returns True when jwt_secret unset; NoAuthProvider fallback on init failure"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/middleware.py",
+      "type": "auth_source",
+      "status": "CONFIRMED",
+      "notes": "AuthMiddleware skips token extraction when auth_type=none; WebSocket pass-through"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/app.py",
+      "type": "source",
+      "status": "CONFIRMED",
+      "notes": "FastAPI app setup; CORS origins localhost:8000/8001/8081; API prefix /api; startup log with host:port; /api/version and /api/health endpoints"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/cli.py",
+      "type": "source",
+      "status": "CONFIRMED",
+      "notes": "ui command default host=127.0.0.1 port=8081; serve command default port=8084; lite command default port=8080; AUTOGENSTUDIO_* env var writing pattern"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/config.py",
+      "type": "source",
+      "status": "CONFIRMED",
+      "notes": "DATABASE_URI=sqlite:///./autogen04203.db; DEFAULT_USER_ID=guestuser@gmail.com; env_prefix=AUTOGENSTUDIO_"
+    },
+    {
+      "url": "https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/version.py",
+      "type": "source",
+      "status": "CONFIRMED",
+      "notes": "VERSION=0.4.3"
+    },
+    {
+      "url": " cat-agent-platforms survey 2026-06-19",
+      "type": "survey",
+      "status": "CONFIRMED",
+      "notes": "Live unauth confirmed: 47.109.195.240:8081 AutoGen Studio 0.4.2.2; /api auth-off (422-missing-param not 401 = no token gate); aimap fingerprint present as of v1.9.17+"
+    }
+  ]
+}

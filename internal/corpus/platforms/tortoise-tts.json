@@ -1,0 +1,90 @@
+{
+  "name": "Tortoise-TTS",
+  "slug": "tortoise-tts",
+  "category": "voice-tts-conversational",
+  "description": "Expressive multi-voice TTS with strong voice-cloning quality (neonbjb/tortoise-tts, ~15k stars, active). The base repo is CLI-first (do_tts.py, read.py) but ships a socket streaming server (socket_server.py) and is overwhelmingly self-hosted through community web UIs — most prominently mrq/ai-voice-cloning, a Gradio training+inference webui (default :7860) that adds dataset prep, fine-tuning, and cloning from reference clips. Cloning is driven by dropping reference wavs into a voices/ directory; the exposed webui exposes upload, model selection, and generation with no auth.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the tortoise socket_server.py or in the dominant mrq/ai-voice-cloning Gradio webui by default — Gradio launch() runs without auth=, leaving generation, reference-audio upload, voice/model selection, and (in ai-voice-cloning) fine-tuning/training controls open on port 7860. socket_server.py performs no handshake auth on its TCP stream. Operators are expected to bind localhost or reverse-proxy; one-click packages and the ai-voice-cloning bundle frequently expose 0.0.0.0:7860. Gradio share=True (gradio.live) tunnels are a common accidental public-exposure path.",
+  "default_ports": [
+    7860,
+    5000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio_config\"",
+      "rationale": "Gradio's inline window.gradio_config JSON blob is the http.html-visible signal for the ai-voice-cloning webui; broad Gradio-on-7860 net to narrow by tortoise labels."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"tortoise\"",
+      "rationale": "tortoise / ai-voice-cloning app title and voice-preset labels rendered into gradio_config on the index page; direct name match for the dominant webui."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"Voice\" http.html:\"candidates\"",
+      "rationale": "'candidates' (number of tortoise generation candidates) plus the Voice selector are tortoise-specific inference controls surfaced in gradio_config; separates it from generic Gradio TTS demos."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"ai-voice-cloning\"",
+      "rationale": "mrq/ai-voice-cloning brands its Gradio tab and headers; near-unique to the dominant tortoise self-host stack."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"tortoise\" http.html:\"autoregressive\"",
+      "rationale": "'autoregressive samples' / diffusion-iteration sliders indicate the full tortoise inference build; use to segment complete deployments for targeted enumeration."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "ai-voice-cloning",
+    "response_body_contains": [
+      "gradio_config",
+      "tortoise",
+      "candidates",
+      "autoregressive",
+      "Voice"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "POST /upload",
+    "GET /info",
+    "GET /gradio_api/info"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated access to TTS generation, reference-audio upload, voice/model selection, and (ai-voice-cloning) dataset prep + fine-tuning on port 7860",
+    "socket_server.py exposes an unauthenticated TCP streaming interface with no origin control",
+    "Gradio file-component path-traversal / arbitrary-file-read CVEs (CVE-2024-1561 and related) apply to exposed webui instances on vulnerable Gradio versions",
+    "Voice cloning from a handful of reference clips — open webui = turnkey impersonation of any modeled speaker",
+    "ai-voice-cloning training tab allows unauthenticated dataset upload and model fine-tuning — attacker-controlled training jobs consume GPU and can poison/replace models",
+    "Unrestricted audio upload with no size/MIME validation — GPU/VRAM and disk DoS",
+    "share=True gradio.live tunnels publish the UI publicly with no auth"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Non-consensual voice cloning — tortoise's high output quality makes an exposed webui a turnkey deepfake generator; a few reference clips of a target yield convincing impersonation for fraud, disinformation, and harassment. (2) GPU compute + training theft — the ai-voice-cloning fine-tuning tab lets an unauthenticated visitor launch expensive training jobs on the operator's GPU, both compute theft and a model-poisoning vector. (3) Cloned-voice / dataset exfiltration — the voices/ and training/ directories accumulate reference audio and finetunes; disclosure leaks reusable voice identities and datasets. (4) Gradio-version file read — chaining a Gradio path-traversal CVE yields arbitrary file read of weights and adjacent secrets. (5) share-tunnel exposure bypasses network controls.",
+  "deployment_notes": "CUDA GPU host. The base neonbjb/tortoise-tts repo is CLI-first (do_tts.py, read.py) plus socket_server.py (a raw TCP stream, not HTTP — invisible to http.* dorks; find via banner/port heuristics only). The DOMINANT internet-exposed surface is the community Gradio webui, above all mrq/ai-voice-cloning (also 152334H/tortoise-tts-fast which ships a Streamlit app). Fingerprint on that Gradio :7860 surface. SHODAN VISIBILITY CAVEAT: Gradio SPA — rendered UI is JS-only and http.html-blind; pivot on the inline window.gradio_config JSON blob (indexed by Shodan/Censys) plus tortoise control labels ('candidates', 'autoregressive samples'). Censys services.http.response.html_title 'Gradio' + body substring on gradio_config + 'tortoise' is the reliable cross-source method. Base repo active; the live exposed population is overwhelmingly the ai-voice-cloning webui fork.",
+  "docker_images": [
+    "ghcr.io/152334h/tortoise-tts-fast"
+  ],
+  "github_repos": [
+    "neonbjb/tortoise-tts",
+    "mrq/ai-voice-cloning",
+    "152334H/tortoise-tts-fast"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

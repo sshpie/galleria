@@ -1,0 +1,79 @@
+{
+  "name": "Mimic 3",
+  "slug": "mimic3",
+  "category": "voice-tts-conversational",
+  "description": "Mycroft AI's VITS-based neural TTS server (MycroftAI/mimic3) with a web UI, REST API, and MaryTTS-compatible endpoints on port 59125. Quart/Hypercorn, no authentication. Project is abandoned (Mycroft AI shut down). Server-rendered index makes it cleanly Shodan http.html-visible.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication. mimic3-server (the mimic3_http module) is a Quart app behind Hypercorn; all routes (api/tts, api/voices, /openapi, MaryTTS-compat /process, /voices, /version) are public. Default launch is '--host localhost --port 59125', but the official Docker image binds 0.0.0.0:59125. No API key, token, or basic auth. Designed as a local appliance for the Mycroft Mark II, with no access controls; the project is abandoned so no auth will ever be added.",
+  "default_ports": [
+    59125
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:59125 http.html:\"Mimic 3 text to speech server\"",
+      "rationale": "The server-rendered Bootstrap index contains 'Mimic 3 text to speech server' verbatim in the body; direct high-signal match on the canonical MaryTTS-compatible port."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"Mimic 3\" http.html:\"Mycroft\"",
+      "rationale": "The index credits Mycroft and the Mark II ('Mycroft's newest text to speech system developed for the Mark II'); the Mimic 3 + Mycroft co-occurrence in the body is nearly unique across any port."
+    },
+    {
+      "tier": "strict",
+      "query": "port:59125 http.html:\"Mimic 3\" http.html:\"api/tts\"",
+      "rationale": "Conjunctive: the Mimic 3 heading plus the api/tts endpoint referenced in the UI on port 59125 isolates it from other Quart/Hypercorn TTS servers and from a raw MaryTTS server on the same port."
+    },
+    {
+      "tier": "version",
+      "query": "port:59125 http.html:\"Mimic 3\" http.html:\"lengthScale\"",
+      "rationale": "The VITS parameter lengthScale (with noiseScale/noiseW) is exposed in the Mimic 3 UI form; its presence pins the VITS-based Mimic 3 specifically for build/version scoping via /version."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 59125,
+    "http_path": "/",
+    "title_contains": "Mimic 3",
+    "response_body_contains": [
+      "Mimic 3 text to speech server",
+      "Mycroft",
+      "Mark II",
+      "does not store the text you send",
+      "lengthScale"
+    ],
+    "http_header": "server: hypercorn-h11"
+  },
+  "api_paths": [
+    "/api/tts",
+    "/api/voices",
+    "/openapi/",
+    "/process",
+    "/voices",
+    "/version",
+    "/"
+  ],
+  "known_vulns": [
+    "No authentication - unauthenticated synthesis via api/tts and voice enumeration via api/voices",
+    "Abandoned (Mycroft AI shut down) - README warns it 'is no longer maintained and may not work'; no patches ever",
+    "VITS noise/length-scale parameters (noiseScale, noiseW, lengthScale) exposed for unauthenticated compute abuse and DoS",
+    "SSML processor is an unaudited input surface; ssml=true toggles a broader parser path",
+    "/openapi/ Swagger UI publicly documents the whole API unauthenticated",
+    "MaryTTS-compatible /process endpoint makes it a drop-in Home Assistant TTS backend that may be left internet-exposed"
+  ],
+  "default_creds": [],
+  "risk_notes": "Vectors on an exposed instance: (1) Unauthenticated synthesis / GPU-or-CPU compute theft via api/tts; the VITS controls (noiseScale, noiseW, lengthScale) let an attacker drive heavy inference at operator cost with no rate limit; (2) Voice enumeration via api/voices; (3) SSML parser surface via the ssml=true path; (4) Abandonment - Mycroft AI is defunct and the README explicitly warns the project is unmaintained, so any finding is permanent with no upstream fix. Mimic 3 is cleanly Shodan http.html-visible: the server-rendered Bootstrap index carries 'Mimic 3', 'Mimic 3 text to speech server', the Mycroft/Mark II credit, the 'does not store the text you send' privacy line, and author credit 'Michael Hansen' in the body, so a title or body dork harvests it directly. Server header is 'hypercorn-h11', identical to OpenTTS - disambiguate by port (59125 vs 5500) and the Mimic 3 body strings. The MaryTTS-compatible /process route means exposed Home Assistant setups are a common source of wild instances.",
+  "deployment_notes": "Quart app behind Hypercorn (logs show 'INFO:hypercorn.error' and 'Running on http://0.0.0.0:59125'). Default CLI bind is localhost:59125, but the official Docker image mycroftai/mimic3 (with a Dockerfile.gpu variant for CUDA) binds 0.0.0.0:59125 via 'docker run -p 59125:59125 mycroftai/mimic3'. Port 59125 is the MaryTTS-compatible port, chosen so Mimic 3 drops into MaryTTS-expecting clients (notably Home Assistant). Server header is 'hypercorn-h11'. Because the index is server-rendered the Mimic 3 identity is in http.html; /version gives the build and /openapi/ documents the API. ~1.3k stars, AGPLv3; not formally git-archived but dead following Mycroft AI's shutdown. Shares the Quart/Hypercorn stack with OpenTTS - distinguish on port and the Mimic 3 body strings.",
+  "docker_images": [
+    "mycroftai/mimic3"
+  ],
+  "github_repos": [
+    "MycroftAI/mimic3"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

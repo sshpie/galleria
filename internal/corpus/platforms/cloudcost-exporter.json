@@ -1,0 +1,46 @@
+{
+  "platform": "cloudcost-exporter",
+  "display_name": "Grafana cloudcost-exporter",
+  "category": "cost-allocation",
+  "default_ports": [8080],
+  "api_paths": [
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 grafana/cloudcost-exporter; helm/container/Go binary",
+  "misconfig_patterns": [
+    "Prometheus exporter — auth OFF on /metrics by design (Prometheus security model delegates auth to reverse proxy)",
+    "Port 8080 generic — must match metric body prefix cloudcost_*",
+    "Cloud creds via provider credential chain, not exposed on /metrics"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8080 http.html:\"cloudcost_\""
+    ],
+    "active_probe": {
+      "path": "/metrics",
+      "method": "GET",
+      "response_markers": ["cloudcost_"],
+      "false_positive_check": "Prometheus text exposition with cloudcost_aws_* / cloudcost_gcp_* / cloudcost_azure_* metric prefix"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"cloudcost_\"",
+    "strict": "port:8080 http.html:\"cloudcost_aws\"",
+    "version": "http.html:\"cloudcost_\""
+  },
+  "deployment_tells": [
+    "metric prefix cloudcost_* (rates not spend)",
+    "Go/promhttp server header",
+    "port 8080 (generic collision cluster)"
+  ],
+  "pivot_paths": [
+    "GET /metrics -> cloud pricing rates per region/instance-type -> which providers/regions operator runs in"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

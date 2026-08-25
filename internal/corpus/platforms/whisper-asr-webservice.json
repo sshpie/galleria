@@ -1,0 +1,85 @@
+{
+  "name": "Whisper ASR Webservice",
+  "slug": "whisper-asr-webservice",
+  "category": "voice-tts-conversational",
+  "description": "ahmetoner/openai-whisper-asr-webservice — a FastAPI/uvicorn HTTP wrapper around OpenAI Whisper (and Faster-Whisper/WhisperX backends) exposing speech-to-text over a REST API with an auto-generated Swagger UI. Root path 307-redirects to /docs. The two signature endpoints are POST /asr (transcribe/translate) and POST /detect-language. No built-in authentication in the upstream image.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication of any kind in the upstream ahmetoner image. The FastAPI app is constructed with no dependency-based auth; /asr and /detect-language accept arbitrary multipart audio uploads from any client. Operators are expected to front the container with a reverse proxy (nginx/caddy/traefik basic-auth or an API-gateway) but the image ships none and most public deployments expose port 9000 raw. There is no auth-enabling env var in the app itself; the only gate is whatever the operator bolts on externally. HuggingFace token is only relevant if a diarization-capable backend (whisperx) is swapped in.",
+  "default_ports": [
+    9000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:9000 http.html:\"Whisper Asr Webservice\"",
+      "rationale": "FastAPI app title is projectMetadata['Name'].title().replace('-',' ') = 'Whisper Asr Webservice', rendered verbatim in the Swagger UI <title> and openapi.json info block. Direct vendor-unique name match. Caveat: root / issues a 307 redirect to /docs, so this string appears only when Shodan followed the redirect / crawled /docs — records that only captured the bare 307 will miss it (coverage gap, not a false positive)."
+    },
+    {
+      "tier": "basic",
+      "query": "port:9000 http.title:\"Whisper Asr Webservice - Swagger UI\"",
+      "rationale": "Exact Swagger UI page title when Shodan reaches /docs. Extremely low FP; the ' - Swagger UI' suffix is FastAPI's default and the prefix is the app name."
+    },
+    {
+      "tier": "strict",
+      "query": "port:9000 http.html:\"/asr\" http.html:\"/detect-language\"",
+      "rationale": "Co-occurrence of the two signature route paths in the rendered openapi.json / Swagger schema body. /detect-language is nearly unique to this project; combined with /asr on 9000 it eliminates generic OpenAI-compat and other whisper wrappers. Highest-precision body dork."
+    },
+    {
+      "tier": "strict",
+      "query": "port:9000 http.html:\"detect-language\" http.html:\"swagger\"",
+      "rationale": "detect-language endpoint name plus swagger asset reference; catches deployments where the openapi schema is inlined but the app-title string was minified/altered by a fork."
+    },
+    {
+      "tier": "version",
+      "query": "port:9000 http.html:\"Whisper Asr Webservice\" http.html:\"version\"",
+      "rationale": "The app passes version=projectMetadata['Version'] into the FastAPI info block, so the running package version (e.g. 1.9.x) is disclosed in openapi.json / Swagger info. Use for CVE/version-targeted scoping of the fleet."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 9000,
+    "http_path": "/docs",
+    "title_contains": "Whisper Asr Webservice",
+    "response_body_contains": [
+      "Whisper Asr Webservice",
+      "/asr",
+      "/detect-language",
+      "Swagger UI",
+      "openapi"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET / (307 redirect to /docs)",
+    "GET /docs",
+    "GET /openapi.json",
+    "POST /asr",
+    "POST /detect-language",
+    "GET /assets/swagger-ui.css",
+    "GET /assets/swagger-ui-bundle.js"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated POST /asr accepts arbitrary audio and returns transcripts to any caller (compute theft + audio PII disclosure)",
+    "Unrestricted file upload: no MIME-type validation or file-size cap by default — multi-GB uploads exhaust CPU/GPU and host disk (DoS)",
+    "ffmpeg invocation on uploaded media — historical decode/parsing memory-safety surface (feed malicious container/codec streams) reachable pre-transcription",
+    "FastAPI /docs, /openapi.json enabled by default — full schema + parameter disclosure aids automated enumeration and version fingerprinting",
+    "No rate limiting — GPU/CPU compute-exhaustion attack is trivially automated at operator cost",
+    "Backend/model version and library stack (openai-whisper / faster-whisper / whisperx) disclosed via openapi info block, narrowing exploit selection"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — an open /asr on a GPU host is free transcription at operator cost ($0.006-0.024/GPU-min on rental fabric), automatable with any HTTP client and impossible to attribute back. (2) Audio PII exfiltration — medical dictation, legal/financial calls, and meeting audio transcribed with no auth, no consent gate, and no audit logging in the default config; the returned transcript is the PII. (3) Language/metadata harvesting via /detect-language reveals operator use-cases. (4) DoS / cost-bombing via unbounded uploads and no rate limit. (5) Model/stack version disclosure via openapi.json feeds targeted CVE selection against the underlying whisper/ffmpeg stack. Because root redirects to /docs, these hosts are visually obvious in a browser and trivially triaged at scale.",
+  "deployment_notes": "Overwhelmingly Docker: onerahmet/openai-whisper-asr-webservice, tag :latest (CPU) or :latest-gpu (CUDA). Port 9000/tcp is the hard default in the image and rarely changed. Runs uvicorn (Server: uvicorn header). Common on Vast.ai / RunPod / Lambda GPU rentals and on self-hosted homelab boxes; frequently exposed raw with no proxy. Distinct from whisperx (slug: whisperx, port 8000/8080) and from faster-whisper-server (port 8000, OpenAI /v1/* compat) — this project is the /asr + /detect-language shaped API, not the OpenAI-compatible /v1/audio/transcriptions shape, though newer releases can proxy multiple backends. The backend engine (openai-whisper vs faster-whisper vs whisperx) is selectable via ASR_ENGINE env var and disclosed in the openapi info.",
+  "docker_images": [
+    "onerahmet/openai-whisper-asr-webservice:latest",
+    "onerahmet/openai-whisper-asr-webservice:latest-gpu"
+  ],
+  "github_repos": [
+    "ahmetoner/whisper-asr-webservice"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

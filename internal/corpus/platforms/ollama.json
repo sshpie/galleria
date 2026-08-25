@@ -1,0 +1,49 @@
+{
+  "platform": "ollama",
+  "display_name": "Ollama",
+  "category": "inference_serving",
+  "default_ports": [11434],
+  "api_paths": ["/api/generate", "/api/chat", "/api/tags", "/api/show", "/api/version"],
+  "auth_default": "none",
+  "auth_config_env": ["OLLAMA_HOST"],
+  "default_creds": [],
+  "install_tell": "docker run -p 11434:11434 ollama/ollama",
+  "misconfig_patterns": [
+    "OLLAMA_HOST=0.0.0.0 exposes to all interfaces",
+    "No authentication on model API",
+    "System prompts exposed via /api/show"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:Ollama",
+      "http.title:\"Ollama\"",
+      "port:11434"
+    ],
+    "active_probe": {
+      "path": "/api/version",
+      "method": "GET",
+      "response_markers": ["\"version\""],
+      "false_positive_check": "response must be JSON object with version field"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"ollama\" port:11434",
+    "strict": "product:Ollama port:11434",
+    "version": "product:Ollama port:11434 http.html:\"version\""
+  },
+  "deployment_tells": [
+    "/api/tags returns full model inventory with sizes",
+    "/api/version reveals exact release",
+    "OLLAMA_HOST=0.0.0.0 in process environment"
+  ],
+  "pivot_paths": [
+    "GET /api/tags → model inventory → infer org focus from model names",
+    "GET /api/show → system prompt leakage (reveals deployment context)",
+    "GET /api/version → exact version → CVE matching"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01",
+    "Hands-On LLM Serving and Optimization (9798341621480) ch08"
+  ]
+}

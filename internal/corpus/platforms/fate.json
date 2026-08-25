@@ -1,0 +1,86 @@
+{
+  "platform": "fate",
+  "display_name": "FATE (Federated AI Technology Enabler, WeBank / LF AI)",
+  "category": "federated_learning",
+  "default_ports": [
+    8080,
+    9380,
+    9370,
+    9883,
+    4670,
+    4671
+  ],
+  "api_paths": [
+    "/v1/version/get (POST, returns {data:{API,FATE},retcode:0,retmsg:success})",
+    "/v1/job/list/job (POST, returns {data:{count,jobs[]},retcode:0,retmsg:success}) -- VERIFIED unauth on FATE 1.11.2",
+    "/v1/job/query (POST, returns {data:[],retcode:0,retmsg:'no job could be found'})",
+    "/v1/server/versions/get (POST)",
+    "/v1/data/table/list_all_table (POST, 404 on 1.11.2)",
+    "/v1/component",
+    "/login"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "authentication.client.switch",
+    "authentication.site.switch",
+    "use_deserialize_safe_module"
+  ],
+  "default_creds": [
+    "FATEBoard: admin / admin (application.properties + KubeFATE cluster.yaml + FATE issue #2942)"
+  ],
+  "install_tell": "KubeFATE: helm install kubefate -f cluster.yaml",
+  "misconfig_patterns": [
+    "FATEBoard ships admin/admin by default (confirmed application.properties + FATE issue #2942)",
+    "FATEFlow auth OFF by default — authentication.client.switch=false, authentication.site.switch=false in service_conf.yaml. CONFIRMED operating in production deployment 150.129.138.81 (FATE 1.11.2, 25-job topology returned unauth via /v1/job/list/job on 2026-06-09).",
+    "HMAC-SHA1 site auth is opt-in (Certification doc 1.9.1), not on by default",
+    "RollSite / OSX trust = party_id claim in header. No cryptographic binding unless mTLS toggled on. Same model 1.x -> 2.x.",
+    "Eggroll clustermanager/nodemanager (4670/4671) — no auth, assumes private subnet (often violated)",
+    "/v1/table/info returns schema with PII column names (id_card, mobile, salary, credit_score, hospital encounter features)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"fateboard\"",
+      "http.html:\"server.board.login.username\""
+    ],
+    "active_probe": {
+      "path": "/v1/version/get",
+      "method": "GET",
+      "response_markers": [
+        "\"FATE\""
+      ],
+      "false_positive_check": "FATEFlow returns JSON {\"data\": {\"FATE\": \"x.x.x\"}} — anchor on data.FATE key existence not substring"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"fateboard\"",
+    "strict": "http.html:\"server.board.login.username\"",
+    "version": "http.title:\"fateboard\" \"FATE\""
+  },
+  "deployment_tells": [
+    "Heavy CN deployment expected — Tencent Cloud, Alibaba Cloud, WeBank-affiliated banks",
+    "EU/US thin; cross-org banking/finance/insurance dominant",
+    "OSX modal port unclear (9883 vs 9370 reuse) — resolve at first verified host",
+    "Eggroll cluster nodes 4670/4671 colocated; MySQL backend on adjacent port",
+    "KubeFATE manifests on public GitHub provide real-world configs (search github.com/FederatedAI/KubeFATE)"
+  ],
+  "pivot_paths": [
+    "GET /login + try admin/admin -> FATEBoard full access (default-cred class)",
+    "GET /v1/job/list -> full job topology with f_runtime_conf (party host:port pairs, table names) — read-only enumeration",
+    "GET /v1/table/info -> data schema with PII column names — finding without payload read",
+    "GET /v1/component -> component list; do NOT trigger any /v1/job/submit"
+  ],
+  "vulnerabilities": [
+    "Zero public CVEs for FederatedAI/FATE or FederatedAI/FATE-Flow in NVD or GitHub Advisory DB — for a 6+ year WeBank-backed framework shipping auth-off defaults this is itself a signal (under-examined / under-disclosed)",
+    "use_deserialize_safe_module flag in Flow config 1.7+ — internal awareness of unsafe pickle/PyYAML in pipeline runtime, no public CVE attached",
+    "CNVD coverage not exercised this round — direct cnvd.org.cn lookup pending"
+  ],
+  "sources": [
+    "https://fate.fedai.org/",
+    "https://github.com/FederatedAI/FATE",
+    "https://github.com/FederatedAI/FATE-Flow",
+    "https://github.com/FederatedAI/KubeFATE",
+    "FATE issue #2942 (FATEBoard default cred confirmation)",
+    "data/platform-intel/cat53-fate-osint-2026-06-09.md",
+    "[CONFIRMED -  2026-06-09 Cat-53 survey: 4 CN deployments full-stack exposed, 1 with inner-B/outer-1 FATEFlow API verification on FATE 1.11.2]"
+  ]
+}

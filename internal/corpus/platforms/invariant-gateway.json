@@ -1,0 +1,94 @@
+{
+  "platform": "invariant-gateway",
+  "display_name": "Invariant Gateway (Invariant Labs)",
+  "category": "gateway",
+  "default_ports": [8005, 8000],
+  "api_paths": [
+    "/api/v1/gateway/health",
+    "/api/v1/gateway/docs",
+    "/api/v1/gateway/openapi.json",
+    "/api/v1/gateway/redoc",
+    "/api/v1/gateway/{dataset}/openai",
+    "/api/v1/gateway/{dataset}/anthropic",
+    "/api/v1/gateway/{dataset}/gemini",
+    "/api/v1/gateway/mcp/sse",
+    "/api/v1/gateway/mcp"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "INVARIANT_API_KEY",
+    "GUARDRAILS_FILE_PATH",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "PORT",
+    "DEV_MODE"
+  ],
+  "default_creds": [],
+  "install_tell": "bash run.sh up [--guardrails-file=path] -> docker network invariant-explorer-web + gateway/docker-compose.local.yml; container invariant-gateway, uvicorn serve:app --host 0.0.0.0 --port 8000, host-mapped 8005:8000. Prints 'Gateway started at http://localhost:8005/api/v1/gateway/'.",
+  "misconfig_patterns": [
+    "Self-hosted gateway bound 0.0.0.0 on 8005 with no front-end auth. INVARIANT_API_KEY is required ONLY when GUARDRAILS_FILE_PATH is set (run.sh enforces the pairing) -- run without a guardrails file and the port has NO auth gate at all, a pure pass-through OpenAI/Anthropic/Gemini/MCP proxy still capturing every trace.",
+    "GUARDRAILS_FILE_PATH unset -> guardrails disabled; gateway forwards all traffic and logs prompts/responses/tool-calls with zero policy enforcement.",
+    "Operator provider creds (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY) injected as container env; readable via docker inspect if the Docker API/socket is exposed. The gateway strips invariant-authorization + host + x-forwarded-* before forwarding upstream (IGNORED_HEADERS), so provider keys ride the operator env, not the client request.",
+    "MCP proxy mode (/api/v1/gateway/mcp/sse, streamable) forwards tool-call payloads -- direct relevance to the same org's mcp-injection-experiments tool-poisoning research.",
+    "DEV_MODE=true (docker-compose.local.yml default) runs uvicorn --reload with source bind-mounts -- dev posture shipped as the quickstart default."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Hello from Invariant v1/gateway\"",
+      "\"/api/v1/gateway/\" port:8005",
+      "ssl.cert.subject.cn:\"explorer.invariantlabs.ai\"",
+      "http.title:\"Invariant Gateway - Swagger UI\" port:8005"
+    ],
+    "active_probe": {
+      "path": "/api/v1/gateway/health",
+      "method": "GET",
+      "response_markers": ["Hello from Invariant v1/gateway", "message"],
+      "false_positive_check": "Conjunctive marker-anchored: body must be JSON containing the exact literal {\"message\":\"Hello from Invariant v1/gateway\"} (source-fixed string in gateway/serve.py check_health, include_in_schema=False -- structural build witness, not a spoofable title). Corroborate with build-artifact anchor GET /api/v1/gateway/openapi.json containing route templates '/api/v1/gateway/{dataset}/openai' + '/api/v1/gateway/{dataset}/anthropic'. Reject SPA/reverse-proxy catch-all HTML. Secondary anchor: GET / returns 307 redirect Location: https://explorer.invariantlabs.ai/docs/gateway."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"/api/v1/gateway/\" port:8005",
+    "strict": "http.html:\"Hello from Invariant v1/gateway\"",
+    "version": "http.title:\"Invariant Gateway - Swagger UI\" http.html:\"/api/v1/gateway/openapi.json\""
+  },
+  "deployment_tells": [
+    "Port 8005 (host) -> 8000 (container uvicorn); GET /api/v1/gateway/health returns {\"message\":\"Hello from Invariant v1/gateway\"}",
+    "FastAPI custom-mounted docs: /api/v1/gateway/docs (Swagger), /api/v1/gateway/redoc, /api/v1/gateway/openapi.json -- standard FastAPI paths relocated under the gateway prefix (distinctive build artifact)",
+    "GET / -> 307 redirect to https://explorer.invariantlabs.ai/docs/gateway",
+    "Container name invariant-gateway on docker network invariant-explorer-web; optional Traefik front-end routing PathPrefix(/api/v1/gateway/)",
+    "starlette-compress CompressMiddleware present (br/gzip response encoding)"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/gateway/health -- unauth liveness + identity confirm (no key required)",
+    "GET /api/v1/gateway/openapi.json -- full route inventory incl. per-provider + MCP endpoints and dataset path params",
+    "GET /api/v1/gateway/docs -- interactive Swagger UI, no auth on the proxy port by default",
+    "POST /api/v1/gateway/{dataset}/openai (or /anthropic /gemini) -- if no guardrails file + no key gate, an open LLM proxy billing the operator's provider key",
+    "GET / -- 307 to explorer.invariantlabs.ai/docs/gateway confirms the platform even behind a renamed port"
+  ],
+  "vulnerabilities": [
+    "No CVEs published as of 2026-07-04. NVD keyword 'invariantlabs' = 0; GitHub Security Advisories on invariant-gateway/invariant = 0. Threat-research-led org (publishes attacks: mcp-injection-experiments MCP tool poisoning); no disclosed bugs in own infra.",
+    "Design-level exposure (not a CVE): gateway port ships auth-off unless GUARDRAILS_FILE_PATH forces INVARIANT_API_KEY; self-hosted quickstart default is an unauthenticated trace-capturing LLM/MCP proxy."
+  ],
+  "sources": [
+    "https://github.com/invariantlabs-ai/invariant-gateway/blob/main/gateway/serve.py",
+    "https://github.com/invariantlabs-ai/invariant-gateway/blob/main/gateway/docker-compose.local.yml",
+    "https://github.com/invariantlabs-ai/invariant-gateway/blob/main/run.sh",
+    "https://github.com/invariantlabs-ai/invariant-gateway/blob/main/gateway/run.sh",
+    "https://github.com/invariantlabs-ai/invariant-gateway/blob/main/gateway/common/constants.py",
+    "https://explorer.invariantlabs.ai/docs/gateway",
+    "https://github.com/invariantlabs-ai/mcp-injection-experiments"
+  ],
+  "vendor": "Invariant Labs (invariantlabs-ai)",
+  "repo": "https://github.com/invariantlabs-ai/invariant-gateway",
+  "license": "Apache-2.0",
+  "tagline": "LLM proxy to observe and debug what your AI agents are doing",
+  "dork_population_substitution_risk": "MEDIUM-HIGH. Two populations: (a) SaaS users routing via explorer.invariantlabs.ai (Shodan-dark; only cert pivot reveals them), and (b) self-hosted operators on port 8005. The port:8005 dork selects (b) only, a small fraction skewed toward stricter data-residency orgs. Conclusions about (b) do not generalize to (a).",
+  "verification": {
+    "method": "source-based (passive), no live scanning",
+    "date": "2026-07-04",
+    "commit_tree_sha": "9baeade022cc55de2412ba3dcae98069bd6f794a",
+    "health_literal_confirmed": "gateway/serve.py check_health() returns {\"message\": \"Hello from Invariant v1/gateway\"}",
+    "port_confirmed": "docker-compose.local.yml ports 8005:8000; uvicorn default 8000, PORT env override"
+  }
+}

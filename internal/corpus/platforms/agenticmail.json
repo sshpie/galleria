@@ -1,0 +1,139 @@
+{
+  "platform": "agenticmail",
+  "display_name": "AgenticMail (self-hosted agent mail + outbound guard)",
+  "category": "ai_email_guardrails",
+  "subcategory": "self-hosted agentic-mail w/ built-in outbound secrets/PII guard",
+  "default_ports": [
+    443,
+    25,
+    587,
+    465,
+    993
+  ],
+  "api_paths": [
+    "/api"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "AGENTICMAIL_MASTER_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "Self-hosted: local Stalwart MTA + Docker, 75+ REST endpoints, email+SMS+voice, MCP-compatible. MIT, TypeScript. github.com/agenticmail/agenticmail. ~151 stars (page-read, re-confirm via gh). NOT the YC AgentMail (agentmail.to).",
+  "misconfig_patterns": [
+    "Self-host exposure: if the Stalwart MTA / REST API (75+ endpoints) is bound to a public interface without auth, the whole agent-mail surface is reachable. Verify bind + master-key gate.",
+    "Outbound guard scope is secrets/PII EGRESS only -- no prompt-injection-echo, no hallucination, no policy check. The data-leak half of the category, not the injection-echo half."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"AgenticMail\"",
+      "product:\"Stalwart\"",
+      "http.html:\"outbound guard\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "AgenticMail",
+        "outbound guard",
+        "Stalwart"
+      ],
+      "false_positive_check": "Stalwart MTA banner alone is generic; require AgenticMail brand + outbound-guard string co-occurrence. Disambiguate from agentmail.to and agenticmail.io."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"AgenticMail\"",
+    "strict": "http.html:\"AgenticMail\" http.html:\"outbound guard\"",
+    "version": "product:\"Stalwart\" http.html:\"AgenticMail\"",
+    "mta_marker": "port:25,587 product:\"Stalwart\""
+  },
+  "deployment_tells": [
+    "Stalwart MTA (Rust) is the transport tell -- not Haraka (Sluice) -- distinguishing the two self-hosted relays in the category.",
+    "Docker-deployed; self-hosted by default so instances scatter (no single canonical IP unlike Sluice)."
+  ],
+  "pivot_paths": [
+    "OSS repo is primary source: outbound-guard detector list (AWS/OpenAI/Stripe/GitHub key formats, passwords, SSH/PGP/RSA private keys, SSN/CC, localhost/config leak) readable in code -- no probing needed to map the guard.",
+    "Block-and-hold design: agent cannot approve its own blocked mail (master-key required). Verify the approval gate is enforced, not advisory.",
+    "Stalwart product: dork seeds a self-hosted-relay population; cross-ref AgenticMail brand to separate from generic Stalwart deployments."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "A (ships own MTA) + C (agent mailbox) hybrid; outbound-safety CORE (secrets/PII egress only)",
+    "siblings_candidate": [
+      "Sluice (Haraka relay, full guardrail taxonomy)",
+      "AgentMail (B, scan-claim)"
+    ],
+    "differentiator": "Only OSS project found that does outbound-email-specific safety as a built-in named feature -- but scope is secrets/PII egress, not the full Cat-33 thesis (injection-echo + hallucination + policy)."
+  },
+  "sources": [
+    "https://github.com/agenticmail/agenticmail (PRIMARY OSS source) [CONFIRMED \u2014 outbound guard is real code, repo-readable]",
+    "outbound-guard detector list + block-and-hold approval [CONFIRMED via repo README WebFetch]",
+    "~151 stars / v0.9.104 2026-06-05 [CANDIDATE metric \u2014 page-read, re-confirm via gh]",
+    "OSINT Platoon sweep 2026-06-23 (OSS lane + substrate lane)",
+    "lineage verified 2026-06-23: SEPARATE (AgentMail vs AgenticMail)",
+    "https://github.com/agentmail-to (AgentMail -- different org, confirmed separate)"
+  ],
+  "github_org": "github.com/agenticmail (primary), agenticmail.io may be cloud fork by same maintainer Ope Olatunji",
+  "maintainer": "Ope Olatunji (solo, @ope-olatunji)",
+  "lineage_verdict": "SEPARATE from AgentMail (agentmail.to, YC S25). Different founder, OSS vs funded, Stalwart vs proprietary SMTP.",
+  "outbound_guard_audit": {
+    "verdict": "ENFORCED (HIGH-sev) / ADVISORY (MEDIUM-sev)",
+    "audit_date": "2026-06-23",
+    "source_file": "packages/api/src/routes/mail.ts lines 808-922 + packages/core/src/mail/outbound-guard.ts",
+    "gate_mechanism": "Server-side block BEFORE SMTP transport. Returns {sent:false,blocked:true,pendingId}. Email stored in pending_outbound SQLite table. Owner notified. Approval endpoint POST /api/agenticmail/mail/pending/:id/approve requires requireMaster (SHA-256 constant-time); agents cannot self-approve.",
+    "HIGH_severity_blocks": [
+      "SSN (dashes + obfuscated)",
+      "Credit card (Luhn-format)",
+      "Bank routing + account",
+      "Driver's license",
+      "Passport",
+      "Tax ID/EIN/TIN",
+      "ITIN",
+      "Medicare/Medicaid",
+      "Immigration A-number",
+      "IBAN",
+      "Crypto wallet (BTC bc1/1/3, ETH 0x+40hex)",
+      "Wire transfer co-present with IBAN/SWIFT/routing",
+      "AWS key (AKIA[A-Z0-9]{16})",
+      "API key (sk_/pk_/rk_/sk-proj-/sk-ant- +20chars)",
+      "Password value (incl leet-speak)",
+      "Private key (RSA/EC/DSA/OPENSSH PEM header)",
+      "Bearer token (20+ chars)",
+      "Connection string (mongodb/postgres/mysql/redis/amqp URLs)",
+      "GitHub token (ghp_/gho_/ghu_/ghs_/ghr_/github_pat_ +20chars)",
+      "Stripe key (sk_live_/pk_live_/rk_live_ +20chars)",
+      "JWT (three-segment base64url)",
+      "Slack/Discord webhook URLs",
+      ".env block (3+ consecutive ALLCAPS=value lines)",
+      "Seed/recovery phrase",
+      "2FA backup codes",
+      "Username+password pairs",
+      "OAuth access/refresh token",
+      "VPN credentials",
+      "Owner-revealing phrases (my human is / the person who owns me)",
+      "Attachment extensions: .pem .key .p12 .pfx .env .credentials .keystore .jks .p8"
+    ],
+    "MEDIUM_severity_advisory": [
+      "US phone number",
+      "DOB",
+      "SWIFT/BIC code",
+      "PIN code",
+      "Security Q&A pairs",
+      "RFC1918 private IP",
+      "File path (/home/ /etc/ C:\\Users\\)",
+      "Env variable values (ALLCAPS_VAR=value)",
+      "Attachment extensions: .db .sqlite .sql .csv .json .yml .conf"
+    ],
+    "scope_gaps": [
+      "MEDIUM-severity findings are ADVISORY (send through with warning in API response). Phone numbers, private IPs, file paths, DOB exfil succeeds.",
+      "NO prompt-injection-echo detection -- injected content echoed outbound not caught unless it matches credential/PII pattern.",
+      "NO hallucination detection.",
+      "NO policy/content moderation.",
+      "Inbound injection (separate buildInboundSecurityAdvisory function) is not the outbound guard."
+    ],
+    "bypass_paths": [
+      "allowSensitive=true + master key (documented, intentional): if (!(allowSensitive && req.isMaster)) -- master-only, no agent path.",
+      "@localhost recipient bypass: all-internal recipients skip scan. Strict domain==='localhost' check (not @localhost.com).",
+      "HTML tag-stripping evasion MITIGATED: guard strips tags before scanning (noted in code comments)."
+    ]
+  }
+}

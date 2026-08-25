@@ -1,0 +1,67 @@
+{
+ "name": "DataVisor",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "DataVisor, Inc.",
+  "backing": "commercial (closed-source, VC-backed proprietary SaaS)",
+  "status": "active",
+  "hq": "Mountain View, California, USA",
+  "repo": "No product repo. github.com/datavisor exists but holds only one unrelated toy R project (merkle, 1 star, Makefile). The fraud/AML platform is entirely closed-source.",
+  "scale": "Founded 2013 by Yinglian Xie (CEO) and Fang Yu. Series F (~$35.85M, May 2023); investors incl. Brighton Park Capital, NEA, Sequoia, GSR, CMFG Ventures. Vendor claims 30B+ events/yr, 15,000+ QPS in production. Customers cited: NASA FCU, Affirm, TaskRabbit, Galileo."
+ },
+ "ports": [],
+ "auth_default": "ON",
+ "dorks": [
+  "ssl:\"DataVisor\"",
+  "http.title:\"DataVisor\"",
+  "http.html:\"dCube\"",
+  "http.html:\"powered by DataVisor\" OR http.html:\"VERA\" DataVisor",
+  "UNKNOWN"
+ ],
+ "verification_primitive": {
+  "probe": "There is NO published unauthenticated read primitive for DataVisor. The only public, unauthenticated read is the marketing site (GET https://www.datavisor.com/). For any candidate product instance the responsible read-only probe is: GET / and GET /favicon.ico over TLS, then inspect HTTP title/body for the coined tokens 'dCube' / 'VERA' / 'powered by DataVisor' and record the TLS cert subject - WITHOUT submitting credentials or event data.",
+  "success_signal": "A login/console page whose title or body contains a confirmed DataVisor product token (dCube / VERA / DataVisor case management). NOTE: as of this dossier no such live, exposed, unauthenticated product surface has been confirmed to exist, so 'success' here means 'identified an operator/console,' not 'obtained data.'",
+  "impact_when_open": "If a misconfigured analyst console or decision API were found reachable without auth, impact would be severe (financial-crime case data, customer PII, model config) - but this is hypothetical; no open instance has been verified. Surface-open is unconfirmed; access not exercised."
+ },
+ "endpoints": [
+  {
+   "path": "/ (datavisor.com)",
+   "method": "GET",
+   "returns": "Public marketing site (WordPress). Not the product."
+  },
+  {
+   "path": "DataVisor Support Portal (linked from datavisor.com/support)",
+   "method": "GET",
+   "returns": "Authenticated customer support/login portal; gated."
+  },
+  {
+   "path": "Real-time decision/ingestion REST API (per-tenant hostname, TLS 1.2)",
+   "method": "POST",
+   "returns": "UNKNOWN public path. Per docs it ingests event data and returns a risk score/decision JSON. Credentialed; no anonymous read documented."
+  },
+  {
+   "path": "dCube / case-management console (browser UI)",
+   "method": "GET",
+   "returns": "UNKNOWN public path/hostname. Analyst web console; login-gated per vendor description."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://www.datavisor.com/",
+  "https://www.datavisor.com/products/fraud-platform",
+  "https://www.datavisor.com/datavisor-api-guide",
+  "https://www.datavisor.com/integrations/datavisor-integration-guide-for-comprehensive-fraud-solution",
+  "https://www.datavisor.com/products/uml-modeling-studio",
+  "https://www.datavisor.com/blog/datavisor-introduces-dcube",
+  "https://www.datavisor.com/news/datavisor-releases-dcube",
+  "https://www.datavisor.com/about",
+  "https://www.datavisor.com/support",
+  "https://github.com/datavisor",
+  "https://github.com/datavisor/merkle",
+  "https://azuremarketplace.microsoft.com/en/marketplace/apps/datavisor.datavisor_dcube?tab=Overview",
+  "https://appsource.microsoft.com/en-us/product/web-apps/datavisor.datavisor_dcube?tab=overview",
+  "https://www.datavisor.com/blog/announcing-our-series-c-round",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

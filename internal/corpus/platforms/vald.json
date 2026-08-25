@@ -1,0 +1,57 @@
+{
+  "platform": "vald",
+  "display_name": "Vald",
+  "category": "vector_db",
+  "default_ports": [
+    8081,
+    9090
+  ],
+  "api_paths": [
+    "/vald/v1/object/list",
+    "/vald/v1/search",
+    "/vald/v1/insert"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "helm install vald vald-helm-operator/vald",
+  "misconfig_patterns": [
+    "K8s-internal deployment often exposed without network policy",
+    "gRPC reflection enabled by default — full service enumeration without auth",
+    "Prometheus metrics at :9090 expose vald_ prefixed internal stats"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"vald_\" port:9090",
+      "port:9090 \"vald\""
+    ],
+    "active_probe": {
+      "path": "/vald/v1/object/list",
+      "method": "GET",
+      "response_markers": [
+        "vald_"
+      ],
+      "false_positive_check": "Prometheus /metrics must contain vald_ prefix — distinguishes from generic Prometheus"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"vald_\" port:9090",
+    "strict": "port:9090 \"vald_total_objects\"",
+    "version": "port:9090 \"vald_\""
+  },
+  "deployment_tells": [
+    "Prometheus metrics at :9090 contain vald_ prefixed metrics",
+    "gRPC reflection on :8081 exposes full Vald service schema",
+    "K8s deployment — look for NodePort or LoadBalancer misconfiguration"
+  ],
+  "pivot_paths": [
+    "GET :9090/metrics → vald_ metrics expose object count and cluster state",
+    "gRPC reflection on :8081 → enumerate all Vald services",
+    "GET /vald/v1/object/list?page_size=1 → confirm unauth read access"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://vald.vdaas.org",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

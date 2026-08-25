@@ -1,0 +1,98 @@
+{
+  "name": "Rhasspy",
+  "slug": "rhasspy",
+  "category": "voice-tts-conversational",
+  "description": "Fully offline, self-hosted voice assistant toolkit that chains wake-word, speech-to-text, intent recognition, and text-to-speech into an Assist-style pipeline, primarily used as a satellite/base for Home Assistant. Ships a browser-based configuration and testing web UI (Vue.js SPA served by a Python Quart/Hypercorn HTTP server) on port 12101 with no authentication in any default profile.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "Rhasspy 2.5 has no built-in authentication of any kind. The web UI on port 12101 and all /api/* endpoints are fully open — anyone who can reach the port can reprogram intents, trigger TTS, submit audio for transcription, retrain models, edit the profile (which stores MQTT broker credentials, Home Assistant long-lived access tokens, and external STT/TTS API keys in profile.json), and download the entire profile. The official community answer to securing it is to place an external reverse proxy (nginx/Caddy) with HTTP basic auth in front; the software itself offers no auth toggle. Rhasspy 3 (pre-release) keeps the same no-auth posture for its HTTP server.",
+  "default_ports": [
+    12101,
+    12183,
+    1883
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:12101 http.html:\"Rhasspy\"",
+      "rationale": "Rhasspy name is rendered in the Vue.js SPA shell/title served at the web UI root on the canonical port; high signal, low volume"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"Rhasspy\" http.html:\"profile\"",
+      "rationale": "SPA references its profile-editor view text; co-occurrence catches instances on non-default ports behind reverse proxies"
+    },
+    {
+      "tier": "strict",
+      "query": "port:12101 http.html:\"Rhasspy\" http.html:\"Wake Word\"",
+      "rationale": "Wake Word tab label combined with the Rhasspy name in the SPA nav is near-unique to the config UI; eliminates unrelated pages that merely mention Rhasspy"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"Rhasspy\" http.html:\"2.5\" port:12101",
+      "rationale": "Version string surfaced in the SPA About/footer; use for version-targeted enumeration of the 2.5 line vs 3.x"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 12101,
+    "http_path": "/",
+    "title_contains": "Rhasspy",
+    "response_body_contains": [
+      "Rhasspy",
+      "profile",
+      "Wake Word",
+      "Speech to Text",
+      "Intent Recognition"
+    ],
+    "http_header": "server: hypercorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /api/profile",
+    "POST /api/profile",
+    "GET /api/profiles",
+    "POST /api/listen-for-command",
+    "POST /api/text-to-speech",
+    "POST /api/speech-to-text",
+    "POST /api/text-to-intent",
+    "POST /api/speech-to-intent",
+    "POST /api/train",
+    "GET /api/sentences",
+    "POST /api/sentences",
+    "GET /api/slots",
+    "POST /api/slots",
+    "GET /api/events/intent",
+    "GET /api/version",
+    "GET /api/microphones",
+    "GET /api/speakers",
+    "POST /api/play-wav",
+    "POST /api/restart"
+  ],
+  "known_vulns": [
+    "No authentication — the entire web UI and REST API on port 12101 are unauthenticated; any reachable client has full administrative control",
+    "Profile disclosure — GET /api/profile returns profile.json in cleartext, exposing MQTT broker host/username/password, Home Assistant URL + long-lived access token, and any external STT/TTS/intent API keys the operator configured",
+    "Home Assistant lateral movement — the leaked HA long-lived token grants full control of the connected smart home / automation instance",
+    "Arbitrary TTS/audio playback — POST /api/text-to-speech and /api/play-wav let an attacker speak arbitrary audio through the device's speaker",
+    "Unauthenticated transcription compute — POST /api/speech-to-text accepts arbitrary uploaded audio (free STT compute + potential audio-processing DoS)",
+    "Intent/sentence tampering — POST /api/sentences + /api/train reprogram what spoken commands do, enabling injection of attacker-defined intents that then fire real HA automations",
+    "POST /api/restart and profile writes allow remote disruption / persistence with no credentials"
+  ],
+  "default_creds": [],
+  "risk_notes": "Rhasspy sits at the trust center of a home/office voice-and-automation stack: it holds the credentials for its MQTT broker and its Home Assistant instance in a profile file it will hand out unauthenticated. Primary chain: (1) find open :12101 -> (2) GET /api/profile -> harvest HA long-lived token + MQTT creds -> (3) pivot to full Home Assistant control (locks, cameras, alarms) and to the MQTT bus. Secondary: reprogram intents so a benign spoken phrase triggers an attacker automation; push arbitrary TTS to socially engineer occupants; abuse the STT endpoint for free transcription compute. Because deployments are overwhelmingly hobbyist/prosumer on home networks, exposure usually means a port-forward or a satellite bound to 0.0.0.0, and the token leak makes a low-severity 'open UI' finding a critical smart-home compromise.",
+  "deployment_notes": "Distributed as a Docker image (rhasspy/rhasspy) and as a Home Assistant add-on; also installed bare-metal on Raspberry Pi (Picroft-style satellites). The web UI/API listens on 12101/tcp (Quart app served by Hypercorn). MQTT (Hermes/Snips-style message protocol) uses an embedded or external broker on 1883/tcp; a UDP audio stream port and a websocket event stream (/api/events/intent) are also present. Default profiles enable no auth. Internet exposure typically results from users port-forwarding 12101 to reach the config UI remotely, or from base/satellite splits where a component is bound to 0.0.0.0. Rhasspy 2.5 is the widely deployed stable line; Rhasspy 3 is a modular rewrite still pre-release. Project overlaps heavily with the Wyoming protocol satellite ecosystem (same maintainer, synesthesiam/rhasspy).",
+  "docker_images": [
+    "rhasspy/rhasspy",
+    "rhasspy/rhasspy:2.5.11"
+  ],
+  "github_repos": [
+    "rhasspy/rhasspy",
+    "synesthesiam/rhasspy",
+    "rhasspy/rhasspy3"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

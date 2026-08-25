@@ -1,0 +1,72 @@
+{
+  "platform": "wandb",
+  "display_name": "Weights & Biases (self-hosted, wandb/local)",
+  "category": "observability",
+  "default_ports": [8080],
+  "api_paths": [
+    "/graphql",
+    "/admin",
+    "/healthz",
+    "/api/users-by-org",
+    "/"
+  ],
+  "auth_default": "license-then-open",
+  "auth_config_env": [
+    "LICENSE",
+    "MYSQL",
+    "BUCKET",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "GORILLA_GLUE_PASSWORD",
+    "LOCAL_RESTORE"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d --name wandb-local -p 8080:8080 wandb/local:latest",
+  "misconfig_patterns": [
+    "License-gated install left in pre-license state with admin-init open",
+    "GraphQL introspection enabled exposing full schema (users, teams, runs, artifacts)",
+    "/admin reachable without auth before first admin account is created (first-user-wins)",
+    "Backing object store (S3 / GCS / MinIO) world-readable for artifact storage",
+    "MYSQL connection string embedded in env exposed via /healthz or k8s probe leakage"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Weights & Biases\"",
+      "port:8080 http.html:\"wandb\"",
+      "port:8080 http.html:\"W&B\"",
+      "http.html:\"__wb_storage_keys__\""
+    ],
+    "active_probe": {
+      "path": "/graphql",
+      "method": "POST",
+      "body": "{\"query\":\"{__schema{queryType{name}}}\"}",
+      "response_markers": ["\"queryType\"", "\"__schema\""],
+      "false_positive_check": "GraphQL response must include __schema introspection result with wandb-specific type names (e.g. User, Project, Run, Artifact)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"wandb\" port:8080",
+    "strict": "http.title:\"Weights & Biases\" port:8080",
+    "version": "http.title:\"Weights & Biases\" port:8080 http.html:\"local-\""
+  },
+  "deployment_tells": [
+    "http.title contains 'Weights & Biases' on port 8080",
+    "/graphql responds to GraphQL POST without auth header",
+    "/admin reachable when no first-user has been created (signup-gate-open)",
+    "Helm chart at github.com/wandb/helm-charts / wandb-local image tag local-N",
+    "Backing bucket name visible in /api responses or in artifact URIs"
+  ],
+  "pivot_paths": [
+    "POST /graphql {viewer{username,email,apiKey,teams{...}}} -> account + API-key disclosure if auth-off",
+    "POST /graphql {projects{name,entity{name},runs{name,config,summary}}} -> run names, hyperparameters, dataset paths",
+    "Run config / artifact URIs -> S3 / GCS bucket pivot, dataset disclosure",
+    "/admin first-user-wins -> persistent admin claim if signup is open"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "wandb docs — Self-managed installation (docs.wandb.ai/guides/hosting/self-managed)",
+    "wandb/local Docker Hub — wandb/local:latest tag history",
+    "syllabus corpus — 13 papers citing W&B as experiment-tracking tool",
+    "CANDIDATE entry — drafted 2026-06-09 from syllabus signals lift-off; not yet population-verified"
+  ]
+}

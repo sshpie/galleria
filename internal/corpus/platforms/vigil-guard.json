@@ -1,0 +1,62 @@
+{
+  "platform": "vigil-guard",
+  "display_name": "Vigil Guard (BYO endpoint)",
+  "category": "ai-guardrails-library",
+  "apex": "N/A \u2014 BYO endpoint, no default URL",
+  "api_apex": "operator-supplied VIGIL_GUARD_URL",
+  "api_endpoint": "/v1/guard/analyze",
+  "default_ports": [],
+  "auth_default": "operator-supplied",
+  "auth_config_env": [
+    "VIGIL_GUARD_URL",
+    "VIGIL_GUARD_API_KEY"
+  ],
+  "default_creds": [],
+  "vendor_status": "STUB / OPEN-SOURCE WRAPPER \u2014 NOT a hosted commercial vendor. Integration mandates operator-supplied api_base (raises VigilGuardMissingConfig otherwise). Almost certainly designed to point at the open-source vigil-llm project (github.com/deadbits/vigil-llm by Adam Swanda) which an operator self-hosts. No vendor apex, no DMARC posture.",
+  "install_tell": "VIGIL_GUARD_URL is REQUIRED (no default); /v1/guard/analyze endpoint shape matches vigil-llm OSS API",
+  "misconfig_patterns": [
+    "Operator-deployed vigil instances exposed without auth (classic OSS-self-hosted leak pattern)",
+    "Plaintext HTTP if operator misconfigures TLS"
+  ],
+  "fingerprint": {
+    "passive": [],
+    "active_probe": {
+      "path": "/v1/guard/analyze",
+      "method": "POST",
+      "response_markers": [
+        "vigil",
+        "decision",
+        "ALLOWED",
+        "BLOCKED",
+        "SANITIZED"
+      ],
+      "false_positive_check": "decision enum + vigil response shape"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"vigil-llm\"",
+    "strict": "http.title:\"Vigil\" http.html:\"prompt injection\"",
+    "version": "http.html:\"/v1/guard/analyze\""
+  },
+  "dmarc_posture": "N/A (no vendor apex)",
+  "deployment_tells": [
+    "VIGIL_GUARD_URL env required",
+    "decisions: ALLOWED/SANITIZED/BLOCKED match deadbits/vigil-llm shape"
+  ],
+  "pivot_paths": [
+    "Self-hosted Vigil instance auth bypass -> see operator's prompt traffic"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "upstream_oss",
+      "url": "github.com/deadbits/vigil-llm",
+      "status": "CANDIDATE"
+    }
+  ]
+}

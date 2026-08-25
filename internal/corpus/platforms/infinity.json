@@ -1,0 +1,56 @@
+{
+  "platform": "infinity",
+  "display_name": "Infinity (InfiniFlow)",
+  "category": "vector_db",
+  "default_ports": [
+    23820,
+    23817
+  ],
+  "api_paths": [
+    "/databases",
+    "/databases/{db}/tables",
+    "/databases/{db}/tables/{table}/search"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 23820:23820 infiniflow/infinity:latest",
+  "misconfig_patterns": [
+    "No auth in default deployment — /databases fully open",
+    "error_code:0 response on all endpoints without credentials"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:23820",
+      "port:23820 \"infinity\""
+    ],
+    "active_probe": {
+      "path": "/databases",
+      "method": "GET",
+      "response_markers": [
+        "\"error_code\"",
+        "\"databases\""
+      ],
+      "false_positive_check": "response must include error_code:0 and databases array — uniquely identifies Infinity"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:23820",
+    "strict": "port:23820 \"infinity\"",
+    "version": "port:23820 \"error_code\""
+  },
+  "deployment_tells": [
+    "/databases returns {\"error_code\":0,\"databases\":[...]} without auth",
+    "Port 23820 is Infinity-specific — low FP risk"
+  ],
+  "pivot_paths": [
+    "GET /databases → database list without auth",
+    "GET /databases/{db}/tables → table list with schema",
+    "GET /databases/{db}/tables/{table}/search → vector search without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://github.com/infiniflow/infinity",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "platform": "devstral",
+  "display_name": "Devstral (Mistral coding model, self-hosted)",
+  "category": "inference_serving_model_fingerprint",
+  "default_ports": [11434, 8000, 8080, 1234, 30000, 5000, 7860],
+  "api_paths": [
+    "/api/tags",
+    "/api/show",
+    "/api/version",
+    "/v1/models",
+    "/v1/internal/model/info",
+    "/props"
+  ],
+  "auth_default": "inherited-from-serving-stack",
+  "auth_config_env": ["OLLAMA_HOST", "VLLM_API_KEY"],
+  "default_creds": [],
+  "install_tell": "ollama run devstral  |  vllm serve mistralai/Devstral-Small-2505 --tool-call-parser mistral --enable-auto-tool-choice  |  vllm serve mistralai/Devstral-2-123B-Instruct-2512",
+  "misconfig_patterns": [
+    "Devstral is a MODEL not a server; auth posture is inherited from the chosen serving stack (Ollama, vLLM, llama.cpp, LM Studio, SGLang)",
+    "Every Mistral-recommended serving stack is no-auth-default; following the official quickstart yields an unauth host",
+    "Ollama 11434: no-auth by design (OLLAMA_HOST=0.0.0.0 the standard public-bind recipe)",
+    "vLLM 8000: --api-key covers ONLY /v1/* — non-/v1 endpoints (/invocations, /generative_scoring, /pooling, /classify, /score, /rerank) bypass auth",
+    "llama.cpp llama-server 8080: --api-key optional, default no-auth",
+    "LM Studio 1234, SGLang 30000, text-gen-webui 5000/7860: no-auth default on OpenAI-compatible endpoints",
+    "Devstral fits on a single RTX 4090 / 32GB Mac, biasing the population toward solo-operator / lab deploys that skip reverse-proxy auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"devstral\"",
+      "http.html:\"Devstral-Small-2505\"",
+      "http.html:\"Devstral-2-123B\"",
+      "http.html:\"mistralai/Devstral\""
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": [
+        "\"id\":\"mistralai/Devstral",
+        "\"id\":\"devstral",
+        "Devstral-Small-2505",
+        "Devstral-2-123B-Instruct-2512"
+      ],
+      "alt_probe_ollama": {
+        "path": "/api/tags",
+        "method": "GET",
+        "response_markers": [
+          "\"name\":\"devstral",
+          "\"model\":\"devstral",
+          "devstral:24b",
+          "devstral-2:123b"
+        ]
+      },
+      "false_positive_check": "Insight #15 ~50% rule — substring 'devstral' in raw HTML is FP-prone (proper noun, rare French given name). REQUIRE JSON-context match: hit MUST be inside a model-list JSON response (/v1/models id field, or /api/tags name/model field), NOT page title / HTML body / nginx welcome."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"devstral\"",
+    "strict": "http.html:\"mistralai/Devstral\"",
+    "version": "http.html:\"Devstral-Small-2505\" OR http.html:\"Devstral-2-123B\""
+  },
+  "deployment_tells": [
+    "Ollama 11434 + /api/tags listing devstral or devstral-2 = highest-yield single signal (956.5K + 234.8K Ollama Library pulls)",
+    "vLLM 8000 + /v1/models id 'mistralai/Devstral-Small-2505' = production-recommended Mistral pattern",
+    "Devstral-2 (123B) requires multi-GPU (--tensor-parallel-size 8), so larger operators / cloud GPU tenants",
+    "Devstral-Small-2505 (24B) fits one RTX 4090 = high lab / personal / single-host density",
+    "OpenHands UI (port 3000) co-located with vLLM 8000 = Mistral-recommended agent scaffold",
+    "Tabby (port 8080) + Ollama 11434 on same host = self-hosted Copilot pattern; tabby config points at devstral",
+    "Continue.dev config.json on developer machines references model='devstral' or 'mistralai/Devstral-Small-2505' — surfaces in GitHub code-search",
+    "docker-compose.yml with image ollama/ollama AND env OLLAMA_MODELS containing devstral",
+    "TLS cert CN often matches OpenHands / Tabby / personal-domain pattern rather than corporate cert"
+  ],
+  "pivot_paths": [
+    "GET /api/tags (Ollama) -> full model inventory; if devstral present, ALSO see what else is loaded (other Mistral/coding models, embedding models, vision models -> operator focus)",
+    "GET /api/show {name:devstral} -> model details, template, system prompt, parameter file (operator customizations / leaked context)",
+    "GET /api/version (Ollama) -> CVE matching against Probllama family (CVE-2024-37032/39719/39720/39721/39722)",
+    "GET /v1/models (vLLM) -> exact checkpoint id; cross-ref with vLLM CVE family (CVE-2024-9052, CVE-2025-29770, CVE-2025-32444, CVE-2025-46570, GHSA-w6q7-j642-7c25)",
+    "GET /props (llama.cpp) -> model file path, context size, build commit",
+    "Same-/32 shadow-port sweep -> Tabby/OpenHands/Continue/Cody co-deployed coding-agent UI (Insight #12 IP-direct-shadow)",
+    "Same-/24 sweep -> operator-owned cluster of inference stacks (11434, 8000, 8080, 1234, 30000)"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-37032 Probllama (Ollama <0.1.34 RCE) — if serving stack is Ollama, version check is the primary CVE gate",
+    "CVE-2024-39719/39720/39721/39722 Ollama (file-existence oracle, DoS, path traversal)",
+    "CVE-2024-9052 / CVE-2025-29770 / CVE-2025-32444 / CVE-2025-46570 (vLLM RCE / cache-timing)",
+    "GHSA-w6q7-j642-7c25 (vLLM non-/v1 endpoints bypass --api-key)",
+    "CVE-2024-42477/42478/42479 (llama.cpp GGML heap OOB)",
+    "CVE-2024-41129 (llama.cpp rpc-server RCE, default no-auth)",
+    "CVE-2024-5982 (text-generation-webui arbitrary file upload -> RCE)",
+    "Devstral itself: model weights Apache 2.0 / Modified MIT, no model-specific CVE — risk surface is 100% in the serving stack"
+  ],
+  "sources": [
+    "https://mistral.ai/news/devstral/",
+    "https://huggingface.co/mistralai/Devstral-Small-2505",
+    "https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512",
+    "https://ollama.com/library/devstral",
+    "https://ollama.com/library/devstral-2",
+    "https://docs.vllm.ai/en/latest/usage/security/",
+    "https://www.wiz.io/blog/probllama-ollama-vulnerability-cve-2024-37032",
+    "https://www.oligo.security/blog/more-models-more-probllms",
+    "https://github.com/TabbyML/tabby",
+    "data/platform-intel/cat-tabby-devstral-osint-2026-06-09.md",
+    "[CANDIDATE —  Cat-Tabby Stage -1 squad 4 of 4; 2026-06-09; no live population survey yet]"
+  ]
+}

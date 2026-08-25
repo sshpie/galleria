@@ -1,0 +1,71 @@
+{
+  "platform": "flower",
+  "display_name": "Flower (flwr) Federated Learning",
+  "category": "federated_learning",
+  "default_ports": [
+    9091,
+    9092,
+    9093
+  ],
+  "api_paths": [
+    "grpc://9093/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
+    "grpc://9092/flwr.proto.fleet.v1.Fleet"
+  ],
+  "auth_default": "insecure",
+  "auth_config_env": [
+    "FLWR_INSECURE",
+    "FLWR_AUTH_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "flwr new <project> && flower-superlink --insecure",
+  "misconfig_patterns": [
+    "--insecure is canonical in every official quickstart, compose file, and tutorial",
+    "Node authentication requires TLS (exit code 303 without certs), so the easy path ships with no node-auth at all",
+    "SuperExec HMAC is experimental and off by default",
+    "Exec.ListRuns + Exec.StreamLogs leak run IDs, FAB hash, client counts, dataset names and hyperparameters via logs"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9093",
+      "ssl.cert.subject.CN:\"superlink\""
+    ],
+    "active_probe": {
+      "path": "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
+      "method": "gRPC",
+      "response_markers": [
+        "flwr.proto.fleet.v1.Fleet",
+        "flwr.proto.exec.v1.Exec"
+      ],
+      "false_positive_check": "Require flwr.proto.* service in reflection enum, not just any gRPC handler"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9093 \"grpc-status\"",
+    "strict": "port:9093 \"grpc-status\" ssl.cert.subject.CN:\"superlink\"",
+    "version": "port:9092,9093 \"flwr\""
+  },
+  "deployment_tells": [
+    "gRPC trio 9091 (ServerAppIO, internal) / 9092 (Fleet, public) / 9093 (Exec/Control, public)",
+    "All HTTP/2 gRPC — Shodan-dark on http.html filters; routes to Censys + active full-handshake",
+    "Realistic exposure tier: academic / .edu / biomedical research (cross-ref Cat-49 univ map)",
+    "Rhino FCP partnership Feb 2025 wraps pharma deployments — those are hardened",
+    "Helm operators: exalsius/flower-operator, hpn-bristol/kubeFlower"
+  ],
+  "pivot_paths": [
+    "gRPC reflection on 9093 -> enumerate flwr.proto.exec.v1.Exec service descriptor",
+    "Exec.ListRuns -> run metadata (read-only, in-scope)",
+    "Exec.StreamLogs -> log-leaked dataset names, hyperparameters (read-only, in-scope)",
+    "Exec.StartRun -> integrity write line, DO NOT CROSS"
+  ],
+  "vulnerabilities": [
+    "Zero CVEs against flwrlabs/flower as of 2026-06-09",
+    "CVE-2022-30034 is the unrelated Celery web UI 'Flower' — common conflation",
+    "Green-field surface; auth-on-default disclosure-pressure curve (Insight #40) has not landed"
+  ],
+  "sources": [
+    "https://flower.ai/docs/framework/",
+    "https://github.com/adap/flower",
+    "data/platform-intel/cat53-flower-osint-2026-06-09.md",
+    "[CANDIDATE -  2026-06-09, pre-population-verification]"
+  ]
+}

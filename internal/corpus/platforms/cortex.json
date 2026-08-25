@@ -1,0 +1,98 @@
+{
+  "platform": "cortex",
+  "display_name": "Cortex",
+  "category": "time_series_db",
+  "default_ports": [9009, 8080, 9095],
+  "default_port_notes": {
+    "9009": "Cortex HTTP API (single-binary/monolithic default) — distributor push + querier read live here",
+    "8080": "Common override / per-component HTTP on microservices deployments",
+    "9095": "Cortex gRPC (inter-component) — NOT HTTP"
+  },
+  "api_paths": [
+    "/",
+    "/metrics",
+    "/ready",
+    "/api/v1/push",
+    "/api/v1/query",
+    "/api/v1/query_range",
+    "/api/v1/series",
+    "/api/v1/labels",
+    "/api/v1/label/__name__/values",
+    "/api/v1/status/buildinfo",
+    "/api/prom/api/v1/query",
+    "/api/prom/push",
+    "/prometheus/api/v1/query",
+    "/distributor/all_user_stats",
+    "/distributor/ha_tracker",
+    "/ingester/ring",
+    "/services",
+    "/config",
+    "/debug/pprof/"
+  ],
+  "auth_default": "X-Scope-OrgID-required (tenant identity, not authentication)",
+  "auth_config_env": [
+    "auth_enabled: true (default) -> every read/write request MUST carry X-Scope-OrgID or it is rejected with a 401/'no org id'",
+    "auth_enabled: false -> all requests forced to tenant 'fake' (single-tenant, still no real auth)",
+    "Real auth is delegated to an upstream gateway/proxy — Cortex itself only does tenant routing on the header"
+  ],
+  "default_creds": [],
+  "install_tell": "cortex -config.file=cortex.yml ; quay.io/cortexproject/cortex:vX.Y.Z ; HTTP on :9009",
+  "misconfig_patterns": [
+    "X-Scope-OrgID is identity, NOT a secret — any client that knows/guesses a tenant ID reads that tenant's series (no per-tenant credential)",
+    "auth_enabled:false collapses everything to tenant 'fake' — a single unauth header-less read returns ALL data",
+    "/distributor/all_user_stats enumerates EVERY tenant ID + ingestion rate — the Cortex-unique multi-tenant disclosure (leaks the full customer/tenant list)",
+    "/ingester/ring and /distributor/ha_tracker expose ring membership / node IPs",
+    "/config returns the full running Cortex config (object-store creds, limits)",
+    "/api/v1/push accepts remote-write — unauth metric injection into a named tenant if reachable"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9009 http.html:\"Cortex\"",
+      "http.html:\"/distributor/all_user_stats\"",
+      "http.html:\"Cortex\" http.html:\"all_user_stats\""
+    ],
+    "active_probe": {
+      "path": "/distributor/all_user_stats",
+      "method": "GET",
+      "response_markers": ["userStats", "ingestionRate", "numSeries", "user"],
+      "false_positive_check": "POSITIVE Cortex discriminator: /distributor/all_user_stats and /ingester/ring are Cortex-native admin routes that Prometheus, VM, Thanos and Mimir do NOT serve (Mimir RENAMED these and dropped the /distributor/all_user_stats path — see mimir.json). On a bare /api/v1/query with no X-Scope-OrgID, Cortex returns the 'no org id' / 401 tenant error (SHARED tell with Mimir — disambiguate via the admin route + the /api/prom path prefix Cortex keeps for back-compat). buildinfo: Cortex returns Prometheus-compat build fields; NOT VM's empty {}."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9009 http.html:\"Cortex\"",
+    "strict": "http.html:\"all_user_stats\" http.html:\"Cortex\"",
+    "version": "http.html:\"Cortex\" http.html:\"/ingester/ring\"",
+    "tenant_error": "(Censys — 'no org id' / 401 is a JSON/body-on-non-200 response the Shodan web UI under-indexes; route to Censys http body)"
+  },
+  "deployment_tells": [
+    "/distributor/all_user_stats + /ingester/ring + /distributor/ha_tracker admin routes are Cortex-specific",
+    "Dual path prefixes: Cortex serves both /api/prom/* (legacy) AND /prometheus/* AND bare /api/v1/* — the /api/prom/ prefix is a back-compat tell absent in Prometheus/VM",
+    "/services route lists the dskit module lifecycle (distributor/ingester/querier/store-gateway) — Cortex/Mimir family tell",
+    "/metrics exposes cortex_* internal metrics (cortex_distributor_*, cortex_ingester_*)"
+  ],
+  "pivot_paths": [
+    "GET /distributor/all_user_stats -> full tenant ID roster + per-tenant ingestion rate -> customer enumeration",
+    "GET /ingester/ring -> ring node membership + internal IPs -> backend topology",
+    "GET /config -> running config -> object-store credentials + limits",
+    "GET /prometheus/api/v1/query with a discovered X-Scope-OrgID -> that tenant's stored series (read surface)",
+    "POST /api/v1/push with X-Scope-OrgID -> unauth metric injection (write surface — SEPARATE severity)"
+  ],
+  "vulnerabilities": [
+    "Design choice (NOT a CVE): X-Scope-OrgID is tenant identity, not authentication; multi-tenant isolation depends entirely on an upstream gateway that operators often omit",
+    "auth_enabled:false -> single 'fake' tenant collapse is a documented foot-gun, not a CVE",
+    "CVE churn in Cortex is largely Go-stdlib/dependency class (image-level), not application-logic"
+  ],
+  "auth_default_thesis": "TENANT-IDENTITY-DEFAULT (not auth-off, not auth-on). Cortex differs from VM/Prometheus/Thanos: requests without X-Scope-OrgID are rejected ('no org id'). But the header is identity, not a credential — there is no per-tenant secret in Cortex itself. So a population dork over /api/v1/query OVER-COUNTS: many Cortex hosts answer the tenant error (looks 'protected') yet leak the entire tenant list via /distributor/all_user_stats and serve any tenant's data to anyone supplying the (often guessable: 'fake','anonymous','1','demo') org ID. The auth-on-default thesis must be scored at the TENANT-ENUMERATION layer, not the bare-query layer, for this platform.",
+  "research_questions": [
+    "What share of exposed Cortex serve /distributor/all_user_stats unauthenticated (full tenant roster leak)?",
+    "How often is auth_enabled:false (single 'fake' tenant -> bare unauth read)?",
+    "Do common org IDs (fake/anonymous/1/demo) read real data on auth_enabled:true hosts?",
+    "Does /config leak object-store credentials at population scale?"
+  ],
+  "sources": [
+    "[CANDIDATE —  Squad-D disambiguation brief 2026-06-19; survey pending]",
+    "cortexmetrics.io/docs/api/ (HTTP API, /distributor/all_user_stats, push/query paths)",
+    "cortexmetrics.io/docs/guides/auth/ (auth_enabled, X-Scope-OrgID, 'fake' tenant)",
+    "github.com/cortexproject/cortex/blob/master/docs/api/_index.md"
+  ]
+}

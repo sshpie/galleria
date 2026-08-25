@@ -1,0 +1,90 @@
+{
+  "name": "Speaches",
+  "slug": "speaches",
+  "category": "voice-tts-conversational",
+  "description": "OpenAI API-compatible self-hosted speech server (formerly faster-whisper-server) that wraps faster-whisper (STT), Piper and Kokoro (TTS) behind a FastAPI/uvicorn HTTP service. Aims to be an 'Ollama for speech' with drop-in /v1/audio/transcriptions, /v1/audio/translations, /v1/audio/speech, and a realtime streaming API. No built-in authentication by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication enforced by default. Speaches (and its faster-whisper-server predecessor) exposes the FastAPI app on 0.0.0.0:8000 with fully open /v1/* endpoints and interactive Swagger UI at /docs. Operators are expected to front the service with a reverse proxy for auth; most self-hosters and demo deployments do not. Because it is OpenAI-API-compatible, any exposed instance accepts Authorization: Bearer with any (or no) key value. App name, Swagger UI, and OpenAI-compat paths are rendered into served HTML, so instances are directly Shodan http.html-visible.",
+  "default_ports": [
+    8000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"speaches\"",
+      "rationale": "Direct project-name match in Swagger UI title/body or root JSON; high signal, low volume"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"faster-whisper-server\"",
+      "rationale": "Legacy project name still rendered in older Swagger info blocks and OpenAPI title; catches un-renamed deployments"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"/v1/audio/transcriptions\" http.html:\"/v1/audio/speech\"",
+      "rationale": "Co-occurrence of the OpenAI STT transcription path AND the speech (TTS) path in the same Swagger doc is nearly unique to Speaches (combined STT+TTS server), separating it from transcription-only whisper wrappers"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"speaches\" http.html:\"version\" port:8000",
+      "rationale": "Version disclosure in Swagger UI info block or /openapi.json; use for CVE/version-targeted enumeration"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/docs",
+    "title_contains": "Speaches",
+    "response_body_contains": [
+      "speaches",
+      "faster-whisper-server",
+      "/v1/audio/transcriptions",
+      "/v1/audio/speech",
+      "kokoro"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "POST /v1/audio/transcriptions",
+    "POST /v1/audio/translations",
+    "POST /v1/audio/speech",
+    "GET /v1/models",
+    "GET /v1/models/{model_id}",
+    "POST /v1/models/{model_id}",
+    "DELETE /v1/models/{model_id}",
+    "GET /v1/realtime",
+    "GET /health",
+    "GET /docs",
+    "GET /redoc",
+    "GET /openapi.json",
+    "GET /"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated POST /v1/audio/transcriptions and /v1/audio/speech accept arbitrary audio/text from any source",
+    "Model management endpoints (POST/DELETE /v1/models/{id}) allow unauthenticated pull/download and deletion of models, enabling disk-fill DoS and arbitrary HuggingFace model fetch at operator cost",
+    "FastAPI /docs, /redoc, /openapi.json enabled by default — full API schema disclosure aids automated enumeration",
+    "Unrestricted file upload with no MIME/size validation in default config — multi-GB audio DoS exhausts GPU VRAM and host disk",
+    "No rate limiting — GPU compute-theft is trivially automated against transcription and TTS endpoints",
+    "Realtime streaming API (/v1/realtime WebSocket) exposed unauthenticated where enabled",
+    "HuggingFace Spaces demo deployments are publicly indexed with no auth and no usage controls"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — open STT+TTS on GPU hosts is free inference at operator cost, automatable with any OpenAI SDK client pointed at the base URL. (2) Audio/text PII exfiltration — dictations, meeting audio, and synthesized-speech text prompts processed with no auth or audit logging. (3) Model-store abuse — unauthenticated model pull/delete enables disk exhaustion and forced download of attacker-chosen models. (4) Voice-clone data harvesting — combined audio+transcript and TTS synthesis on one host yields labeled voice datasets. (5) Realtime API abuse — where the streaming endpoint is on, an attacker gets a live low-latency speech pipe.",
+  "deployment_notes": "Primarily Docker/Docker-Compose on CUDA GPU hosts (CPU mode too slow for production). Default bind 0.0.0.0:8000, uvicorn/FastAPI. Project renamed from faster-whisper-server to Speaches (speaches.ai); older deployments still self-identify by the legacy name in Swagger metadata. Common GPU-as-a-service hosts: Vast.ai, RunPod, Lambda Labs. HuggingFace Spaces demos frequent and publicly indexed. Directly Shodan http.html-visible via the served Swagger UI — no Censys/active-probe route needed for basic fingerprinting. Enterprise deployments front it with nginx/caddy + auth; hobbyist/research deployments frequently bind the raw 8000 port to the internet.",
+  "docker_images": [
+    "ghcr.io/speaches-ai/speaches:latest-cuda",
+    "ghcr.io/speaches-ai/speaches:latest-cpu",
+    "ghcr.io/fedirz/faster-whisper-server:latest-cuda",
+    "ghcr.io/fedirz/faster-whisper-server:latest-cpu"
+  ],
+  "github_repos": [
+    "speaches-ai/speaches",
+    "fedirz/faster-whisper-server"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

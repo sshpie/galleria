@@ -1,0 +1,53 @@
+{
+  "platform": "langsmith",
+  "display_name": "LangSmith",
+  "category": "observability",
+  "default_ports": [1984],
+  "api_paths": ["/api/v1", "/runs", "/datasets", "/deployments", "/traces"],
+  "auth_default": "api_key",
+  "auth_config_env": [
+    "LANGCHAIN_API_KEY",
+    "LANGCHAIN_TRACING_V2",
+    "LANGSMITH_ENDPOINT"
+  ],
+  "default_creds": [],
+  "install_tell": "SaaS primary — self-hosted via Docker Compose on port 1984",
+  "misconfig_patterns": [
+    "LANGCHAIN_API_KEY committed to source code repositories",
+    "Traces contain unmasked PII — full conversation history with user data",
+    "Datasets contain reference answers — training data exposure",
+    "LANGCHAIN_TRACING_V2=true in production without key rotation"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:1984 http.html:\"langsmith\"",
+      "http.html:\"langsmith\""
+    ],
+    "active_probe": {
+      "path": "/api/v1",
+      "method": "GET",
+      "response_markers": ["langsmith"],
+      "false_positive_check": "401 response headers should identify LangSmith API"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"langsmith\" port:1984",
+    "strict": "port:1984 http.html:\"langsmith\"",
+    "version": "port:1984 http.html:\"langsmith\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "LANGCHAIN_API_KEY in environment",
+    "Traces contain full conversation history including system prompts",
+    "Dataset endpoint contains reference answers"
+  ],
+  "pivot_paths": [
+    "LANGCHAIN_API_KEY in env → direct LangSmith API access to all traces",
+    "Trace data → system prompts + user conversations + agent tool calls",
+    "Dataset endpoint → model training data + expected outputs"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Learning LangChain (9781098167271) ch09",
+    "Learning LangChain (9781098167271) ch10"
+  ]
+}

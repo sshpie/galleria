@@ -1,0 +1,66 @@
+{
+  "platform": "promptguard",
+  "display_name": "PromptGuard (promptguard.co)",
+  "category": "ai-guardrails",
+  "apex": "promptguard.co",
+  "api_apex": "api.promptguard.co",
+  "api_endpoint": "/guard (resolved from _GUARD_ENDPOINT)",
+  "default_ports": [
+    443
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "PROMPTGUARD_API_KEY",
+    "PROMPTGUARD_API_BASE"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL but VERY EARLY STAGE / SOLO-FOUNDER \u2014 DMARC ruf points to abhijoysarkar@promptguard.co (founder Abhijoy Sarkar attribution); Postmark for transactional mail signals lean SaaS stack",
+  "install_tell": "api.promptguard.co; 221-line hook (minimal); .co TLD suggests early-stage namesquat",
+  "misconfig_patterns": [
+    "PROMPTGUARD_API_KEY leaked"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"promptguard.co\"",
+      "ssl.cert.subject.cn:\"*.promptguard.co\""
+    ],
+    "active_probe": {
+      "path": "/guard",
+      "method": "POST",
+      "response_markers": [
+        "promptguard",
+        "guard",
+        "verdict"
+      ],
+      "false_positive_check": "Require cert SAN"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"promptguard.co\"",
+    "strict": "ssl.cert.subject.cn:\"promptguard.co\" http.status:200",
+    "version": "ssl.cert.subject.cn:\"promptguard.co\" http.html:\"PromptGuard\""
+  },
+  "dmarc_posture": "p=quarantine; rua to Postmark; ruf to founder email (abhijoysarkar@promptguard.co) \u2014 solo founder operational tell",
+  "deployment_tells": [
+    "api.promptguard.co",
+    "Postmark transactional",
+    "Google Workspace MX"
+  ],
+  "pivot_paths": [
+    "PROMPTGUARD_API_KEY -> tenant guardrail policy"
+  ],
+  "vulnerabilities": [],
+  "founder_attribution": "Abhijoy Sarkar (from DMARC ruf)",
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "_dmarc.promptguard.co",
+      "status": "CONFIRMED"
+    }
+  ]
+}

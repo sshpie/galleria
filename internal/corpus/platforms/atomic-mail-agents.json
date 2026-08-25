@@ -1,0 +1,98 @@
+{
+  "platform": "atomic-mail-agents",
+  "display_name": "Atomic Mail /agents (JMAP agent-email API, open alpha)",
+  "category": "ai_email_guardrails",
+  "subcategory": "agentic-mail substrate via JMAP (no content guardrail)",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [
+    "/agents"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Live open alpha (2026-06-23). JMAP API (RFC 8620/8621) + MCP (Claude Desktop/Cursor) + AgentSkill (Node/Deno/Bun). Autonomous inbox provisioning via proof-of-work (no human signup step). @atomicmail.ai inboxes (distinct from consumer @atomicmail.io). 100% free in alpha.",
+  "misconfig_patterns": [
+    "Substrate-only: no outbound content guardrail whatsoever. Proof-of-work provisioning removes human gate from inbox creation -- agent can self-provision at scale.",
+    "Consumer product (atomicmail.io) vs agent API (/agents, @atomicmail.ai) use different domain/TLD. Potential misclassification risk in tooling that conflates them."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"atomicmail.io\"",
+      "ssl.cert.subject.cn:\"atomicmail.ai\"",
+      "http.html:\"Atomic Mail\" http.html:\"agent\""
+    ],
+    "active_probe": {
+      "path": "/agents",
+      "method": "GET",
+      "response_markers": [
+        "JMAP",
+        "agent",
+        "atomicmail"
+      ],
+      "false_positive_check": "Must anchor on /agents path + JMAP/agent language; atomicmail.io root is encrypted consumer mail."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"atomicmail.ai\"",
+    "strict": "ssl.cert.subject.cn:\"atomicmail.ai\" http.html:\"agent\"",
+    "disambiguation": "ssl.cert.subject.cn:\"atomicmail.io\" returns consumer product, NOT the agent API"
+  },
+  "deployment_tells": [
+    "JMAP server backend (RFC 8620/8621). @atomicmail.ai is the agent-API domain; @atomicmail.io is the consumer mail product.",
+    "MCP server for Claude Desktop/Cursor; AgentSkill for Node/Deno/Bun; direct JMAP for any language."
+  ],
+  "pivot_paths": [
+    "Proof-of-work provisioning: an agent can mint inboxes programmatically without human involvement -- relevant to abuse/spoof scenarios at scale.",
+    "Domain disambiguation: ssl:\"atomicmail.io\" vs ssl:\"atomicmail.ai\" selects different products."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "B (API gateway, JMAP) + C; substrate-only (no outbound content guardrail)",
+    "differentiator": "Standards-based JMAP instead of proprietary REST; proof-of-work autonomous provisioning; free in open alpha."
+  },
+  "sources": [
+    "https://atomicmail.io/agents (PRIMARY agent API page) [CONFIRMED live open alpha 2026-06-23]",
+    "JMAP RFC 8620/8621 protocol; MCP + AgentSkill integrations [CONFIRMED per site]",
+    "proof-of-work autonomous provisioning + @atomicmail.ai domain distinction [CONFIRMED per site]",
+    "OSINT Platoon sweep 2026-06-23 (substrate lane, pivot 5)"
+  ],
+  "shodan_infrastructure": {
+    "verified": "2026-06-23",
+    "hosts": [
+      {
+        "ip": "57.129.99.15",
+        "hostname": "atomicmail.ai",
+        "ports": [
+          22,
+          80,
+          443
+        ],
+        "org": "OVH SAS",
+        "asn": "AS16276",
+        "country": "France",
+        "city": "Strasbourg",
+        "last_seen": "2026-06-21",
+        "tag": "eol-product",
+        "all_hostnames": [
+          "atomicmail.ai",
+          "api.atomicmail.ai",
+          "auth.atomicmail.ai",
+          "grafana.atomicmail.ai",
+          "health.atomicmail.ai",
+          "mta-sts.atomicmail.ai",
+          "mx1.atomicmail.ai",
+          "rspamd.atomicmail.ai",
+          "sns.atomicmail.ai",
+          "stats.atomicmail.ai",
+          "webhooks.atomicmail.ai",
+          "www.atomicmail.ai"
+        ]
+      }
+    ],
+    "infrastructure_notes": "Single OVH VPS Strasbourg. Self-hosted mail stack visible: mx1 (inbound MTA), rspamd (spam filter), mta-sts, sns (likely webhook delivery), grafana (monitoring), health (liveness endpoint). eol-product tag = Shodan detected an end-of-life software component (verify which). rspamd + mta-sts + grafana on a single public IP = early-stage/solo-operator infra pattern consistent with open alpha status.",
+    "security_note": "grafana.atomicmail.ai on same IP -- check if Grafana auth is on. eol-product tag warrants a banner grab to identify the EOL component.",
+    "shodan_dork_verified": "ssl.cert.subject.cn:\"atomicmail.ai\" -- 1 result"
+  }
+}

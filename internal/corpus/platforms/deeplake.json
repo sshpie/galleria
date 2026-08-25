@@ -1,0 +1,52 @@
+{
+  "platform": "deeplake",
+  "display_name": "Deep Lake (Activeloop)",
+  "category": "vector_db",
+  "default_ports": [],
+  "api_paths": [
+    "/api/datasets/",
+    "/api/datasets/{org}/{name}"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ACTIVELOOP_TOKEN"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install deeplake && deeplake create hub://org/dataset",
+  "misconfig_patterns": [
+    "Embedded mode: no listener — exposure is object-storage ACL (S3/GCS/local), not a port",
+    "hub:// public datasets readable without ACTIVELOOP_TOKEN",
+    "Local filesystem mode: world-readable dataset directories"
+  ],
+  "fingerprint": {
+    "passive": [],
+    "active_probe": {
+      "path": "/api/datasets/",
+      "method": "GET",
+      "response_markers": [
+        "\"datasets\""
+      ],
+      "false_positive_check": "Hub API only — no self-hosted listener in standard deployment; Shodan-dark"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "",
+    "strict": "",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Embedded/cloud-only — no self-hosted HTTP listener in standard use",
+    "Data exposure via misconfigured S3 bucket containing .deeplake directories",
+    "Hub API at app.activeloop.ai — requires token for private datasets"
+  ],
+  "pivot_paths": [
+    "S3 bucket scan for .deeplake/ prefix → direct tensor file access",
+    "hub://activeloop/public-datasets → enumerate public dataset catalog",
+    "Local mode: find . -name 'dataset_info.json' -path '*/.deeplake/*'"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.activeloop.ai",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

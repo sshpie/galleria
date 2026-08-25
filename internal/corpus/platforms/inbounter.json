@@ -1,0 +1,53 @@
+{
+  "platform": "inbounter",
+  "display_name": "Inbounter (agent-native email + phone substrate, pre-launch)",
+  "category": "ai_email_guardrails",
+  "subcategory": "agentic-mail substrate w/ human-oversight layer (pre-launch)",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Pre-launch / waitlist as of 2026-06-23. REST + Node/Python SDK. Provisions @inbounter.com addresses or custom domains, routes to webhooks, human-approval layer for outbound, Shield Mode spam filtering. No OAuth required -- explicitly solves consent-flow problem for agents.",
+  "misconfig_patterns": [
+    "Not publicly live yet -- waitlist. Oversight gate (human-approval for outbound) is the product differentiator; if disabled/default-off at GA, it becomes substrate-only without safety."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"inbounter.com\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Inbounter",
+        "AI agents",
+        "email"
+      ],
+      "false_positive_check": "Brand + 'AI agents'/'inbox' co-occurrence."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"inbounter.com\"",
+    "strict": "ssl.cert.subject.cn:\"inbounter.com\" http.html:\"Inbounter\""
+  },
+  "deployment_tells": [
+    "Pre-launch SaaS; @inbounter.com MX infrastructure; webhook-first."
+  ],
+  "pivot_paths": [
+    "Human-approval gate is the Cat-33 adjacency -- verify at GA whether it ships enabled or disabled by default.",
+    "Shield Mode = inbound spam, not outbound content guardrail."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "B (API gateway) + substrate; human-oversight outbound gate (pre-launch, unverified if default-on)",
+    "differentiator": "No OAuth requirement; explicit human-approval gate for outbound agent sends."
+  },
+  "sources": [
+    "https://inbounter.com/ (PRIMARY) [CONFIRMED product, pre-launch/waitlist as of 2026-06-23]",
+    "product description sourced from site; human-approval layer [CANDIDATE -- pre-launch, not runtime-verified]",
+    "OSINT Platoon sweep 2026-06-23 (substrate lane verification, pivot 5)"
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "platform": "marqo",
+  "display_name": "Marqo",
+  "category": "vector_db",
+  "default_ports": [
+    8882
+  ],
+  "api_paths": [
+    "/",
+    "/indexes",
+    "/indexes/{index}/search",
+    "/indexes/{index}/stats"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "MARQO_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8882:8882 marqoai/marqo:latest",
+  "misconfig_patterns": [
+    "No API key in default deployment \u2014 all indexes publicly enumerable",
+    "Index stats expose document count and storage size without auth"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Welcome to Marqo\"",
+      "port:8882"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "\"Welcome to Marqo\""
+      ],
+      "false_positive_check": "response body must contain Welcome to Marqo \u2014 uniquely identifies Marqo"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"Welcome to Marqo\"",
+    "strict": "http.html:\"Welcome to Marqo\" port:8882",
+    "version": "http.html:\"Welcome to Marqo\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "GET / returns {\"Welcome to Marqo\": \"...\"} without auth",
+    "Port 8882 is Marqo-specific",
+    "GET /indexes lists all indexes without auth"
+  ],
+  "pivot_paths": [
+    "GET /indexes \u2192 index names without auth",
+    "GET /indexes/{index}/stats \u2192 numberOfDocuments without auth",
+    "GET /indexes/{index}/search \u2192 vector search without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.marqo.ai",
+    "[CONFIRMED \u2014  Cat-02 survey 2026-06-05; live population observed]",
+    "case-studies/commercial/marqo-survey-2026-06-08-mini.md (4 unauth on small pop of 18)"
+  ]
+}

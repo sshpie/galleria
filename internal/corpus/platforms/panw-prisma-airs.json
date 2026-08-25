@@ -1,0 +1,60 @@
+{
+  "platform": "panw-prisma-airs",
+  "display_name": "Palo Alto Networks Prisma AIRS (AI Runtime Security)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "Palo Alto Networks (NASDAQ: PANW)",
+  "apex": {
+    "corporate": "paloaltonetworks.com",
+    "product": "aisecurity.paloaltonetworks.com"
+  },
+  "default_ports": [443],
+  "api_paths": [
+    "/v1/scan/sync/request"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "x-pan-token header (PANW_PRISMA_AIRS_API_KEY); NOT Authorization bearer -- vendor-specific header",
+  "auth_config_env": ["PANW_PRISMA_AIRS_API_KEY", "PANW_PRISMA_AIRS_API_BASE"],
+  "default_creds": [],
+  "default_api_base": "https://service.api.aisecurity.paloaltonetworks.com",
+  "install_tell": "LiteLLM guardrail_hooks/panw_prisma_airs is the LARGEST guardrail hook in the catalog (84KB). Supports /v1/messages (Anthropic), /v1/responses, streaming-aware blocking. x-pan-token is the auth signal anchored on the API edge.",
+  "misconfig_patterns": [
+    "x-pan-token leaked in proxy access logs or client-side intercepts; per-tenant scoping but no automatic rotation surface.",
+    "Streaming response handling blocks rather than scans for /v1/messages and /v1/responses raw SSE -- operators may interpret block as a service outage and disable the guardrail.",
+    "requester_metadata litellm_trace_id deep-copy for /v1/messages routes: cross-trace correlation surface."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"aisecurity.paloaltonetworks.com\"",
+      "ssl.cert.subject.cn:\"service.api.aisecurity.paloaltonetworks.com\"",
+      "ssl.cert.subject.cn:\"*.aisecurity.paloaltonetworks.com\""
+    ],
+    "active_probe": {
+      "path": "/v1/scan/sync/request",
+      "method": "POST",
+      "port": 443,
+      "notes": "Customer tenant; identity-fingerprint only"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"aisecurity.paloaltonetworks.com\"",
+    "strict": "ssl.cert.subject.cn:\"service.api.aisecurity.paloaltonetworks.com\"",
+    "version": "http.headers:\"x-pan-token\""
+  },
+  "deployment_tells": [
+    "service.api.aisecurity.paloaltonetworks.com resolves 35.244.233.63 (GCP / Google Cloud edge)",
+    "Distinct from Strata / Prisma Cloud SaaS; AIRS is its own product apex",
+    "Hook is by far the heaviest LiteLLM integration: streaming, Anthropic /v1/messages and OpenAI /v1/responses paths"
+  ],
+  "dmarc": "p=reject fo=1 rua=proofpoint",
+  "mx_provider": "Proofpoint (mxa/mxb-00169c01.gslb.pphosted.com)",
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.paloaltonetworks.com/.well-known/security.txt",
+    "psirt": "psirt@paloaltonetworks.com"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py",
+    "DNS dig 2026-06-07"
+  ]
+}

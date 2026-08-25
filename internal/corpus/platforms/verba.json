@@ -1,0 +1,120 @@
+{
+  "platform": "verba",
+  "display_name": "Verba (The Golden RAGtriever)",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8000,
+    8080,
+    3000
+  ],
+  "api_paths": [
+    "/api/health",
+    "/api/connect",
+    "/api/query",
+    "/api/get_user_config",
+    "/api/get_rag_config",
+    "/api/get_all_documents",
+    "/api/get_document",
+    "/api/get_content",
+    "/api/get_chunks",
+    "/api/get_vectors",
+    "/api/get_datacount",
+    "/api/get_meta",
+    "/api/reset",
+    "/api/delete_document",
+    "/ws/generate_stream",
+    "/ws/import_files"
+  ],
+  "auth_default": "ui-gated-api-open",
+  "auth_config_env": [
+    "WEAVIATE_API_KEY_VERBA",
+    "WEAVIATE_URL_VERBA",
+    "DEFAULT_DEPLOYMENT",
+    "OPENAI_API_KEY",
+    "COHERE_API_KEY",
+    "ANTHROPIC_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install goldenverba && verba start --port 8000 --host 0.0.0.0   # OR: git clone github.com/weaviate/Verba && docker compose up -d   (Verba FastAPI on :8000, Weaviate on :8080/:3000)",
+  "misconfig_patterns": [
+    "Verba :8000 published to 0.0.0.0/public interface (Dockerfile CMD binds --host 0.0.0.0; compose maps 8000:8000) - no reverse-proxy auth in front",
+    "production/DEFAULT_DEPLOYMENT unset, so /ws/import_files ingestion + /api/reset destruction are not gated by the 'Demo' guard",
+    "Paired Weaviate exposed on :8080 and :3000 with AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED true (default compose)",
+    "Operators relying on the same-origin middleware as if it were authentication (it is Host-spoofable anti-CSRF, and WebSockets bypass it)",
+    "Pinned weaviate:1.25.10 sidecar in vulnerable range for CVE-2025-67818",
+    "Archived/EOL software still deployed: no security patches will ship"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"The GoldenRAGtriever\"",
+      "http.html:\"content=\\\"The GoldenRAGtriever\\\"\"",
+      "http.title:\"Verba\" http.html:\"GoldenRAGtriever\"",
+      "http.html:\"/ws/generate_stream\""
+    ],
+    "active_probe": {
+      "path": "/api/health",
+      "method": "GET",
+      "response_markers": [
+        "\"message\":\"Alive!\"",
+        "\"default_deployment\"",
+        "\"deployments\"",
+        "\"gtag\"",
+        "\"production\""
+      ],
+      "false_positive_check": "\"Verba\" as an http.title collides with unrelated apps (Latin for \"words\"; multiple SaaS use it) and \"Alive!\" is a generic health string. Disambiguate on the meta description content=\"The GoldenRAGtriever\" (vendor-unique, ships in the static index.html) OR the /api/health JSON shape having ALL of {message:\"Alive!\", production, gtag, deployments, default_deployment} together - the default_deployment + gtag + deployments key triple is unique to Verba's health endpoint. Confirm the SPA bundle references /ws/generate_stream and /ws/import_files routes. Do NOT fingerprint on bare port 8000 + FastAPI/uvicorn Server header (collides with thousands of FastAPI apps) or on the title \"Verba\" alone."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"The GoldenRAGtriever\"",
+    "strict": "http.title:\"Verba\" http.html:\"GoldenRAGtriever\"",
+    "version": "http.html:\"The GoldenRAGtriever\" port:8080 product:\"Weaviate\""
+  },
+  "deployment_tells": [
+    "Listening uvicorn/FastAPI app on :8000 with SPA title <title>Verba</title> and meta 'The GoldenRAGtriever'",
+    "Co-located semitechnologies/weaviate container on :8080 and mirror :3000 (compose maps both 8080:8080 and 3000:8080), .well-known/ready healthcheck",
+    "/api/health reachable unauthenticated returning message:Alive! plus deployments/gtag/default_deployment keys",
+    "403 JSON {error:'Not allowed', details:{expected_origin, request_headers...}} when hitting /api/* with no/mismatched Origin = Verba same-origin middleware tell",
+    "docker-compose ollama-docker network + commented-out ollama service block; OLLAMA_URL=http://host.docker.internal:11434",
+    "Weaviate anonymous access (AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED true) on the paired :8080"
+  ],
+  "pivot_paths": [
+    "GET /api/health (no Origin needed) -> confirm Verba + read deployments/default_deployment posture",
+    "Connect to ws://TARGET:8000/ws/generate_stream and send a GeneratePayload to retrieve RAG answers built from the ingested private corpus (read-only data exposure, no auth, no Origin)",
+    "Hit /api/* with spoofed Origin: http://TARGET:8000 matching Host -> /api/get_all_documents, /api/get_content, /api/get_document, /api/get_chunks read ingested document text read-only",
+    "/api/get_vectors -> read raw embeddings of the corpus",
+    "/api/get_rag_config and /api/connect -> enumerate configured models, embedders, connected Weaviate URL and pipeline (business-logic/config disclosure, read-only)",
+    "Pivot to the paired Weaviate :8080/:3000 with anonymous access -> GET /v1/schema and /v1/objects to read the vector store directly (read-only enumeration)"
+  ],
+  "vulnerabilities": [
+    "No Verba/goldenverba-specific CVE or GHSA exists as of 2026-06-12 (GitHub Advisory DB returns 0 for goldenverba/weaviate-Verba) - the exposure is a design posture (no auth), not a tracked CVE",
+    "Backing component CVE-2025-67818 (GHSA-7v39-2hx7-7c43): Weaviate OSS < 1.33.4 backup-restore path traversal (ZipSlip); the default Verba compose pins semitechnologies/weaviate:1.25.10 (vulnerable range)",
+    "Backing component CVE-2023-38976 (GHSA-8697-479h-5mfp): Weaviate <=1.20.0 GraphQL type-conversion DoS, CVSS 7.5 - not applicable to pinned 1.25.10 but relevant to older co-deployed Weaviate",
+    "Design weakness (no CVE): /ws/generate_stream and /ws/import_files have zero authn/origin enforcement; check_same_origin middleware is Host-header-derived and spoofable by non-browser clients, reducing /api/* protection to anti-CSRF only",
+    "Design weakness (no CVE): /api/connect accepts a client-supplied Weaviate URL+credentials and connects to it (SSRF-class request forgery to internal/external hosts)",
+    "Info disclosure (no CVE): the 403 same-origin rejection body echoes the full request headers dict and expected origin back to the caller"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: goldenverba/server/api.py ships NO authentication of any kind - no Depends() auth dependency, no APIKeyHeader/OAuth2/HTTPBearer, no password, no login route, no session/token. The only access control is an HTTP middleware check_same_origin (verbatim): it exempts \"/api/health\" outright, and for other \"/api/\" paths returns 403 unless the request Origin header equals str(request.base_url).rstrip(\"/\"). base_url is derived from the client-controlled Host header, so a non-browser client that sets Origin to match the target's own host (e.g. Origin: http://TARGET:8000) bypasses it entirely - this is anti-CSRF, not authentication. The middleware is HTTP-only: BOTH WebSocket endpoints (/ws/generate_stream runs RAG queries returning ingested doc content + LLM answers; /ws/import_files ingests files) bypass it completely with zero origin/token/auth checks; /ws/import_files is gated only by `if production == \"Demo\": return`, and production/DEFAULT_DEPLOYMENT are UNSET in the quickstart. The default docker-compose.yml sets no Verba auth env vars at all and runs the backing Weaviate with AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'. goldenverba/.env.example contains ONLY commented-out upstream provider keys (OPENAI/COHERE/ANTHROPIC/WEAVIATE_API_KEY) - no admin password, no Verba login secret exists in the shipped config. README states Verba is \"single user usage only\" with \"no plans on supporting multiple users or role based access.\" Repo is ARCHIVED/discontinued: no future security patches.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG documents and chunk text (the org's own private corpus - PII/PHI/IP depending on what was loaded) readable via /ws/generate_stream RAG answers and, with Origin spoof, /api/get_content + /api/get_all_documents + /api/get_document",
+    "Raw vector embeddings via /api/get_vectors",
+    "Upstream LLM provider API keys (OpenAI/Cohere/Anthropic/Voyage/Firecrawl/Unstructured/GitHub/GitLab tokens) configured into the user_config and usable to bill the operator's accounts; queryable/abusable via the generate_stream pipeline and connect flow",
+    "Backing Weaviate vector DB on :8080/:3000 running with anonymous access enabled by default (full schema + object read/write)",
+    "Conversation context passed to /ws/generate_stream (chat history)",
+    "RAG configuration / pipeline definitions revealing models, embedders, chunking and the connected Weaviate URL via /api/get_rag_config and /api/connect",
+    "Document ingestion/deletion and full /api/reset (data destruction) reachable unauthenticated when production != 'Demo'"
+  ],
+  "sources": [
+    "https://github.com/weaviate/Verba",
+    "https://raw.githubusercontent.com/weaviate/Verba/main/docker-compose.yml",
+    "https://raw.githubusercontent.com/weaviate/Verba/main/Dockerfile",
+    "https://raw.githubusercontent.com/weaviate/Verba/main/goldenverba/.env.example",
+    "https://raw.githubusercontent.com/weaviate/Verba/main/goldenverba/server/api.py",
+    "https://raw.githubusercontent.com/weaviate/Verba/main/README.md",
+    "https://docs.weaviate.io/deploy/configuration/authentication",
+    "https://github.com/advisories/GHSA-7v39-2hx7-7c43",
+    "https://github.com/advisories/GHSA-8697-479h-5mfp",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

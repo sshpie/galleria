@@ -1,0 +1,57 @@
+{
+  "platform": "epsilla",
+  "display_name": "Epsilla",
+  "category": "vector_db",
+  "default_ports": [
+    8888
+  ],
+  "api_paths": [
+    "/api/{db}/load",
+    "/api/{db}/data/insert",
+    "/api/{db}/data/query"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8888:8888 epsillaai/vectordb:latest",
+  "misconfig_patterns": [
+    "No auth in default deployment — all databases and tables publicly accessible",
+    "statusCode:200 in every response body regardless of auth state"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8888 \"statusCode\"",
+      "port:8888 \"epsilla\""
+    ],
+    "active_probe": {
+      "path": "/api/default/load",
+      "method": "POST",
+      "response_markers": [
+        "\"statusCode\":200",
+        "\"message\"",
+        "\"result\""
+      ],
+      "false_positive_check": "response must include statusCode, message, and result fields — medium FP risk on port 8888"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8888 \"statusCode\"",
+    "strict": "port:8888 \"statusCode\" \"epsilla\"",
+    "version": "port:8888 \"epsilla\""
+  },
+  "deployment_tells": [
+    "Port 8888 is shared with Jupyter — require body confirmation",
+    "All responses include statusCode:200 + message + result JSON structure",
+    "No authentication prompt on any endpoint in default deployment"
+  ],
+  "pivot_paths": [
+    "POST /api/{db}/data/query → vector search without auth",
+    "GET /api/{db}/list-tables → table names without auth",
+    "POST /api/{db}/data/get → full record retrieval without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://epsilla-inc.github.io/epsilladb-docs/",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

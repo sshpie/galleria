@@ -1,0 +1,113 @@
+{
+ "name": "ActionML Harness (Universal Recommender)",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "ActionML, LLC",
+  "backing": "OSS (Apache-2.0); ActionML is the commercial sponsor offering paid support/consulting around the OSS server",
+  "hq": "USA (San Francisco Bay Area; ActionML, LLC)",
+  "repo": "https://github.com/actionml/harness",
+  "status": "effectively dormant / minimally maintained. Latest stable is harness-0.7.0; Docker Hub image actionml/harness 'last updated almost 5 years ago' with newest visible tag develop-2021-09-06. Repo not archived but no recent release activity. Universal Recommender lineage traces to Apache PredictionIO (retired/attic).",
+  "scale": "Docker Hub actionml/harness shows 1M+ pulls; GitHub ~293 stars / ~49 forks. The predecessor stack (PredictionIO + Universal Recommender template) had far wider historical adoption in e-commerce recommendation."
+ },
+ "ports": [
+  "9090/tcp (Harness REST API - primary)",
+  "9099/tcp (harness-auth-server - only when auth enabled)",
+  "27017/tcp (MongoDB backing store - host-mapped in default compose)",
+  "9200/tcp (Elasticsearch model/index store - host-mapped in default compose)",
+  "8998/tcp (Spark job server - optional, training)"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "port:9090 \"Server: akka-http\"",
+  "port:9090 \"WWW-Authenticate\" \"Bearer\" \"akka-http\"",
+  "\"akka-http\" http.html:\"resourceId\" http.html:\"comment\"",
+  "port:9090 \"akka-http/10.\" \"Server\""
+ ],
+ "verification_primitive": {
+  "probe": "GET http://<host>:9090/system  (and GET /engines). Read-only. If auth is enabled these return 401 with a Bearer WWW-Authenticate challenge; if open they return 200 with JSON.",
+  "success_signal": "HTTP 200 with a JSON body from /system (server/version info) and a JSON array from /engines listing engine instances, served with 'Server: akka-http' header. 200 + engine JSON = auth disabled and instance is open.",
+  "impact_when_open": "Confirms unauthenticated access to the recommender control plane: attacker can enumerate every engine, read engine configs, read per-user behavioral data via /engines/{id}/entities/{userId}, inject/poison events via POST /events, run queries to exfiltrate the item catalog and relationships, trigger training jobs (Spark compute abuse), and delete engines. Stop at the GET (names/configs are the finding); do not exercise writes/deletes."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/system",
+   "returns": "System/version info JSON (handler getSystemInfo). Unauth read of server identity when auth disabled."
+  },
+  {
+   "method": "GET",
+   "path": "/system/health",
+   "returns": "Health check 200 (handler healthCheck). Good unauth liveness probe."
+  },
+  {
+   "method": "GET",
+   "path": "/engines",
+   "returns": "JSON list of all configured engine instances (handler getEngines) - enumerates every deployed recommender/engine on the server."
+  },
+  {
+   "method": "GET",
+   "path": "/engines/{engineId}",
+   "returns": "JSON config/status of a specific engine (handler getEngine) - reveals engine type and configuration."
+  },
+  {
+   "method": "POST",
+   "path": "/engines",
+   "returns": "Creates a new engine from a posted JSON config (createEngine). On an open instance this is a write/admin action."
+  },
+  {
+   "method": "DELETE",
+   "path": "/engines/{engineId}",
+   "returns": "Deletes an engine (deleteEngine) - destructive when unauth."
+  },
+  {
+   "method": "GET",
+   "path": "/engines/{engineId}/entities/{userId}",
+   "returns": "Returns stored data for a given user/entity (getUserData) - reads per-user behavioral data."
+  },
+  {
+   "method": "POST",
+   "path": "/engines/{engineId}/events",
+   "returns": "Ingests a behavioral event (write). Open instance accepts arbitrary event injection / model poisoning."
+  },
+  {
+   "method": "POST",
+   "path": "/engines/{engineId}/queries",
+   "returns": "Returns recommendations for a query (read of model output, can enumerate item catalog/relations)."
+  },
+  {
+   "method": "POST",
+   "path": "/engines/{engineId}/jobs",
+   "returns": "Starts a training job (updateEngineWithTrain) - triggers Spark compute."
+  },
+  {
+   "method": "POST",
+   "path": "/commands/batch-train",
+   "returns": "Runs a batch-train command (CommandsRouter) - no per-route auth directive in source."
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "returns": "Bare HTTP 200 with empty body (CheckRouter root route). No HTML/UI/welcome string - Harness is a headless REST API."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://github.com/actionml/harness",
+  "https://github.com/actionml/harness/blob/develop/README.md",
+  "https://raw.githubusercontent.com/actionml/harness/208a8f4d9261d412f3194622604f7f2d187806cf/rest-server/bin/harness-env",
+  "https://raw.githubusercontent.com/actionml/harness/208a8f4d9261d412f3194622604f7f2d187806cf/docker/docker-compose.yml",
+  "https://raw.githubusercontent.com/actionml/harness/208a8f4d9261d412f3194622604f7f2d187806cf/rest-server/server/src/main/resources/reference.conf",
+  "https://raw.githubusercontent.com/actionml/harness/208a8f4d9261d412f3194622604f7f2d187806cf/rest-server/server/src/main/scala/com/actionml/router/http/RestServer.scala",
+  "https://github.com/actionml/harness/blob/develop/rest-server/server/src/main/scala/com/actionml/router/config/AppConfig.scala",
+  "https://github.com/actionml/harness/blob/develop/rest-server/server/src/main/scala/com/actionml/router/http/routes/EnginesRouter.scala",
+  "https://github.com/actionml/harness/blob/develop/rest-server/server/src/main/scala/com/actionml/router/http/routes/CommandsRouter.scala",
+  "https://github.com/actionml/harness/blob/master/versions.md",
+  "https://actionml.com/docs/harness_security",
+  "https://actionml.com/docs/harness_config",
+  "https://hub.docker.com/r/actionml/harness",
+  "https://github.com/actionml/harness-auth-server",
+  "https://github.com/actionml/universal-recommender",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

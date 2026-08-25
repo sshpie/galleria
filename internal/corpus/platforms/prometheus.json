@@ -1,0 +1,97 @@
+{
+  "platform": "prometheus",
+  "display_name": "Prometheus",
+  "category": "time_series_db",
+  "default_ports": [9090, 9091, 9092],
+  "default_port_notes": {
+    "9090": "Prometheus server HTTP/web UI/API",
+    "9091": "Pushgateway HTTP",
+    "9092": "Prometheus Alertmanager (rare alt — usually 9093)"
+  },
+  "api_paths": [
+    "/",
+    "/graph",
+    "/metrics",
+    "/api/v1/status/buildinfo",
+    "/api/v1/status/config",
+    "/api/v1/status/runtimeinfo",
+    "/api/v1/status/flags",
+    "/api/v1/status/tsdb",
+    "/api/v1/targets",
+    "/api/v1/alertmanagers",
+    "/api/v1/rules",
+    "/api/v1/alerts",
+    "/api/v1/labels",
+    "/api/v1/label/__name__/values",
+    "/api/v1/query",
+    "/api/v1/query_range",
+    "/api/v1/series",
+    "/debug/pprof/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "--web.config.file (TLS+basic auth via separate YAML)",
+    "External reverse proxy (oauth2-proxy, nginx-ldap, vmauth)"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 9090:9090 prom/prometheus:latest",
+  "misconfig_patterns": [
+    "Default deployment exposes :9090 with no auth; full read access to metric values + targets",
+    "/api/v1/targets reveals scrape topology — internal hostnames + scrape config",
+    "/api/v1/status/config returns the full prometheus.yml contents — includes remote_write URLs, basic_auth credentials in static configs if present, AlertManager URLs",
+    "/api/v1/status/flags exposes the server's command-line including --web.config.file (if any) and --storage.tsdb.path",
+    "/api/v1/query allows arbitrary PromQL — full metric value exfiltration",
+    "/api/v1/admin/tsdb/delete_series and /snapshot accept POSTs (gated by --web.enable-admin-api default false; but operators who flip the flag forget)",
+    "/debug/pprof/ exposed by default; --web.config.file basic_auth scope does NOT cover pprof on older versions (same class as VictoriaMetrics issue #3060)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:Prometheus",
+      "port:9090 http.html:\"Prometheus Time Series Collection\"",
+      "port:9090 http.favicon.hash:-1399433489",
+      "http.html:\"/api/v1/status/buildinfo\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/status/buildinfo",
+      "method": "GET",
+      "response_markers": ["prometheus", "version", "revision", "branch"],
+      "false_positive_check": "CONJUNCTIVE: response body must be valid JSON with data.version AND data.goVersion AND data.revision populated. VictoriaMetrics returns {\"status\":\"success\",\"data\":{}} — an EMPTY data object (no version, no goVersion) on this exact path; that empty-data shape is the cleanest VM-vs-Prometheus anti-match (sharper than the older 'fake 2.24.0' framing — VM does not emit a fake version, it emits nothing). ANTI-MATCH for the rest of the family: Thanos answers /api/v1/stores (Prometheus 404s it); Mimir/Cortex serve query under /prometheus/* or reject bare query with 'no org id' (Prometheus serves /api/v1/* at root with no tenant gate). So Prometheus = goVersion-present buildinfo AND /api/v1/stores 404 AND no 'no org id' tenant error AND /graph SPA at root."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"Prometheus Time Series Collection\" port:9090",
+    "strict": "port:9090 http.favicon.hash:-1399433489",
+    "version": "http.html:\"prometheus_build_info\"",
+    "pushgateway": "port:9091 http.html:\"Pushgateway\"",
+    "alertmanager": "port:9093 http.html:\"Alertmanager\""
+  },
+  "deployment_tells": [
+    "/graph SPA at root identifies Prometheus uniquely",
+    "/api/v1/status/buildinfo returns JSON with 'goVersion' field (distinguishes from VM Prometheus-API-compat)",
+    "/metrics endpoint exposes prometheus_* internal metrics (prometheus_target_scrapes_*, prometheus_engine_query_duration_seconds)"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/targets -> scrape configuration -> internal hostnames + RFC1918 endpoints (Insight #88 generalization)",
+    "GET /api/v1/status/config -> full prometheus.yml -> remote_write URLs + AlertManager URLs + embedded credentials",
+    "GET /api/v1/label/__name__/values -> full metric-name catalog -> operator stack inference",
+    "GET /api/v1/query?query=up -> currently-monitored target inventory with status",
+    "GET /debug/pprof/ -> runtime profiling (Insight #89 generalization candidate)"
+  ],
+  "vulnerabilities": [
+    "CVE-2019-3826: Stored XSS in /graph SPA pre-2.7.1 (legacy; long patched)",
+    "Design choice (NOT a CVE): no authentication by default; documented in upstream docs as operator responsibility",
+    "Same class as VictoriaMetrics issue #3060: --web.config.file basic_auth may not cover /debug/pprof/ on older versions"
+  ],
+  "auth_default_thesis": "AUTH-OFF-DEFAULT confirmed. Prometheus ships with --web.config.file empty by default. Operators must enable web.yml with TLS/basic auth, or run behind a reverse proxy. Direct analog to VictoriaMetrics. Falsifier hypothesis: if Prometheus unauth rate matches VM (~93.5%), the auth-off-default thesis generalizes to Q4 Topology Mirror tier. If Prometheus comes back at <50% unauth, VM is anomalous and operators DO harden Prometheus specifically.",
+  "research_questions": [
+    "Does the Prometheus unauth rate match or differ from VictoriaMetrics (93.5%)?",
+    "Does /debug/pprof/ bypass --web.config.file basic_auth at population scale (Insight #89 generalization)?",
+    "What share of /api/v1/status/config bodies leak embedded credentials in remote_write or AlertManager static configs?",
+    "Quadrant prediction (DCWF 902 Insight #90 candidate): does Prometheus rollup show CRITICAL_INFRA + DEFENSE_GOV dominance (Q4 signature)?"
+  ],
+  "sources": [
+    "[CANDIDATE —  platform brief 2026-06-08; survey pending]",
+    "Prometheus docs: prometheus.io/docs/prometheus/latest/configuration/https/",
+    "DCWF 902 strategic roadmap (2026-06-08): Prometheus is P0 falsifier for VM finding"
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "name": "Ultravox",
+  "slug": "ultravox",
+  "category": "voice-tts-conversational",
+  "description": "End-to-end speech-native voice LLM by Fixie.ai. Converts audio directly into LLM embedding space, bypassing STT/TTS pipeline. Provides a REST API (api.ultravox.ai) for call/agent lifecycle management and real-time bidirectional voice via short-lived WebSocket joinUrl tokens.",
+  "auth_tier": "B",
+  "default_auth": "api_key",
+  "auth_notes": "Managed SaaS at api.ultravox.ai requires X-API-Key header (41-char alphanumeric, format: 8chars.32chars). X-Unsafe-API-Key header variant is a documented escape hatch that disables CORS enforcement for client-side demos — Ultravox documentation explicitly warns \"never expose your API key to client code\" and names this header as the unsafe alternative. WebSocket voice sessions are gated by short-lived joinUrl tokens (wss:// URI) returned from POST /api/calls; these tokens are not reusable across sessions but are embedded in the URL itself and can be captured in transit or logs. Self-hosted model inference via vLLM (the primary self-hosting path) has no authentication by default — the vLLM OpenAI-compatible server binds on 0.0.0.0:8000 with no auth required unless operators add an API key via --api-key flag. Baseten and Cerebrium deployments follow the same vLLM pattern; auth is operator-configured, not default-on.",
+  "default_ports": [
+    8000,
+    8080
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "http.html:\"ultravox\" port:8000",
+      "rationale": "Self-hosted vLLM inference servers for Ultravox bind on port 8000 by default; any web UI or /v1/models response referencing ultravox branding will match"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"fixie-ai/ultravox\" port:8000",
+      "rationale": "vLLM /v1/models endpoint returns the HuggingFace model ID (fixie-ai/ultravox-v0_4, etc.); this string uniquely identifies an Ultravox model server"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"ultravox-v0\" port:8000",
+      "rationale": "Ultravox model version strings (ultravox-v0_5, ultravox-v0_6, ultravox-v0_7, ultravox-v0_6-llama-3_3-70b, ultravox-v0_7-glm-4_6, etc.) appear in vLLM /v1/models JSON on unauthenticated self-hosted instances; v0_6/v0_7 are current as of 2026 (the ultravox-v0 token still matches all v0_x variants)"
+    },
+    {
+      "tier": "basic",
+      "query": "ssl.cert.subject.cn:\"ultravox.ai\"",
+      "rationale": "TLS certificates issued to *.ultravox.ai or api.ultravox.ai domains identify managed API infrastructure and any self-hosted instances using the platform domain"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"joinUrl\" http.html:\"callId\" port:8000 port:8080",
+      "rationale": "POST /api/calls response body contains both joinUrl and callId fields; a permissive proxy or misconfigured demo endpoint returning this JSON unauthenticated would be high-value"
+    }
+  ],
+  "fingerprint_markers": {
+    "http_path": "/api/calls",
+    "response_body_contains": [
+      "joinUrl",
+      "callId",
+      "wss://",
+      "ultravox"
+    ],
+    "http_header": "X-API-Key",
+    "title_contains": "Ultravox",
+    "port": 8000
+  },
+  "api_paths": [
+    "POST /api/calls",
+    "GET /api/calls",
+    "GET /api/calls/{call_id}",
+    "DELETE /api/calls/{call_id}",
+    "GET /api/calls/{call_id}/messages",
+    "GET /api/calls/{call_id}/recording",
+    "GET /api/calls/{call_id}/events",
+    "GET /api/calls/{call_id}/stages",
+    "GET /api/calls/{call_id}/stages/{stage_id}/messages",
+    "POST /api/agents",
+    "GET /api/agents",
+    "GET /api/agents/{agent_id}",
+    "DELETE /api/agents/{agent_id}",
+    "POST /api/agents/{agent_id}/calls",
+    "POST /api/tools",
+    "GET /api/tools",
+    "GET /api/tools/{tool_id}",
+    "DELETE /api/tools/{tool_id}",
+    "POST /api/corpora",
+    "GET /api/corpora/{corpus_id}/sources",
+    "GET /api/corpora/{corpus_id}/sources/{source_id}/documents",
+    "POST /api/corpora/{corpus_id}/query",
+    "GET /api/webhooks",
+    "POST /api/webhooks",
+    "GET /api/voices",
+    "POST /api/voices",
+    "GET /v1/models",
+    "POST /v1/chat/completions",
+    "POST /v1/completions",
+    "WSS /calls/{call_id}"
+  ],
+  "known_vulns": [],
+  "default_creds": [],
+  "risk_notes": "1. UNAUTHENTICATED vLLM INFERENCE (HIGH): Default vLLM deployments of ultravox models on port 8000 have zero auth. Any internet-exposed instance allows arbitrary inference — compute theft, prompt injection into voice pipeline, model extraction via /v1/models + /v1/completions. 2. API KEY CLIENT-SIDE EXPOSURE (MEDIUM): X-Unsafe-API-Key is a documented pattern that normalizes embedding Ultravox API keys in JavaScript bundles. Keys found in client code grant full account access: enumerate all calls, download audio recordings (PII), read transcripts, list agents, query RAG corpora. 3. CALL RECORDING PII (HIGH): GET /api/calls/{id}/recording returns raw audio files; GET /api/calls/{id}/messages returns full conversation transcripts. Leaked API key exposes all historical call content across the account — medical consultations, financial discussions, PII-heavy customer service interactions depending on deployment context. 4. THIRD-PARTY CREDENTIAL PIVOTING (MEDIUM): BYOK stores ElevenLabs/Cartesia API credentials inside Ultravox accounts. Compromised Ultravox API key may expose downstream TTS provider keys — pivot surface to voice cloning infrastructure. 5. WEBSOCKET SESSION INTERCEPTION (LOW-MEDIUM): joinUrl tokens are embedded in wss:// URLs logged by proxies, CDNs, and application logs. Token capture allows real-time session hijack for active voice calls. 6. RAG CORPUS EXFILTRATION (MEDIUM): POST /api/corpora/{id}/query allows semantic search over deployed knowledge bases — unauth or stolen-key access can extract proprietary document content embedded in agent corpora.",
+  "deployment_notes": "No official Ultravox Docker image exists for the full API server — the platform is primarily SaaS (api.ultravox.ai). Self-hosting the model requires pulling weights from HuggingFace (fixie-ai/ultravox-v0_4, fixie-ai/ultravox-v0_5-llama-3_2-1b, etc.) and serving via vLLM (vllm serve fixie-ai/ultravox-v0_5 --host 0.0.0.0 --port 8000). This exposes an OpenAI-compatible API at port 8000 with no auth by default. Baseten deploys via custom Truss with vllm serve directly; Cerebrium deploys via uvicorn/FastAPI wrapper typically on port 8765. GPU requirement: 70B models require A100/H100; 1B-8B models run on A10. The managed API server stack appears to be nginx-fronted based on deployment patterns. Bring-Your-Own-Key (BYOK) feature stores ElevenLabs, Cartesia, and other TTS provider credentials within Ultravox accounts.",
+  "docker_images": [
+    "vllm/vllm-openai (serve fixie-ai/ultravox-v0_4 or fixie-ai/ultravox-v0_5-llama-3_2-1b via --model flag)",
+    "basetenlabs/truss-examples custom-server/ultravox-0.6-70b (Baseten Truss deployment)"
+  ],
+  "github_repos": [
+    "fixie-ai/ultravox",
+    "fixie-ai/ultradox",
+    "fixie-ai/ultravox-web-quickstart",
+    "fixie-ai/ultravox-websocket-example-client",
+    "fixie-ai/ultravox-examples",
+    "fixie-ai/ultravox-client-sdk-js",
+    "fixie-ai/ultravox-client-sdk-ios",
+    "fixie-ai/ultravox-client-sdk-android",
+    "fixie-ai/ultravox-tutorial-client-tools"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    },
+    {
+      "status": "CANDIDATE",
+      "source": "currency-audit-2026-08-05"
+    }
+  ]
+}

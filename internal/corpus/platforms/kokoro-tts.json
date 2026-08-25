@@ -1,0 +1,102 @@
+{
+  "name": "Kokoro-FastAPI",
+  "slug": "kokoro-tts",
+  "category": "voice-tts-conversational",
+  "description": "OpenAI-compatible text-to-speech API server wrapping the Kokoro-82M model. Dockerized FastAPI/uvicorn application exposing /v1/audio/speech and /v1/audio/voices on port 8880 with 50+ voices across 9 languages, streaming audio, voice mixing, and word-level timestamped captions. No authentication by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "remsky/Kokoro-FastAPI (primary project): zero authentication by default. The OpenAI client api_key field is documented as 'not-needed' — any non-empty placeholder satisfies the client library, no server-side check occurs. Auth is entirely opt-in and must be enforced externally via reverse proxy; no built-in API key middleware in the main image. hwdsl2/kokoro-server variant adds optional KOKORO_API_KEY via environment variable: fresh installs auto-generate a key only when /var/lib/kokoro volume is mounted; existing installs without a key remain fully open for backward compatibility. Neither image enforces HTTPS natively. No rate limiting is implemented in either variant. The /docs (Swagger UI), /v1/audio/voices, and /health endpoints are universally unauthenticated even in deployments that have partially configured auth.",
+  "default_ports": [
+    8880,
+    8000,
+    8001
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8880 \"Kokoro-FastAPI\"",
+      "rationale": "Title or body match on canonical port 8880; surfaces instances using default docker-compose port binding"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8880 http.html:\"af_bella\" http.html:\"voices\"",
+      "rationale": "Conjunctive match on default voice name and voices JSON key returned by unauthenticated GET /v1/audio/voices — high-specificity body signal"
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"Kokoro\" port:8880 product:\"uvicorn\"",
+      "rationale": "Web UI title combined with FastAPI default server header and canonical port — filters to FastAPI-stack Kokoro deployments"
+    },
+    {
+      "tier": "version",
+      "query": "port:8880 http.html:\"kokoro-fastapi\" http.html:\"v0.\"",
+      "rationale": "Version string in HTML/API response body; useful for scoping CVE applicability to specific release bands"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8880 \"/v1/audio/speech\" \"uvicorn\"",
+      "rationale": "OpenAI-compat endpoint path in HTML body combined with uvicorn server header; catches instances where title is customized"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8880,
+    "http_path": "/v1/audio/voices",
+    "response_body_contains": [
+      "af_bella",
+      "af_sky",
+      "af_heart",
+      "voices"
+    ],
+    "title_contains": "Kokoro",
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "POST /v1/audio/speech",
+    "GET /v1/audio/voices",
+    "POST /dev/captioned_speech",
+    "POST /dev/phonemize",
+    "POST /dev/generate_from_phonemes",
+    "GET /health",
+    "GET /docs",
+    "GET /openapi.json",
+    "GET /web",
+    "GET /"
+  ],
+  "known_vulns": [
+    "CVE-2026-48710: Starlette < 1.0.1 reconstructs request.url from an unvalidated HTTP Host header, enabling routing/middleware security bypass (CVSS 6.5 Medium, NVD). Applicable — Kokoro-FastAPI runs on Starlette; verify the pinned Starlette version before scoring.",
+    "No built-in authentication — POST /v1/audio/speech accepts unauthenticated synthesis requests from any source; open TTS compute at operator cost (no default API-key check).",
+    "No rate limiting by default — automated request floods exhaust CPU/GPU and host resources.",
+    "FastAPI /docs and /openapi.json enabled by default — full API schema disclosure aids endpoint enumeration."
+  ],
+  "default_creds": [
+    "not-needed"
+  ],
+  "risk_notes": "Primary unauth risk is compute theft: TTS synthesis is CPU/GPU-intensive and billed per inference on cloud deployments; an unauthenticated instance can be weaponized to exhaust GPU/CPU budget at no cost to the attacker. Secondary risk is deepfake audio production: the 50+ multilingual voices with voice-mixing and phoneme-level control enable synthesis of convincing impersonation audio for vishing/fraud campaigns. /dev/captioned_speech exposes word-level timestamps that aid audio forensics evasion. The /docs Swagger UI is universally unauth and enumerates the full API surface including dev endpoints. No rate limiting means resource exhaustion DoS is trivially achievable. The /dev/phonemize endpoint exfiltrates phoneme representations of arbitrary input text — low-sensitivity in isolation but useful for probing model internals. Audio responses are served in multiple formats (MP3/WAV/FLAC/Opus/M4A/PCM) enabling direct exfiltration of synthesized content. DigitalOcean and Railway deployments are commonly exposed directly on public IPs per documented integration guides.",
+  "deployment_notes": "Default docker-compose.yml binds to 0.0.0.0:8880:8880, making the TTS API internet-facing unless explicitly changed to 127.0.0.1:8880:8880. GPU variant uses NVIDIA CUDA; CPU variant uses ONNX runtime — both expose identical API surface. Documented deployment targets include Railway, Dokploy, DigitalOcean, Synology NAS, RunPod serverless, and Spheron GPU cloud. No HTTPS is provided by the container itself; docs recommend a reverse proxy for TLS termination. Versions in production range from v0.1.4 through v0.5.0 (v0.5.0 is the current release as of 2026-06). ONNX threading tunable via env (ONNX_NUM_THREADS, ONNX_INTER_OP_THREADS). Open WebUI integration is widely documented and common — instances may appear fronted behind Open WebUI rather than directly exposed.",
+  "docker_images": [
+    "ghcr.io/remsky/kokoro-fastapi-cpu",
+    "ghcr.io/remsky/kokoro-fastapi-gpu",
+    "ghcr.io/remsky/kokoro-fastapi-rocm",
+    "ghcr.io/remsky/kokoro-fastapi-ui",
+    "hwdsl2/kokoro-server",
+    "openmindagi/kokoro-fastapi",
+    "sebastianboehler/kokoro-tts"
+  ],
+  "github_repos": [
+    "https://github.com/remsky/Kokoro-FastAPI",
+    "https://github.com/hwdsl2/docker-kokoro",
+    "https://github.com/allenguarnes/kokoro-webui",
+    "https://github.com/neosun100/kokoro-tts",
+    "https://github.com/ahmedoubadi/kokoro-tts"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    },
+    {
+      "status": "CANDIDATE",
+      "source": "currency-audit-2026-08-05"
+    }
+  ]
+}

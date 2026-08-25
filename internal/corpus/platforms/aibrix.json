@@ -1,0 +1,110 @@
+{
+  "platform": "aibrix",
+  "display_name": "AIBrix",
+  "category": "inference_serving",
+  "default_ports": [80, 8000, 8080],
+  "api_paths": [
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v1/models",
+    "/healthz",
+    "/ready",
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["HUGGING_FACE_HUB_TOKEN"],
+  "default_creds": [],
+  "install_tell": "kubectl apply -f https://github.com/vllm-project/aibrix/releases/download/v0.6.0/aibrix-core-v0.6.0.yaml",
+  "misconfig_patterns": [
+    "Envoy Gateway exposed on port 80 LoadBalancer without auth proxy (quickstart shows raw curl http://${ENDPOINT}/v1/completions)",
+    "aibrix-runtime sidecar on 8080 exposes /healthz and /ready unauthenticated, plus model management surface",
+    "routing-strategy header (random|least-load|pd) trusted from client — bypasses any router algorithm choice",
+    "Per-model HTTPRoute auto-created in aibrix-system namespace — model name from header IS the routing key, no allowlist",
+    "vLLM backend on 8000 reachable directly if Service is LoadBalancer instead of ClusterIP",
+    "INFERENCE_ENGINE_ENDPOINT env on runtime sidecar = http://localhost:8000 — runtime can be coerced into proxying internal vLLM"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"aibrix\"",
+      "http.html:\"model.aibrix.ai\"",
+      "ssl.cert.subject.cn:\"aibrix\"",
+      "http.html:\"aibrix-system\"",
+      "http.headers.x-envoy-upstream-service-time"
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": ["\"object\":\"list\"", "\"data\":["],
+      "secondary_probe": {
+        "path": "/v1/chat/completions",
+        "method": "POST",
+        "headers": {"routing-strategy": "random", "Content-Type": "application/json"},
+        "response_markers_on_404": ["envoy", "no healthy upstream"],
+        "discriminator": "AIBrix returns Envoy 404 with no-route when routing-strategy header set but no model header matches — pattern unique to aibrix gateway patch"
+      },
+      "false_positive_check": "INFERRED: combine /v1/models response (vLLM-style) with presence of routing-strategy / target-pod headers being honored. Bare /v1/models can be vLLM directly; AIBrix tell is the gateway layer reacting to routing-strategy header."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"model.aibrix.ai\"",
+    "strict": "http.html:\"model.aibrix.ai/name\" port:80",
+    "version": "http.html:\"aibrix-system\" http.html:\"v0.6.0\""
+  },
+  "censys_queries": {
+    "basic": "services.http.response.body:\"model.aibrix.ai\"",
+    "strict": "services.http.response.body:\"aibrix-system\" and services.http.response.headers.server:\"envoy\"",
+    "cert": "services.tls.certificates.leaf_data.subject_dn:\"aibrix\" or services.tls.certificates.leaf_data.names:\"aibrix-system\""
+  },
+  "deployment_tells": [
+    "Service naming: envoy-aibrix-system-aibrix-eg-<hash> (envoy-gateway-system namespace)",
+    "Namespace tell: aibrix-system contains aibrix-controller-manager, aibrix-gateway-plugins, aibrix-gpu-optimizer, aibrix-kuberay-operator, aibrix-metadata-service, aibrix-redis-master",
+    "K8s label model.aibrix.ai/name on Deployment + Service",
+    "K8s annotation model.aibrix.ai/sidecar-injection: true triggers aibrix-runtime sidecar",
+    "Docker image aibrix/runtime:v0.5.0+ alongside vllm/vllm-openai container",
+    "HTTPRoute resources named <model>-router in aibrix-system namespace",
+    "Envoy 'server: envoy' header (envoyproxy/envoy:v1.33.2) on /v1/* responses",
+    "routing-strategy request header honored (random|least-load|pd|prefix-cache)",
+    "target-pod header maps to ORIGINAL_DST cluster — direct pod targeting",
+    "Quickstart endpoint format: ${LB_IP}:80 with no auth"
+  ],
+  "pivot_paths": [
+    "GET / on port 80 with no host -> Envoy default 404 + 'no healthy upstream' if no model header set",
+    "GET /v1/models -> model list from gateway aggregator -> enumerates every Deployment labeled model.aibrix.ai/name",
+    "POST /v1/chat/completions with model name from /v1/models -> direct vLLM access via gateway with no API key (unless --api-key set on backend)",
+    "GET /metrics on backend port 8000 -> vllm: prefixed Prometheus -> infer cluster GPU count and current request rate",
+    "GET /healthz and /ready on runtime sidecar port 8080 -> confirms aibrix-runtime presence (LiveProbe/ReadyProbe paths from base-api-key.yaml)",
+    "kubectl-style HTTPRoute enumeration via gateway: model header value = backend Service name in default namespace",
+    "Redis dependency (aibrix-redis-master) — INFERRED: if reachable, holds rate-limiter state and gateway plugin cache"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "github.com/vllm-project/aibrix README.md @ sha 0d0ff153b2fd82dbdcafc23721fef50656fb6d24",
+    "github.com/vllm-project/aibrix samples/quickstart/model.yaml",
+    "github.com/vllm-project/aibrix samples/adapter/base-api-key.yaml",
+    "github.com/vllm-project/aibrix config/gateway/gateway.yaml",
+    "github.com/vllm-project/aibrix pkg/constants/model.go",
+    "github.com/vllm-project/aibrix docs/source/getting_started/quickstart.rst",
+    "github.com/vllm-project/aibrix docs/source/features/runtime.rst",
+    "github.com/vllm-project/aibrix docs/source/features/gateway-plugins.rst",
+    "github.com/vllm-project/aibrix pkg/plugins/gateway/gateway.go"
+  ],
+  "registry_mentions": {
+    "discovery_dork": "\"aibrix\"",
+    "namespace_pattern": "aibrix/*",
+    "verification_method": "single-request GET /v2/_catalog, 200 + no Www-Authenticate",
+    "image_examples": ["aibrix/controller-manager"],
+    "hosts": [
+      "115.191.10.126:443",
+      "124.163.255.214:5000",
+      "65.108.11.238:8804 (HA twin :8808)",
+      "46.62.204.42:80"
+    ],
+    "surveyed_at": "2026-06-09",
+    "survey_ref": "shodan/cat-syllabus-leads-2026-06-09/findings-breakdown.txt",
+    "insight_ref": "methodology/insight-95-oss-platform-name-as-registry-dork.md",
+    "note": "Image name appeared in unauth Docker registry catalogs. Platform itself NOT verified live at these IPs — these are lateral mentions per Insight #95, not platform instances. Status stays CANDIDATE."
+  },
+  "status": "CANDIDATE",
+  "discovered_at": "2026-06-09",
+  "notes": "Auth-on-default OFF — quickstart literally curls http://${ENDPOINT}/v1/completions with no auth. Optional vLLM-level --api-key (see base-api-key.yaml) — when set, it's still a static bearer on the backend, not enforced at gateway. ByteDance project, 4855 stars, v0.6.0 released 2026-03-05, push 2026-06-09. K8s-only deployment so expect cluster-fronting LoadBalancer IPs on cloud-provider IP ranges, not bare VPS. Tells are HIGH-CONFIDENCE because the model.aibrix.ai label namespace + aibrix-system service naming are unique strings."
+}

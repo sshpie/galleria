@@ -1,0 +1,165 @@
+{
+  "platform": "alter",
+  "display_name": "Alter Vault (Authorization Layer for AI Agents)",
+  "category": "ai_agent_authorization_gateway",
+  "subcategory": "ai_email_guardrails_lane_c_adjacent",
+  "default_ports": [443],
+  "api_paths": [
+    "/api/v1/grants",
+    "/api/v1/agents",
+    "/api/v1/connect/sessions",
+    "/api/v1/oauth/authorize",
+    "/api/v1/calls"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "ALTER_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "Hosted SaaS only at this writing. Marketing landing at alterai.dev (Astro); docs at docs.alterauth.com; admin portal at portal.alterauth.com (per llms.txt and scopes doc). SDKs: Python, TypeScript, Connect (browser widget). CLI named 'alter'. Frameworks shipped: FastAPI, LangChain, MCP, Express, Next.js. SoftwareApplication schema.org type SecurityApplication, applicationCategory in landing page JSON-LD.",
+  "misconfig_patterns": [
+    "Per-app default scope set is operator-chosen at provider setup. An operator who picks the widest scope set (e.g. gmail.modify + drive + calendar.events all at once) burdens every customer's consent screen with the OR-union of every action any agent might need.",
+    "scope_merge:true on incremental grants means new scopes are merged with existing credential rather than replacing: a forgotten/over-broad past scope persists silently across consent flows.",
+    "Provider scope mismatch handling: if operator adds a required scope after users already connected, ScopeReauthRequiredError is raised: UX may push users to re-consent without re-reading the consent screen, classic scope-creep blind spot.",
+    "Alter API keys carry their own capability scopes (grants:read/write, agents:read/write, connect:create). App-level keys default to a broad scope set per docs; minting per-agent keys with full app scope is the convenient-but-wrong default.",
+    "with_constraints(scopes=[...]) attenuation is intersection-only: useful, but operators who never call it ship over-scoped keys to downstream tool calls."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"alterai.dev\"",
+      "ssl.cert.subject.cn:\"alterauth.com\"",
+      "http.html:\"Alter Vault\"",
+      "http.html:\"The auth layer\" http.html:\"AI agents\"",
+      "http.title:\"Alter Vault\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "<title>Alter Vault | The Authorization Layer for AI Agents</title>",
+        "Secure OAuth credential management for AI agents",
+        "schema.org SoftwareApplication name 'Alter Vault'"
+      ],
+      "false_positive_check": "Body must contain BOTH '<title>Alter Vault' AND the schema.org JSON-LD block naming 'Alter Vault'. The brand 'Alter' is generic; the combined string anchors the SaaS instance."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"alterauth.com\"",
+    "strict": "ssl.cert.subject.cn:\"alterauth.com\" http.html:\"Alter Vault\"",
+    "version": "http.html:\"Alter Vault\" http.html:\"Authorization Layer for AI Agents\"",
+    "alt_apex": "ssl.cert.subject.cn:\"alterai.dev\"",
+    "favicon_pivot_needed": "Favicon hash TBD; landing serves favicon.svg + favicon.png."
+  },
+  "deployment_tells": [
+    "Marketing apex alterai.dev fronted by Cloudflare (104.18.16-17.173). Static Astro landing; no public API surfaced from marketing apex.",
+    "MX = 1 smtp.google.com on alterai.dev (Workspace inbound).",
+    "SPF: v=spf1 include:_spf.google.com ~all (soft-fail).",
+    "DMARC: v=DMARC1; p=none; rua=Cloudflare DMARC + dmarc@alterai.dev. p=none = stage proxy YC W2026 (matches Insight #78).",
+    "MS=ms14258926 TXT record (Microsoft 365 domain verification): operator has both Google + Microsoft tenants.",
+    "Real product apex inferred: alterauth.com (docs.alterauth.com, portal.alterauth.com per llms.txt). alterai.dev is the marketing landing.",
+    "Docs hosted on Mintlify (Mintlify Starter Kit fork as repo description; mint.json present).",
+    "Public docs source: github.com/AlterAIDev/docs (user account, not org).",
+    "OAuth provider catalog covers 60+ providers including Google, Microsoft, Slack, GitHub, Notion, HubSpot, Stripe (Connect), Salesforce: broad cross-service AI agent auth gateway, with Lane C surface being the Google/Microsoft subset.",
+    "Funded by Y Combinator (backed-by tile + YC Combinator logo on landing). YC W2026 batch."
+  ],
+  "pivot_paths": [
+    "Public docs repo github.com/AlterAIDev/docs: every OAuth provider's available_scopes catalog is published. Tracking scope churn across git history of reference/oauth-providers/*.mdx maps scope-creep timeline.",
+    "portal.alterauth.com: operator admin portal. Public scope catalog reference at portal.alterauth.com/scopes per docs.",
+    "Connect SDK (browser widget): AlterConnect.create() + alterConnect.open(): pivot for understanding the consent-flow UX.",
+    "FastAPI / LangChain / MCP frameworks integration docs: pivot for understanding how Alter is wired into agent runtimes.",
+    "OAuth scope manifest IS the threat-model surface for Lane C: see oauth_scope_manifest below; document, do not exercise."
+  ],
+  "vulnerabilities": [],
+  "oauth_scope_manifest": {
+    "discipline_note": "READ, DO NOT EXERCISE. The scope catalog requested IS the finding. Captured verbatim from public docs repo github.com/AlterAIDev/docs/main/reference/oauth-providers/{google,microsoft}.mdx.",
+    "google": {
+      "workspace_marketplace_listing": "not detected via passive scrape. Architecture is per-operator Google Cloud OAuth client credentials, not a single Marketplace addon: same pattern as Clawvisor.",
+      "oauth_consent_screen_apis_required": [
+        "Gmail API",
+        "Google Calendar API",
+        "Google Drive API"
+      ],
+      "gmail_scopes_available": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.modify"
+      ],
+      "calendar_scopes_available": [
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.events"
+      ],
+      "drive_scopes_available": [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive"
+      ],
+      "operator_selectable_breadth_finding": "Alter exposes the full Google scope catalog to operators including drive (full read/write/delete) and gmail.modify (restricted scope). Per-app default set is operator choice; per-call narrowing via Connect SDK allowed_scopes is opt-in. The default-broad / opt-in-narrow architecture pushes restraint onto the operator's implementation discipline."
+    },
+    "microsoft": {
+      "graph_scopes_available": [
+        "offline_access",
+        "Mail.Read",
+        "Mail.Send",
+        "Calendars.Read",
+        "Calendars.ReadWrite",
+        "Files.Read",
+        "Files.ReadWrite"
+      ],
+      "scope_breadth_finding": "Available scope catalog mirrors Clawvisor; same Mail.Send + Files.ReadWrite + offline_access pattern. Microsoft requires admin consent for certain organizational scopes (called out in docs).",
+      "appsource_listing": "not detected via passive scrape. Per-customer Azure AD app registration pattern."
+    },
+    "alter_internal_scopes": {
+      "description": "Alter API keys carry capability scopes against Alter's own management surface, separate from any provider scope.",
+      "documented_scopes": [
+        "grants:read",
+        "grants:write",
+        "agents:read",
+        "agents:write",
+        "connect:create"
+      ],
+      "full_catalog_url": "https://portal.alterauth.com/scopes"
+    },
+    "provider_catalog_breadth": "60+ OAuth providers (verbatim: Acuity Scheduling, Adobe, Aircall, Airtable, Apollo, Asana, Atlassian, Attio, Autodesk, Basecamp, Bitbucket, Bitly, Box, Brex, Cal.com, Calendly, Canva, ClickUp, Close, Constant Contact, Contentful, Deel, Dialpad, DigitalOcean, Discord, DocuSign, Dropbox, eBay, Eventbrite, Facebook, Figma, GitHub, Google, HubSpot, Instagram, Linear, LinkedIn, Mailchimp, Mercury, Microsoft, Miro, Monday, Notion, Outreach, PagerDuty, PayPal, Pinterest, Pipedrive, QuickBooks, Ramp, Reddit, RingCentral, Salesforce, Sentry, Slack, Snapchat, Spotify, Square, Squarespace, Stripe, TikTok, Todoist, Twitter, Typeform, Webex, Webflow). Cat-33-relevant subset is Google + Microsoft."
+  },
+  "deployment_artifacts_observed": [
+    "github.com/AlterAIDev/docs: public docs repo, no other public repos under the AlterAIDev account (only 'docs' repo as of 2026-06-07).",
+    "llms.txt published at github.com/AlterAIDev/docs/main/llms.txt: full sitemap surface.",
+    "mint.json (Mintlify config): docs generator config.",
+    "schema.org JSON-LD on landing page declares Alter Vault as applicationCategory='SecurityApplication'."
+  ],
+  "no_secret_leaks_observed_passive": "Passive read of public docs repo surfaced no plaintext API keys, no client_secret, no embedded portal tokens. Docs are illustrative scope catalog + SDK contract only.",
+  "operator": {
+    "marketing_apex": "alterai.dev",
+    "product_apex_inferred": "alterauth.com (docs + portal)",
+    "registered_inferred_from_dns": "active 2026-06-07; Cloudflare-fronted (104.18.16-17.173).",
+    "ns_inferred": "Cloudflare (DMARC report goes to dmarc-reports.cloudflare.net)",
+    "mx": "smtp.google.com",
+    "spf": "v=spf1 include:_spf.google.com ~all",
+    "dmarc": "v=DMARC1; p=none; rua=mailto:6bb0724508d54e63b975662927f52995@dmarc-reports.cloudflare.net,mailto:dmarc@alterai.dev",
+    "ms_tenant_verification": "MS=ms14258926",
+    "verification_tells": [
+      "google-site-verification=zCTUfVVpWuS8hd4-xsfjYgtsPtBfZUNNIoVK_UmRZN4",
+      "MS=ms14258926"
+    ],
+    "stage_inferred": "YC W2026 batch (Y Combinator backing visible on landing). Per Insight #78 stage proxy: DMARC p=none confirms YC-current cohort."
+  },
+  "competitive_lane": {
+    "lane": "Lane C: Inbox Agent / Workspace addon middleware (Cat-33), broader positioning as cross-service AI agent OAuth credential layer",
+    "differentiator": "Same Lane C pattern as Clawvisor: not a Workspace addon, but a customer-side OAuth-aggregator that the agent calls instead of the provider directly. The Lane C surface is the consent screen UX + scope catalog, not a Marketplace listing.",
+    "siblings_in_lane": ["Clawvisor (clawvisor.com)", "Salus (usesalus.ai)"],
+    "siblings_adjacent": ["Sluice (MTA-relay, Lane A)", "AegisAI (inbox-side)"]
+  },
+  "sources": [
+    "https://alterai.dev/ (PRIMARY marketing landing)",
+    "https://github.com/AlterAIDev/docs (PRIMARY public docs source)",
+    "https://raw.githubusercontent.com/AlterAIDev/docs/main/llms.txt",
+    "https://raw.githubusercontent.com/AlterAIDev/docs/main/concepts/scopes.mdx (PRIMARY scope concept doc)",
+    "https://raw.githubusercontent.com/AlterAIDev/docs/main/reference/oauth-providers/google.mdx (PRIMARY Google scope catalog)",
+    "https://raw.githubusercontent.com/AlterAIDev/docs/main/reference/oauth-providers/microsoft.mdx (PRIMARY MS scope catalog)",
+    "https://docs.alterauth.com/ (referenced from llms.txt; not directly probed)",
+    "https://portal.alterauth.com/scopes (operator portal scope catalog, referenced not probed)",
+    "dig A/MX/TXT/_dmarc.alterai.dev 2026-06-07",
+    "GitHub API: users/AlterAIDev, /repos/AlterAIDev/docs 2026-06-07"
+  ]
+}

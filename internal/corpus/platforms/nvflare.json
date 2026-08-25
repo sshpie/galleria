@@ -1,0 +1,78 @@
+{
+  "platform": "nvflare",
+  "display_name": "NVIDIA FLARE",
+  "category": "federated_learning",
+  "default_ports": [
+    443,
+    8002,
+    8003,
+    8443
+  ],
+  "api_paths": [
+    "/api/v1/heartbeat",
+    "/api/v1/promote",
+    "/api/v1/state",
+    "/api/v1/refresh",
+    "/nvflare-dashboard/api/v1"
+  ],
+  "auth_default": "bimodal",
+  "auth_config_env": [
+    "NVFLARE_POC",
+    "NVFL_SERVER_CERT_PATH"
+  ],
+  "default_creds": [
+    "POC mode: admin@nvidia.com / any-password (auth checks disabled)"
+  ],
+  "install_tell": "nvflare poc prepare -> /tmp/nvflare/poc",
+  "misconfig_patterns": [
+    "POC mode ships with explicit doc: 'POC does not perform authorization checks on its APIs'",
+    "BYOC (Bring Your Own Code) is on-by-default in POC — arbitrary Python execution surface",
+    "Auth enforced at TLS layer only, not at route layer — POC Overseer leaks project name + server endpoints + role inventory unauth",
+    "DEBUG short-circuit on /promote allows attacker-controlled HA failover hijack"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"NVFLARE Dashboard\"",
+      "http.html:\"nvflare-dashboard/api/v1\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/heartbeat",
+      "method": "GET",
+      "response_markers": [
+        "sp_end_point",
+        "primary_sp"
+      ],
+      "false_positive_check": "Response must be JSON with sp_end_point field — uniquely NVFlare Overseer"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"nvflare-dashboard/api/v1\"",
+    "strict": "http.title:\"NVFLARE Dashboard\"",
+    "version": "http.html:\"nvflare\" \"sp_end_point\""
+  },
+  "deployment_tells": [
+    "Port 8002 FL gRPC, 8003 Admin TCP, 443 Dashboard (HTTP fallback if no cert), 8443 dev",
+    "2.7 added single-port consolidation — port signal will fragment going forward",
+    "TLS root is provision-tool self-signed (no NVIDIA public root)",
+    "Heavy medical-imaging consortia: MGH, Mayo, Owkin, Rhino Health",
+    "MONAI / Clara Holoscan / Triton Inference Server co-deployment (Triton 8002 collides — expect remaps)"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/heartbeat -> coordinator metadata enumeration (read-only)",
+    "GET /api/v1/state -> federation state, participant inventory",
+    "Dashboard /nvflare-dashboard/api/v1 -> startup-kit download surface (kit theft = client impersonation)",
+    "POST /api/v1/promote (DEBUG short-circuit) -> HA failover hijack — DO NOT CROSS"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-24178 (CVSS 9.8) — authz-bypass on Dashboard, patched 2.7.2 April 2026",
+    "CVE-2026-24204 — class TBD, listed in NVIDIA April-2026 bulletin",
+    "POC mode is by-design unauth and operators commonly demo-deploy + never rotate"
+  ],
+  "sources": [
+    "https://nvflare.readthedocs.io/en/2.7/",
+    "https://nvidia.custhelp.com/app/answers/detail/a_id/5819 (NVIDIA April-2026 bulletin)",
+    "https://github.com/NVIDIA/NVFlare",
+    "data/platform-intel/cat53-nvflare-osint-2026-06-09.md",
+    "[CANDIDATE -  2026-06-09, pre-population-verification]"
+  ]
+}

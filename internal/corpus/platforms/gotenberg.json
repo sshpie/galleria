@@ -1,0 +1,82 @@
+{
+  "platform": "gotenberg",
+  "display_name": "Gotenberg (document-to-PDF API)",
+  "category": "document_loader",
+  "default_ports": [
+    3000
+  ],
+  "api_paths": [
+    "/forms/chromium/convert/url",
+    "/forms/chromium/convert/html",
+    "/forms/chromium/convert/markdown",
+    "/forms/libreoffice/convert",
+    "/forms/pdfengines/merge",
+    "/forms/pdfengines/split",
+    "/forms/pdfengines/flatten",
+    "/forms/pdfengines/write/metadata",
+    "/health",
+    "/version"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [
+    "GOTENBERG_API_BASIC_AUTH_USERNAME",
+    "GOTENBERG_API_BASIC_AUTH_PASSWORD"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run --rm -p 3000:3000 gotenberg/gotenberg:8",
+  "misconfig_patterns": [
+    "Basic auth disabled by default -- --api-enable-basic-auth must be explicitly set to true",
+    "Binds to 0.0.0.0 by default -- any reachable caller can trigger PDF conversion",
+    "downloadFrom feature allows server to fetch URLs during conversion -- SSRF surface when accessible",
+    "Webhook feature allows server to POST results to caller-specified URL -- SSRF vector"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:3000 http.html:\"gotenberg\"",
+      "port:3000 http.headers:\"Gotenberg-Trace\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": [
+        "status",
+        "details"
+      ],
+      "false_positive_check": "Response headers must contain Gotenberg-Trace header; /version endpoint returns JSON with gotenberg version string"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:3000 http.headers:\"Gotenberg-Trace\"",
+    "strict": "port:3000 http.html:\"gotenberg\"",
+    "version": "port:3000 \"Gotenberg-Trace\""
+  },
+  "deployment_tells": [
+    "Gotenberg-Trace header present in every HTTP response -- high-specificity passive fingerprint",
+    "GET /health returns JSON status object; GET /version returns version JSON",
+    "Port 3000 collision risk with Node.js dev servers -- confirm via Gotenberg-Trace header",
+    "Used as PDF backend in paperless-ngx, document management, RAG pipeline ingest"
+  ],
+  "pivot_paths": [
+    "CVE-2026-42596 SSRF: POST /forms/chromium/convert/url with downloadFrom URL using IPv6 notation http://[::ffff:127.0.0.1]:PORT -> reach internal services; unauthenticated; fixed in 8.32.0",
+    "CVE-2026-42595 SSRF: POST /forms/chromium/convert/url with internal URL -> access cloud IMDS or internal APIs; affects all pre-8.32.0",
+    "CVE-2026-40281 ExifTool injection: POST /forms/pdfengines/write/metadata with newline in metadata key -> split ExifTool input stream -> arbitrary file write in container; CVSS 10.0; fixed in 8.32.0",
+    "CVE-2026-42589 ExifTool -if injection: newline in metadata key -> inject Perl expression -> OS command execution; CVSS 9.8; fixed in 8.32.0"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-40281: ExifTool newline injection in metadata write endpoint; newline in metadata value splits ExifTool input stream -> rename/move/overwrite files including /etc/passwd; unauthenticated; CVSS 10.0; affected <=8.30.1; fixed 8.32.0",
+    "CVE-2026-42589: ExifTool -if flag injection via newline in metadata key -> arbitrary Perl expression execution -> OS command execution; CVSS 9.8; unauthenticated; fixed 8.32.0",
+    "CVE-2026-42596: SSRF via case-sensitive regex deny-list bypass in downloadFrom and webhook; IPv6 notation bypasses filter; CVSS 9.4; unauthenticated; affected all pre-8.32.0; fixed 8.32.0",
+    "CVE-2026-42595: SSRF via Chromium URL-to-PDF endpoint; attacker-controlled URL reaches internal network/cloud metadata; CVSS 8.6; unauthenticated; affected all pre-8.32.0; fixed 8.32.0"
+  ],
+  "sources": [
+    "https://gotenberg.dev/docs/configuration",
+    "https://github.com/gotenberg/gotenberg",
+    "https://advisories.gitlab.com/golang/github.com/gotenberg/gotenberg/v8/CVE-2026-42596/",
+    "https://securityonline.info/gotenberg-pdf-api-critical-rce-ssrf-vulnerabilities-patch/",
+    "https://www.thehackerwire.com/gotenberg-critical-exiftool-injection-cve-2026-40281/",
+    "https://www.thehackerwire.com/gotenberg-ssrf-cve-2026-42595/"
+  ],
+  "corpus_corrections": [
+    "2026-06-19 verify: CVSS 10.0 belongs to CVE-2026-40281 (value injection), NOT 42589 (9.8 key injection). Run >=8.32.0 to clear full cluster. FLEET 2026-06-19: 179 confirmed-open, 109/109 ver-resolved <8.31.0 (0% patched). Gotenberg-Trace header = load-bearing isolator on noisy port 3000."
+  ]
+}

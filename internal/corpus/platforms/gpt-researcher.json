@@ -1,0 +1,97 @@
+{
+  "platform": "gpt-researcher",
+  "display_name": "GPT Researcher (GPTR)",
+  "category": "agent_framework",
+  "default_ports": [8000],
+  "api_paths": [
+    "/",
+    "/ws",
+    "/report/",
+    "/report/{research_id}",
+    "/api/reports",
+    "/api/reports/{research_id}",
+    "/api/reports/{research_id}/chat",
+    "/api/chat",
+    "/api/multi_agents",
+    "/files/",
+    "/upload/"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "OPENAI_API_KEY",
+    "TAVILY_API_KEY",
+    "XQUIK_API_KEY",
+    "GETXAPI_KEY",
+    "LANGCHAIN_API_KEY",
+    "CORS_ALLOW_ORIGINS"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install gpt-researcher  (or: git clone + pip install -r requirements.txt + python -m uvicorn main:app --reload, port 8000)",
+  "misconfig_patterns": [
+    "No auth middleware on any route -- all endpoints accessible without credentials by default",
+    "CORS defaults allow localhost:3000 and 127.0.0.1:3000; CORS_ALLOW_ORIGINS not set in most deployments, so origin restriction is absent",
+    "DOC_PATH (./my-docs) and REPORT_STORE_PATH (data/reports.json) exposed via /files/ and /api/reports with no access control",
+    "POST /upload/ accepts arbitrary file uploads without auth",
+    "DELETE /files/{filename} and DELETE /api/reports/{research_id} are unauthenticated",
+    "WebSocket /ws streams research progress (including scraped source content) to any connected client",
+    "LLM provider API keys (OPENAI_API_KEY, TAVILY_API_KEY) stored server-side but accessible to any process with filesystem access if .env is misplaced"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"gpt-researcher\" port:8000",
+      "http.html:\"gpt_researcher\"",
+      "http.html:\"gpt-researcher\"",
+      "http.html:\"gptr\" port:8000"
+    ],
+    "active_probe": {
+      "path": "/api/reports",
+      "method": "GET",
+      "response_markers": [
+        "\"research_id\"",
+        "\"report\"",
+        "\"status\""
+      ],
+      "false_positive_check": "Confirm JSON array or object response containing research_id field. A 200 returning HTML or non-GPTR JSON is a catch-all or reverse-proxy FP. Pair with /ws WebSocket upgrade check (101 Switching Protocols) as secondary confirm. The underscore variant http.html:\"gpt_researcher\" (64 hits) fires on bundled JS module names in the SPA -- higher population but same platform, not a distinct product."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"gpt-researcher\" port:8000",
+    "strict": "http.html:\"gpt_researcher\" port:8000",
+    "version": "http.html:\"gpt-researcher\" port:443",
+    "note": "basic (27 hits, all HTTP 200, 0 HTTP 401) is the tightest population-to-noise ratio. strict variant uses the Python module name embedded in bundled JS (64 hits) -- broader but same platform. TLS subset port:443 = 6 hits, highest-value tier (likely prod deployments behind reverse proxy). Hyphen variant http.html:\"gpt-researcher\" without port = 54 hits. Zero 401s confirmed across all confirmed instances."
+  },
+  "deployment_tells": [
+    "Port 8000 open (uvicorn default) with FastAPI JSON responses",
+    "React SPA frontend on port 3000 in docker-compose deployments (frontend container)",
+    "DOC_PATH ./my-docs directory listing via /files/",
+    "WebSocket endpoint /ws for real-time research progress streaming",
+    "POST /report/ accepts {query, report_type, report_source} with no auth token",
+    "GPTR branding in page title and bundled JS (both 'gpt-researcher' and 'gpt_researcher' strings)"
+  ],
+  "pivot_paths": [
+    "GET /api/reports -> enumerate all stored research reports (IDs, queries, status) without credentials",
+    "GET /api/reports/{research_id} -> retrieve full synthesized research document",
+    "GET /files/ -> directory listing of uploaded/processed documents in DOC_PATH",
+    "POST /api/multi_agents -> trigger multi-agent research workflow (LLM API key consumption)",
+    "WebSocket /ws -> monitor live research sessions including scraped source URLs and intermediate synthesis",
+    "GET /api/reports/{research_id}/chat -> retrieve chat history for a specific research session"
+  ],
+  "vulnerabilities": [],
+  "auth_evidence": "No auth middleware is configured in backend/server/app.py. CORS middleware uses CORS_ALLOW_ORIGINS env var but defaults to localhost origins with no token/session requirement. README quickstart: export OPENAI_API_KEY + export TAVILY_API_KEY + python -m uvicorn main:app --reload -- no auth setup step exists. All 27 Shodan hits on http.html:\"gpt-researcher\" port:8000 returned HTTP 200; zero HTTP 401 across the confirmed population. .env.example ships with all credential fields empty (OPENAI_API_KEY=, TAVILY_API_KEY=) -- no auth token field exists in the env schema. The platform is a research synthesis tool (outbound HTTP for web fetching), NOT a shell-exec agent -- capability ceiling is LLM API consumption and web scraping, not arbitrary code execution.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Stored research reports containing synthesized content from scraped sources (/api/reports)",
+    "Uploaded documents in DOC_PATH accessible via /files/ directory listing",
+    "Chat history per research session (/api/reports/{research_id}/chat)",
+    "LLM API key consumption via POST /report/ and /api/multi_agents (LLMjacking surface)",
+    "Scraped source content streamed over unauthenticated WebSocket /ws",
+    "Multi-agent workflow definitions and intermediate outputs (/api/multi_agents)"
+  ],
+  "sources": [
+    "https://github.com/assafelovic/gpt-researcher",
+    "https://raw.githubusercontent.com/assafelovic/gpt-researcher/master/backend/server/app.py",
+    "https://raw.githubusercontent.com/assafelovic/gpt-researcher/master/.env.example",
+    "https://raw.githubusercontent.com/assafelovic/gpt-researcher/master/README.md",
+    "CONFIRMED:  dork population 2026-06-26 -- http.html:\"gpt-researcher\" port:8000 = 27 hits, all HTTP 200, zero 401; http.html:\"gpt_researcher\" = 64 hits; http.html:\"gpt-researcher\" = 54 hits; port:443 subset = 6 hits; no auth middleware in source"
+  ]
+}

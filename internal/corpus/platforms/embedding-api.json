@@ -1,0 +1,52 @@
+{
+  "platform": "embedding-api",
+  "display_name": "Custom Embedding API (FastAPI/uvicorn)",
+  "category": "embedding_serving",
+  "default_ports": [8001, 8000, 8080],
+  "api_paths": ["/", "/embed", "/embed/batch", "/health", "/openapi.json"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "uvicorn app:app --host 0.0.0.0 --port 8001",
+  "misconfig_patterns": [
+    "No authentication on embedding endpoint — any caller can extract vectors at scale",
+    "CORS wildcard allows cross-origin embedding extraction",
+    "Model identity disclosed in root JSON — model name, backend, quantization level exposed",
+    "OpenVINO Model Server backend co-located on port 9000, also unauthenticated"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"embedding_dimension\"",
+      "port:8001 http.html:\"embedding_dimension\"",
+      "http.html:\"openvino-int8\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["embedding_dimension"],
+      "false_positive_check": "root JSON must contain embedding_dimension as a numeric field alongside model_name or model_id — distinguishes from general health endpoints"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"embedding_dimension\"",
+    "strict": "http.html:\"embedding_dimension\" http.html:\"model_name\"",
+    "version": "http.html:\"openvino-int8-throughput\""
+  },
+  "deployment_tells": [
+    "Root GET returns JSON with embedding_dimension, model_name, backend fields — no HTML, no title",
+    "Server: uvicorn header",
+    "OpenVINO Model Server co-located on port 9000 (GET /v1/config reveals model list)",
+    "CORS: * header on all responses"
+  ],
+  "pivot_paths": [
+    "GET / → model_name field → identify model family (BAAI/bge-*, sentence-transformers/*)",
+    "GET /openapi.json → API title + version → custom deployment fingerprint",
+    "GET port:9000 /v1/config → OVMS model list → confirm backend model name",
+    "GET port:9000 /v1/models/{name}/metadata → TF Serving SignatureDef → input tensor shapes → model architecture inference",
+    "backend field (openvino-int8-throughput) → infer Intel CPU deployment, not GPU"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    " — embedding-tier2-2026-05-21 survey (live host: 46.4.204.44)"
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "platform": "kotaemon",
+  "display_name": "Kotaemon",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    7860
+  ],
+  "api_paths": [
+    "/config",
+    "/gradio_api/info",
+    "/app_id",
+    "/gradio_api/queue/join",
+    "/gradio_api/queue/data",
+    "/gradio_api/file=",
+    "/info",
+    "/login"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [
+    "KH_FEATURE_USER_MANAGEMENT (default True)",
+    "KH_FEATURE_USER_MANAGEMENT_ADMIN (default admin)",
+    "KH_FEATURE_USER_MANAGEMENT_PASSWORD (default admin)",
+    "KH_SSO_ENABLED (default False)",
+    "KH_DEMO_MODE (default False)",
+    "AUTHENTICATION_METHOD (google/keycloak, .env.example)",
+    "KEYCLOAK_SERVER_URL",
+    "KEYCLOAK_CLIENT_ID",
+    "KEYCLOAK_REALM",
+    "KEYCLOAK_CLIENT_SECRET"
+  ],
+  "default_creds": [
+    {
+      "user": "admin",
+      "pass": "admin",
+      "context": "First-run admin auto-seeded by UserManagement.__init__ from KH_FEATURE_USER_MANAGEMENT_ADMIN/_PASSWORD (both default 'admin' in flowsettings.py). README states verbatim: 'Default username and password are both admin.' No forced rotation, no rate limit on the login form."
+    }
+  ],
+  "install_tell": "docker run -e GRADIO_SERVER_NAME=0.0.0.0 -e GRADIO_SERVER_PORT=7860 -v ./ktem_app_data:/app/ktem_app_data -p 7860:7860 -it --rm ghcr.io/cinnamon/kotaemon:main-full  (or: git clone https://github.com/Cinnamon/kotaemon && cd kotaemon && uv sync --python 3.10 && source .venv/bin/activate && python app.py)",
+  "misconfig_patterns": [
+    "Default admin/admin left unchanged and port 7860 exposed to the internet -> effectively unauthenticated takeover (no forced first-run rotation, no rate limit)",
+    "KH_FEATURE_USER_MANAGEMENT=false explicitly disabled -> fully open UI+API (operator opt-out turns it open-by-default)",
+    "KH_DEMO_MODE=true on a public deploy -> auto-creates random users and bypasses the login wall",
+    "Running < 0.10.7 -> CVE-2025-53358 arbitrary file read for any logged-in (incl. default-cred) user",
+    "Provider API keys committed to .env on the persisted ktem_app_data volume"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.favicon.hash:<kotaemon-gradio-favicon-hash>",
+      "http.title:\"kotaemon\"",
+      "http.html:\"ktem_app_data\"",
+      "http.component:\"Gradio\" http.html:\"kotaemon\""
+    ],
+    "active_probe": {
+      "path": "/login",
+      "method": "GET",
+      "response_markers": [
+        "HTML <title> contains 'kotaemon'",
+        "Gradio config JSON at /config includes a 'login-tab'/'Welcome' tab and version field (app is a Gradio Blocks app)",
+        "page references ktem assets path libs/ktem/ktem/assets",
+        "Gradio app_id / __theme markers present (X-Gradio or queue/join route answers)",
+        "login form posting to Gradio fn validating against sha256 hashed password"
+      ],
+      "false_positive_check": "Generic 'RAG'/'chat'/'AI' strings collide with thousands of unrelated hosts and Gradio alone fronts countless HF Spaces, so do NOT fingerprint on Gradio or 'chat' alone. Require the conjunction of a Gradio app (component:Gradio or /config returning Gradio JSON) AND a vendor-unique kotaemon marker: the literal 'kotaemon' in <title> or page body, OR the 'ktem_app_data'/'libs/ktem/ktem/assets' path string, OR the kotaemon favicon hash. The presence of a 'login-tab' with the 'Welcome' label plus 'kotaemon' branding in the same Gradio /config JSON is the discriminator that strips the ~50% generic-Gradio false positives. A bare Gradio host with no 'kotaemon'/'ktem' token is a false positive."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"kotaemon\"",
+    "strict": "http.html:\"kotaemon\" http.html:\"ktem_app_data\" port:7860",
+    "version": "http.html:\"kotaemon\" http.html:\"0.10\""
+  },
+  "deployment_tells": [
+    "Gradio server on tcp/7860 (GRADIO_SERVER_NAME=0.0.0.0, GRADIO_SERVER_PORT=7860)",
+    "Container images ghcr.io/cinnamon/kotaemon:main-lite and :main-full",
+    "Persisted data volume mounted at /app/ktem_app_data",
+    "'Welcome'/login-tab as the first Gradio tab when user management is on",
+    "OSS RAG product branded 'kotaemon' by Cinnamon AI"
+  ],
+  "pivot_paths": [
+    "GET /config -> read the Gradio app graph (tabs, fn signatures, version) to confirm kotaemon and enumerate callable fns without exfil",
+    "Confirm login wall by observing the 'Welcome' login tab is the only visible tab pre-auth (UI-state read, no creds submitted)",
+    "Inventory exposed upstream-provider env keys referenced in .env.example to scope which LLM vendor keys a compromise would burn (metadata, not the keys themselves)",
+    "Map version banner from page/body to scope CVE-2025-53358 exposure (< 0.10.7) without exploiting it"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-53358 / GHSA-jw4w-xcvf-jq5x: Path Traversal via Link Upload in libs/ktem/ktem/index/file/ui.py index_fn() — accepts URLs and local file paths without validation, letting an authenticated (low-priv) user read arbitrary server files like ../../../../../.env. CVSS 6.5 Moderate. Affected: < 0.10.7. Chains with default admin/admin to become unauth-equivalent in practice."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: flowsettings.py L95-97 sets `KH_FEATURE_USER_MANAGEMENT = config(\"KH_FEATURE_USER_MANAGEMENT\", default=True, cast=bool)` -> user management ON by default. libs/ktem/ktem/main.py gates the UI: the Chat/Files/Settings tabs are rendered with `visible=not self.f_user_management` and `toggle_login_visibility` hides every tab except the login tab while `not user_id`; a LoginPage tab is added first when `f_user_management` is true. libs/ktem/ktem/pages/resources/user.py `UserManagement.__init__` auto-seeds the admin on first run: `usn = flowsettings.KH_FEATURE_USER_MANAGEMENT_ADMIN; pwd = flowsettings.KH_FEATURE_USER_MANAGEMENT_PASSWORD; create_user(usn, pwd)` (create_user is a no-op if the user already exists). flowsettings.py defaults both to \"admin\": `KH_FEATURE_USER_MANAGEMENT_ADMIN` default=\"admin\", `KH_FEATURE_USER_MANAGEMENT_PASSWORD` default=\"admin\". NET POSTURE: the documented quickstart (`docker run ... ghcr.io/cinnamon/kotaemon:main-full` or `python app.py`) forces a login wall before any chat/document access, so it is auth-on-default, NOT open-by-default. The weakness is the credential, not the absence of a gate: the publicly-documented README states \"Default username and password are both `admin`\", with NO forced first-run password change and NO rate limiting in login.py (sha256-no-salt, DB lookup, gr.Warning on fail). KH_DEMO_MODE (default=False) would bypass login by auto-creating random users, but is off in the default config and so does not affect default posture.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG corpus: every uploaded document (the user's private knowledge base) readable/queryable post-login",
+    "Upstream LLM/provider API keys: OpenAI/Azure/Cohere/Mistral/Voyage/GraphRAG keys live in .env and the in-UI Resources/Settings tab, recoverable once logged in",
+    "Conversation history: per-user chat threads, including public/shared collections",
+    "Vector + full-text index contents (the embedded document chunks) under ktem_app_data",
+    "User database: usernames + sha256(unsalted) password hashes, admin flags",
+    "Business logic / private-vs-public collection structure revealing what an org indexed",
+    "Server filesystem via CVE-2025-53358 link-upload path traversal (e.g. ../../../../../.env) once authenticated with the default admin/admin"
+  ],
+  "sources": [
+    "https://github.com/Cinnamon/kotaemon",
+    "https://raw.githubusercontent.com/Cinnamon/kotaemon/main/flowsettings.py",
+    "https://raw.githubusercontent.com/Cinnamon/kotaemon/main/.env.example",
+    "https://raw.githubusercontent.com/Cinnamon/kotaemon/main/libs/ktem/ktem/main.py",
+    "https://raw.githubusercontent.com/Cinnamon/kotaemon/main/libs/ktem/ktem/pages/login.py",
+    "https://raw.githubusercontent.com/Cinnamon/kotaemon/main/libs/ktem/ktem/pages/resources/user.py",
+    "https://raw.githubusercontent.com/Cinnamon/kotaemon/main/app.py",
+    "https://github.com/Cinnamon/kotaemon/security/advisories/GHSA-jw4w-xcvf-jq5x",
+    "https://www.cvedetails.com/cve/CVE-2025-53358/",
+    "https://cinnamon.github.io/kotaemon/development/",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "platform": "pulsar",
+  "display_name": "Apache Pulsar",
+  "category": "event_streaming",
+  "default_ports": [
+    8080,
+    6650,
+    8443,
+    6651
+  ],
+  "api_paths": [
+    "/admin/v2/clusters",
+    "/admin/v2/persistent/{tenant}/{namespace}",
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "authenticationEnabled",
+    "authorizationEnabled"
+  ],
+  "default_creds": [],
+  "install_tell": "apachepulsar/pulsar:latest standalone quickstart \u2014 authenticationEnabled=false shipped default, tenant \"public\"/namespace \"default\" auto-created",
+  "misconfig_patterns": [
+    "authenticationEnabled=false (shipped default) with admin API reachable",
+    "/metrics Prometheus endpoint open regardless of authorization config when authenticationEnabled=false"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"admin/v2\"",
+      "http.html:\"persistent/public/default\""
+    ],
+    "active_probe": {
+      "path": "/admin/v2/clusters",
+      "method": "GET",
+      "response_markers": [
+        "bare JSON array of cluster names"
+      ],
+      "false_positive_check": "response must be a JSON array of strings under /admin/v2/ path prefix"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"pulsar\" http.html:\"admin/v2\"",
+    "strict": "http.html:\"persistent/public/default\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "standalone quickstart naming (public/default) is highly consistent, making topic-path guessing trivial",
+    "6650 binary broker port often open alongside 8080 admin"
+  ],
+  "pivot_paths": [
+    "GET /admin/v2/persistent/public/default -> topic enumeration",
+    "unauth admin API -> create/delete tenants/namespaces/topics, alter retention/replication policy",
+    "unauth client connect on 6650 -> consume any topic",
+    "Pulsar Functions config read -> embedded creds"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://pulsar.apache.org/docs/next/security-overview/",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] PRIMARY-SOURCE CHECK 2026-07-14: no published Shodan dork found for Pulsar admin API in security literature. Treat http.html: dorks below as UNVERIFIED hypotheses pending live test, not confirmed intel \u2014 admin API is JSON-only (same risk class as Kafka Connect/Schema Registry), likely also route through Censys/active-probe rather than Shodan HTML dorking."
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "platform": "thanos",
+  "display_name": "Thanos",
+  "category": "time_series_db",
+  "default_ports": [10902, 10901, 9090, 10907, 10908, 10909],
+  "default_port_notes": {
+    "10902": "Thanos default HTTP (--http-address) for ALL components: Query, Store, Receive, Sidecar, Rule, Compact. UI + Prometheus-compat /api/v1/* live here",
+    "10901": "Thanos default gRPC (--grpc-address) — StoreAPI; component-to-component fan-out; NOT HTTP",
+    "9090": "Common operator override for Thanos Query --http-address so it drops in as a Prometheus replacement (collides with real Prometheus on dorks)",
+    "10907": "Thanos Receive remote-write HTTP (--remote-write.address) — the WRITE ingestion surface",
+    "10908": "Thanos Receive default HTTP on some charts",
+    "10909": "Thanos Receive gRPC replication between receivers (hashring)"
+  },
+  "api_paths": [
+    "/",
+    "/graph",
+    "/stores",
+    "/targets",
+    "/metrics",
+    "/api/v1/query",
+    "/api/v1/query_range",
+    "/api/v1/series",
+    "/api/v1/labels",
+    "/api/v1/label/__name__/values",
+    "/api/v1/stores",
+    "/api/v1/status/buildinfo",
+    "/api/v1/status/flags",
+    "/api/v1/status/runtimeinfo",
+    "/api/v1/rules",
+    "/api/v1/alerts",
+    "/api/v1/receive",
+    "/-/healthy",
+    "/-/ready",
+    "/debug/pprof/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "--http.config (TLS+basic auth via separate YAML, mirrors Prometheus web.config)",
+    "External reverse proxy / oauth2-proxy / observatorium for tenanted deployments",
+    "Thanos has NO built-in multi-tenancy on Query (unlike Cortex/Mimir); Receive has --receive.tenant-header (default Thanos-Tenant) but does not AUTH it"
+  ],
+  "default_creds": [],
+  "install_tell": "thanos query --http-address 0.0.0.0:10902 --store dns+... ; quay.io/thanos/thanos:vX.Y.Z",
+  "misconfig_patterns": [
+    "Default deployment exposes :10902 with no auth; full read of the aggregated cluster via PromQL",
+    "/stores (and /api/v1/stores) enumerates EVERY connected StoreAPI endpoint — leaks the entire backend topology (sidecar IPs, store-gateway, receive nodes, object-store fan-out) — this is the Thanos-unique disclosure surface",
+    "Thanos Receive :10907 /api/v1/receive accepts remote-write with only a Thanos-Tenant header (no auth) — unauthenticated metric INJECTION / tenant spoofing",
+    "/api/v1/status/flags exposes object-store config flag, replica labels, retention",
+    "/debug/pprof/ exposed by default on the HTTP port"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:10902 http.html:\"Thanos\"",
+      "http.html:\"/stores\" http.html:\"StoreAPI\"",
+      "http.favicon.hash:-1399433489 (SHARED with Prometheus — Thanos Query reuses the Prometheus React UI favicon; NOT discriminating alone)"
+    ],
+    "active_probe": {
+      "path": "/api/v1/stores",
+      "method": "GET",
+      "response_markers": ["status", "data", "sidecar", "store", "receive"],
+      "false_positive_check": "POSITIVE Thanos discriminator: /api/v1/stores returns 200 with a JSON object keyed by StoreAPI type (sidecar/store/receive/rule). Prometheus, VictoriaMetrics, Cortex and Mimir all return 404 on /api/v1/stores — this path exists ONLY in Thanos Query. SECONDARY: /api/v1/query response may carry a 'warnings' array referencing partial_response/dedup (Thanos-only PromQL response extension). buildinfo returns Thanos build fields, NOT VM's empty {} and NOT Prometheus-with-goVersion."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:10902 http.html:\"Thanos\"",
+    "strict": "http.html:\"Thanos\" http.html:\"/stores\"",
+    "version": "http.html:\"Thanos\" http.html:\"thanos-query\"",
+    "receive_write": "port:10907 (Censys — banner/port signal, Shodan web UI cannot see the JSON 405/200 on /api/v1/receive)"
+  },
+  "deployment_tells": [
+    "/stores route in the React UI is unique to Thanos Query — Prometheus has /graph + /targets but NO /stores",
+    "/api/v1/stores returns connected StoreAPI inventory — vendor-unique path",
+    "PromQL query response can include dedup/partial_response 'warnings' that no other Prometheus-API server emits",
+    "/metrics exposes thanos_* internal metrics (thanos_store_api_query_duration_seconds, thanos_query_*) — distinct from prometheus_* and vm_*"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/stores -> full backend StoreAPI topology (sidecar/store-gateway/receive IPs + RFC1918 endpoints) -> lateral target map",
+    "GET /api/v1/status/flags -> object-store bucket config flags -> cloud bucket name disclosure",
+    "GET /api/v1/query?query=up -> aggregated multi-cluster target inventory (broader than a single Prometheus)",
+    "POST /api/v1/receive on :10907 with Thanos-Tenant header -> unauthenticated metric injection / tenant pollution (write surface — keep severity SEPARATE from read)",
+    "GET /debug/pprof/ -> runtime profiling"
+  ],
+  "vulnerabilities": [
+    "Design choice (NOT a CVE): no authentication by default on the HTTP API; mirrors Prometheus operator-responsibility model",
+    "Thanos Receive remote-write tenant header is identity-only, not authentication — tenant spoofing by design when exposed",
+    "CVE-2024-24558 (stdlib/dependency class surfaced in thanos images) — container dependency, not a Thanos-logic CVE",
+    "Recurring image-level CVE churn (busybox/stdlib) reported against thanos:vX images — not application vulns"
+  ],
+  "auth_default_thesis": "AUTH-OFF-DEFAULT confirmed. Thanos ships every HTTP component with no auth; --http.config is opt-in and rarely set. Distinct from Cortex/Mimir which gate reads/writes behind X-Scope-OrgID (tenant identity, still not auth). Thanos is the closest sibling to Prometheus/VM on posture: the federation/fan-out role makes a single exposed Query a HIGHER-value read target than a single Prometheus because it aggregates many backends. Falsifier: if exposed Thanos Query unauth rate < Prometheus, operators harden the aggregator specifically.",
+  "research_questions": [
+    "Does /api/v1/stores reliably separate Thanos from the rest of the Prometheus-API family at population scale (expected 200-only-on-Thanos)?",
+    "What share of exposed Thanos Receive :10907 accept unauthenticated remote-write?",
+    "Do exposed Query instances leak object-store bucket names via /api/v1/status/flags?",
+    "Is the federation aggregation effect measurable (more series/targets per exposed Thanos than per exposed Prometheus)?"
+  ],
+  "sources": [
+    "[CANDIDATE —  Squad-D disambiguation brief 2026-06-19; survey pending]",
+    "thanos.io/tip/components/query.md (Query API, partial_response/dedup warnings, /stores)",
+    "thanos.io/tip/components/receive.md (remote-write :10907, Thanos-Tenant header)",
+    "github.com/thanos-io/thanos/blob/main/pkg/api/query/v1.go (status endpoints on all HTTP components)"
+  ]
+}

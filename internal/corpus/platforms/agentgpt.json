@@ -1,0 +1,115 @@
+{
+  "platform": "agentgpt",
+  "display_name": "AgentGPT (Reworkd)",
+  "category": "agent_framework",
+  "default_ports": [3000, 8000, 3307, 3308],
+  "api_paths": [
+    "/api/agent/start",
+    "/api/agent/stop",
+    "/api/agent/tasks",
+    "/api/agent/tools",
+    "/docs",
+    "/redoc",
+    "/signin",
+    "/api/auth/signin",
+    "/api/auth/session",
+    "/_next/static/"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "DATABASE_URL",
+    "NEXT_PUBLIC_FF_MOCK_MODE_ENABLED",
+    "NEXT_PUBLIC_FF_SID_ENABLED",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "DISCORD_CLIENT_ID",
+    "DISCORD_CLIENT_SECRET",
+    "SID_CLIENT_ID",
+    "SID_CLIENT_SECRET",
+    "SID_REDIRECT_URI"
+  ],
+  "default_creds": [
+    {
+      "user": "(any username)",
+      "pass": "(none)",
+      "context": "Credentials provider 'InsecureSignin' ships in the Next.js signin page (next/src/pages/signin.tsx). When NODE_ENV is not hardened or NEXTAUTH_SECRET is not set, the page renders 'Sign in with username (Insecure)' -- username-only login, no password validation, signIn('credentials', {name: usernameValue}) with zero auth. This is intentional dev scaffolding that reaches production in unmanaged deploys."
+    },
+    {
+      "user": "reworkd_platform",
+      "pass": "reworkd_platform",
+      "context": "MySQL 8.0 database credentials hardcoded in docker-compose.yml: MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD all set to 'reworkd_platform'. DB exposed on host port 3308 (container port 3307). REWORKD_PLATFORM_DB_PASS=reworkd_platform also set in the platform service environment."
+    }
+  ],
+  "install_tell": "docker-compose up (Next.js frontend :3000 + FastAPI platform :8000 + MySQL :3308); no public Docker Hub image -- local build from source",
+  "misconfig_patterns": [
+    "NEXTAUTH_SECRET is OPTIONAL in development (schema marks it non-required outside production) -- dev deployments exposed to internet have no session integrity",
+    "InsecureSignin credentials provider renders when NODE_ENV is not 'production', allowing any-username/no-password login",
+    "NEXT_PUBLIC_FF_MOCK_MODE_ENABLED=true bypasses real agent execution (LLM calls mocked) -- confirms the flag is a runtime bypass surface",
+    "FastAPI platform backend likely exposes /docs (Swagger UI) and /redoc in dev mode (REWORKD_PLATFORM_RELOAD=true default)",
+    "MySQL hardcoded creds reworkd_platform/reworkd_platform on port 3308 -- if DB port is internet-exposed, full agent run history and credentials accessible",
+    "GET /api/agent/tools returns JSON with literal '\"color\":\"TODO: Change to image of tool\"' -- vendor-unique dev artifact confirms unhardened deploy",
+    "OPENAI_API_KEY, REPLICATE_API_KEY, SERP_API_KEY, PINECONE_API_KEY stored server-side but retrievable if FastAPI /docs endpoint is open"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"AgentGPT\"",
+      "http.html:\"agentgpt\"",
+      "http.html:\"reworkd\"",
+      "http.html:\"TODO: Change to image of tool\""
+    ],
+    "active_probe": {
+      "path": "/api/agent/tools",
+      "method": "GET",
+      "response_markers": [
+        "\"TODO: Change to image of tool\"",
+        "\"color\"",
+        "\"tools\""
+      ],
+      "false_positive_check": "The string '\"color\":\"TODO: Change to image of tool\"' is a vendor-unique literal hardcoded in the AgentGPT source. Any response containing this string is a confirmed unhardened deploy. However, this endpoint may be client-rendered (Next.js SPA) and absent from Shodan SSR. Fallback: http.title:\"AgentGPT\" (9 hits) is the most reliable passive signal. http.html:\"reworkd\" (4 hits) is the most distinctive -- lowest FP risk. Port 3000 deploys are near-absent in current population; current hits are predominantly frontend-only (backend :8000 refused or closed)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"AgentGPT\"",
+    "strict": "http.html:\"reworkd\"",
+    "version": null,
+    "note": "http.html:\"agentgpt\" = 12 hits, all HTTP 200, zero 401. http.html:\"reworkd\" = 4 hits (most distinctive, lowest FP risk). http.title:\"AgentGPT\" = 9 hits. Bare banner 'AgentGPT' = 0 (no self-identifying response header). Port 3000 as sole qualifier is dead in current population -- current live hits are predominantly reverse-proxied (80/443) or frontend-only. '\"TODO: Change to image of tool\"' is the highest-confidence active discriminator but is client-rendered, invisible to Shodan SSR (returns 0 on Shodan, use as active-probe confirm only)."
+  },
+  "deployment_tells": [
+    "Next.js SPA with /_next/static/ asset paths and React hydration markers",
+    "GET /signin renders 'Sign in with username (Insecure)' button when credentials provider is active",
+    "GET /api/agent/tools returns JSON with '\"color\":\"TODO: Change to image of tool\"' vendor literal",
+    "MySQL on nonstandard port 3307 (container) / 3308 (host) rather than default 3306",
+    "FastAPI /docs (Swagger UI) on :8000 exposed in dev/reload mode",
+    "NEXT_PUBLIC_VERCEL_ENV presence in page source indicates Vercel-native or Vercel-mimicking deployment"
+  ],
+  "pivot_paths": [
+    "GET /api/agent/tools -> enumerate available agent tools (confirms unhardened deploy via TODO literal)",
+    "GET /api/agent/tasks -> list stored agent task history (prior runs, user prompts, outputs)",
+    "GET /docs on :8000 -> FastAPI Swagger UI exposes full platform API surface without auth in dev mode",
+    "GET /api/auth/session -> confirm session state and NextAuth config (no NEXTAUTH_SECRET = invalid session)",
+    "MySQL :3308 reworkd_platform/reworkd_platform -> full agent run history, user accounts, stored LLM outputs (read-only enumerate, do not modify)",
+    "GET /redoc on :8000 -> alternative API documentation endpoint confirming backend is reachable"
+  ],
+  "vulnerabilities": [],
+  "auth_evidence": "Two independent auth bypass surfaces confirmed from source. (1) InsecureSignin component in next/src/pages/signin.tsx: credentials provider renders 'Sign in with username (Insecure)' button when providers.credentials is truthy -- signIn('credentials', {name: usernameValue}) with no password field, no validation. The button's own label documents the insecurity. (2) NEXTAUTH_SECRET is schema-marked non-required outside production in next/src/env/schema.mjs -- dev deployments exposed to internet have no session integrity guarantee. Survey population (2026-06-19): http.title:\"AgentGPT\" returned 9 hits, all HTTP 200, zero HTTP 401; http.html:\"agentgpt\" = 12 hits, zero 401; http.html:\"reworkd\" = 4 hits, zero 401. All confirmed hits were frontend-only (backend :8000 refused), so API surface unverified on live hosts -- auth bypass is software-default characterization, not confirmed against live backends in this survey round.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Agent task history and user prompts stored in MySQL (reworkd_platform DB) -- accessible via hardcoded DB creds on :3308",
+    "OpenAI/Replicate/SERP/Pinecone API keys stored server-side in platform environment -- LLMjacking surface if FastAPI /docs is open",
+    "Pinecone vector store contents (PINECONE_API_KEY/INDEX/ENVIRONMENT) if configured",
+    "User account data via NextAuth database (DATABASE_URL) -- any-username login means account takeover without password",
+    "Agent execution logs and intermediate outputs readable via /api/agent/tasks",
+    "Helicone API key (HELICONE_API_KEY) -- LLM observability platform credential, exposes full prompt/response logs for the operator"
+  ],
+  "sources": [
+    "https://github.com/reworkd/AgentGPT",
+    "https://raw.githubusercontent.com/reworkd/AgentGPT/main/docker-compose.yml",
+    "https://raw.githubusercontent.com/reworkd/AgentGPT/main/next/src/pages/signin.tsx",
+    "https://raw.githubusercontent.com/reworkd/AgentGPT/main/next/src/server/auth/auth.ts",
+    "CONFIRMED:  dork population 2026-06-26 -- http.html:\"agentgpt\" = 12 hits (all 200, zero 401); http.html:\"reworkd\" = 4 hits; http.title:\"AgentGPT\" = 9 hits; bare banner 'AgentGPT' = 0; port 3000 population dead; frontend-only in current survey (backend :8000 not verified on live hosts)"
+  ]
+}

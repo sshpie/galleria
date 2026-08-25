@@ -1,0 +1,93 @@
+{
+  "name": "so-vits-svc",
+  "slug": "so-vits-svc",
+  "category": "voice-tts-conversational",
+  "description": "SoftVC VITS Singing Voice Conversion — a self-hosted singing/voice conversion toolkit that trains a speaker-timbre model and converts arbitrary input audio to a target voice. Ships a Gradio web UI (webUI.py, default :7860) for inference plus optional Flask HTTP APIs (flask_api.py, flask_api_full_song.py) for real-time and full-song conversion. Archived upstream (read-only Nov 2023) but still one of the most widely self-hosted SVC stacks (28k+ stars); countless active forks and community WebUI packages deploy the identical surface.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the upstream webUI.py Gradio app or in flask_api.py by default. Gradio's launch() is called without the auth= tuple, so the inference UI, file upload, and model-selection controls are fully open to anyone who reaches the port. The Flask API endpoints (/voiceChangeModel etc.) perform no key or token check. Operators are expected to bind to localhost or place a reverse proxy in front; many one-click community packages (integration/懒人包 bundles) instead expose 0.0.0.0:7860 directly. Gradio share=True tunnels (gradio.live) are a common accidental public-exposure path.",
+  "default_ports": [
+    7860,
+    5000,
+    6842
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio_config\"",
+      "rationale": "Gradio embeds a window.gradio_config JSON blob inline in the served HTML body — this is the one Gradio signal Shodan http.html CAN see past the SPA shell. Broad Gradio-on-7860 net; combine with a title/component marker to narrow to SVC."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"so-vits\"",
+      "rationale": "so-vits / so-vits-svc app title or component label rendered into the gradio_config JSON on the index page; direct name match when the fork keeps the default title."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"vits\" http.html:\"speaker\"",
+      "rationale": "Conjunctive match on the Gradio config blob plus vits + speaker component labels; isolates SVC-family voice-conversion UIs from generic Gradio demos."
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"voiceChangeModel\"",
+      "rationale": "flask_api.py real-time conversion endpoint name; near-unique to so-vits-svc Flask deployments feeding the VST/real-time client. Port-agnostic because Flask port is operator-chosen."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"4.0\"",
+      "rationale": "so-vits-svc branch/version (e.g. 4.0/4.1) frequently rendered in the UI header/tab title inside gradio_config; use for version-targeted enumeration of the dominant 4.x line."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "so-vits-svc",
+    "response_body_contains": [
+      "gradio_config",
+      "so-vits",
+      "vits",
+      "speaker",
+      "config.json"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "POST /upload",
+    "GET /info",
+    "POST /voiceChangeModel",
+    "GET /gradio_api/info"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated access to the full inference UI, arbitrary audio upload, and model swap on port 7860",
+    "Gradio file-component path traversal / arbitrary file read CVEs (CVE-2024-1561, CVE-2023-51449 and related) apply to any exposed so-vits-svc Gradio instance running a vulnerable Gradio version",
+    "Unrestricted audio upload with no size/MIME limits — GPU/VRAM and disk DoS via large or malformed inputs fed to the ffmpeg/librosa preprocessing path",
+    "share=True gradio.live tunnels publish the UI to a public URL with no auth and no expiry control",
+    "Model/config disclosure — /config and gradio_config expose the loaded speaker names, model filenames, and directory structure, aiding targeted file-read chaining",
+    "No rate limiting — free GPU compute theft; attacker automates continuous conversion jobs at operator cost",
+    "Flask API (flask_api.py) accepts base64 audio to /voiceChangeModel with no auth, enabling remote real-time voice conversion abuse"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — open GPU inference endpoint converts audio for free at operator cost, trivially automatable via /run/predict. (2) Non-consensual voice cloning / deepfake production — a target-voice model plus open conversion = turnkey impersonation of the modeled singer/speaker, a defamation, fraud, and disinformation surface. (3) Gradio-version file read — chaining a known Gradio path-traversal CVE against an exposed so-vits-svc host yields arbitrary file read (model weights, config.json, adjacent secrets, SSH keys). (4) Voice-dataset harvesting — uploaded reference audio and the operator's trained speaker models (.pth) are exfiltratable training material. (5) Accidental exposure via share=True tunnels bypasses any network-level control the operator thought they had.",
+  "deployment_notes": "Docker or bare-metal on CUDA GPU hosts (Vast.ai, RunPod, AutoDL, Lambda). The Gradio UI (webUI.py) is the dominant surface; Chinese-language one-click 'lazy' bundles are extremely common and frequently bind 0.0.0.0:7860 with no proxy. SHODAN VISIBILITY CAVEAT: so-vits-svc is a Gradio SPA — the visible page content is JS-rendered and largely blind to http.html, EXCEPT the inline window.gradio_config JSON blob which Shodan/Censys DO index. Dork on gradio_config + component/title labels rather than on rendered UI text. The Flask API path (flask_api.py real-time, flask_api_full_song.py) is a distinct, more searchable surface via the /voiceChangeModel endpoint name. Censys services.http.response.html_title of 'Gradio' plus body substring matching on gradio_config is the reliable cross-source pivot. Upstream repo is archived; treat active forks (so-vits-svc-fork-for-realtime, community 4.1 bundles) as the live deployment population.",
+  "docker_images": [
+    "ghcr.io/svc-develop-team/so-vits-svc",
+    "so-vits-svc"
+  ],
+  "github_repos": [
+    "svc-develop-team/so-vits-svc",
+    "voicepaw/so-vits-svc-fork",
+    "MaxMax2016/so-vits-svc"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

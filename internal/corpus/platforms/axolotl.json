@@ -1,0 +1,29 @@
+{
+  "name": "Axolotl",
+  "category": "training-framework",
+  "github": "https://github.com/OpenAccess-AI-Collective/axolotl",
+  "description": "Fine-tuning framework for LLMs. Wrapper around HuggingFace Transformers + vLLM.",
+  "default_ports": [8000, 6006, 5000],
+  "protocols": ["http"],
+  "auth_default": "none",
+  "auth_bypass": "not-applicable",
+  "tls_default": false,
+  "fingerprint_status": "unfingerprintable",
+  "fingerprint_note": "Axolotl has no built-in HTTP server. Post-training inference uses vLLM-compatible OpenAI /v1 API. No Axolotl-specific HTTP signature exists. FP risk: 95% if attempted.",
+  "dorks": {
+    "basic": "NOT-POSSIBLE",
+    "strict": "NOT-POSSIBLE",
+    "version": "NOT-POSSIBLE"
+  },
+  "dork_notes": "Axolotl is unfingerprintable at HTTP transport layer. Research strategy: search vLLM + GPU evidence or escalate to process enumeration.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "missing",
+  "aimap_note": "Deliberately not included in aimap. Author notes (line 4210-4214): unfingerprintable without host-level access.",
+  "severity": "N/A",
+  "research_date": "2026-06-05",
+  "sources": [
+    "https://github.com/OpenAccess-AI-Collective/axolotl",
+    "github.com/sshpie/aimap line 4210-4214"
+  ]
+}

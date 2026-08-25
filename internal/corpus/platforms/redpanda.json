@@ -1,0 +1,57 @@
+{
+  "platform": "redpanda",
+  "display_name": "Redpanda",
+  "category": "event_streaming",
+  "default_ports": [
+    9092,
+    9644,
+    8080
+  ],
+  "api_paths": [
+    "/v1/cluster_config",
+    "/v1/brokers"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "kafka_enable_authorization"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run redpandadata/redpanda:latest \u2014 kafka_enable_authorization defaults false in OSS; Redpanda Console bundled with no auth unless SSO/basic-auth configured",
+  "misconfig_patterns": [
+    "kafka_enable_authorization=false (shipped default) with Admin API 9644 reachable",
+    "Redpanda Console on 8080 with no SSO/basic-auth block configured"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"redpanda\"",
+      "http.html:\"Redpanda Console\""
+    ],
+    "active_probe": {
+      "path": "/v1/brokers",
+      "method": "GET",
+      "response_markers": [
+        "Redpanda version string in ApiVersionsResponse software field"
+      ],
+      "false_positive_check": "Kafka-wire-compatible ApiVersionsResponse must self-identify software as Redpanda, not vanilla Kafka"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"redpanda\"",
+    "strict": "http.html:\"Redpanda Console\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Kafka-wire-compatible on 9092 \u2014 same ApiVersionsRequest fingerprint as vanilla Kafka works, version string disambiguates"
+  ],
+  "pivot_paths": [
+    "unauth 9092 -> full topic read/write (same class as Kafka broker)",
+    "unauth Admin API 9644 -> cluster-config read/write",
+    "unauth Console 8080 -> browse topic contents/consumer groups"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.redpanda.com/current/manage/security/authorization/",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] PRIMARY-SOURCE CHECK 2026-07-14: no published Shodan precedent found. Kafka-wire-compatible broker port (9092) inherits the same Shodan-HTML-dark-by-construction problem as vanilla Kafka (confirmed via live test on kafka-broker entry) \u2014 route broker discovery to Censys/active-probe; only Redpanda Console (HTML title) is a plausible Shodan dork target."
+  ]
+}

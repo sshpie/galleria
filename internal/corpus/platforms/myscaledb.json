@@ -1,0 +1,64 @@
+{
+  "platform": "myscaledb",
+  "display_name": "MyScaleDB",
+  "category": "vector_db",
+  "default_ports": [
+    8123
+  ],
+  "api_paths": [
+    "/",
+    "/?query=SELECT+1"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CLICKHOUSE_PASSWORD"
+  ],
+  "default_creds": [
+    {
+      "user": "default",
+      "pass": "",
+      "context": "ClickHouse-compatible HTTP interface default"
+    }
+  ],
+  "install_tell": "docker run -p 8123:8123 myscale/myscaledb:latest",
+  "misconfig_patterns": [
+    "ClickHouse-compatible interface: default user with empty password",
+    "MSTG vector index DDL detectable via SHOW CREATE TABLE",
+    "Port 8123 shared with standard ClickHouse — discriminator required"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8123 \"Ok.\"",
+      "port:8123 \"MyScale\""
+    ],
+    "active_probe": {
+      "path": "/?query=SELECT+version()",
+      "method": "GET",
+      "response_markers": [
+        "MyScale",
+        "myscale"
+      ],
+      "false_positive_check": "version() output or /api/v1/info must contain MyScale or myscale string to distinguish from plain ClickHouse"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8123 \"Ok.\"",
+    "strict": "port:8123 \"MyScale\"",
+    "version": "port:8123 \"myscale\""
+  },
+  "deployment_tells": [
+    "ClickHouse HTTP interface: GET /?query=SELECT+1 returns Ok. without auth",
+    "version() contains MyScale identifier",
+    "MSTG index DDL in SHOW CREATE TABLE for vector tables"
+  ],
+  "pivot_paths": [
+    "GET /?query=SELECT+version() → identify MyScale vs plain ClickHouse",
+    "GET /?query=SHOW+TABLES+FROM+default → table list without auth",
+    "GET /?query=SHOW+CREATE+TABLE+{t} → detect MSTG vector index DDL"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://myscale.com/docs/",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

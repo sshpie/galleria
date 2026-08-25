@@ -1,0 +1,65 @@
+{
+  "platform": "openguardrails",
+  "display_name": "OpenGuardrails",
+  "category": "guardrail-framework",
+  "entry_type": "FRAMEWORK_AND_DEPLOYMENT",
+  "vendor": "openguardrails (community OSS)",
+  "repo": "https://github.com/openguardrails/openguardrails",
+  "license": "NOASSERTION (per GH API, license file present in repo)",
+  "tagline": "Zero Trust Firewall for AI Agents",
+  "stars_2026_06_07": 356,
+  "default_ports": [54321, 58002, 58003, 58004, 6379, 80, 443],
+  "exposes_network_by_default": true,
+  "auth_default": "on (JWT + Postgres password) BUT shipped with placeholder secrets that operators often leave",
+  "api_paths": ["/platform/", "/api/", "/health"],
+  "install_tell": "docker compose up (docker-compose.prod.yml or docker-compose.yml)",
+  "stack": [
+    "PostgreSQL 16 (port 54321 host-mapped from container 5432)",
+    "Redis 7 (rate-limit / locks / short-lived caches)",
+    "Platform image: openguardrails/openguardrails-platform:latest (unified frontend+backend, supervisord)",
+    "vLLM for OpenGuardrails-Text-2510 (port 58002), bge-m3 embedding (58004), optional VL model (58003)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"OpenGuardrails\"",
+      "http.html:\"Zero Trust Firewall for AI Agents\"",
+      "tcp.port:54321 banner:\"PostgreSQL\" (compose default exposure)",
+      "image tag openguardrails/openguardrails-platform on Docker Hub"
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": ["openguardrails"],
+      "false_positive_check": "must include openguardrails string in body, not just 200 OK"
+    }
+  },
+  "default_creds_patterns": [
+    {"user": "admin@yourdomain.com", "pass": "CHANGE-THIS-PASSWORD-IN-PRODUCTION", "context": ".env.example SUPER_ADMIN defaults -- if operator left as-is, super-admin login is the literal placeholder"},
+    {"context": "JWT_SECRET_KEY=your-secret-key-change-in-production -- tokens are forgeable if unchanged"},
+    {"context": "POSTGRES_PASSWORD=your_password -- direct DB takeover via port 54321 if unchanged and exposed"},
+    {"context": "GUARDRAILS_MODEL_API_KEY=EMPTY -- intended for self-hosted vLLM, but if operator points to OpenAI-compatible upstream and leaves EMPTY, no upstream auth"}
+  ],
+  "misconfig_patterns": [
+    ".env.example placeholders shipped verbatim into .env (SUPER_ADMIN_PASSWORD=CHANGE-THIS-PASSWORD-IN-PRODUCTION)",
+    "JWT_SECRET_KEY left at 'your-secret-key-change-in-production' -- forgeable tokens",
+    "POSTGRES_PORT=54321 exposed to 0.0.0.0 -- DB reachable from internet when host has no firewall",
+    "vLLM model API on 58002/58004 reachable without auth (designed for private VPC, often deployed flat)",
+    "Frontend served on /platform/ subpath -- enumeration tell"
+  ],
+  "vulnerabilities": [
+    "No published CVEs as of 2026-06-07; default-creds pattern is the de facto exposure"
+  ],
+  "cve_catalog_2026_06_07": {
+    "nvd": "0 results for keyword 'openguardrails'",
+    "github_advisories": "0 published",
+    "open_issues_2026_06_07": 1,
+    "note": "Pre-CVE project. Risk lives in default-cred replication, not in disclosed bugs."
+  },
+  "dork_population_substitution_risk": "HIGH. Dork 'http.html:OpenGuardrails' selects operators who deployed it AND exposed the frontend publicly -- already a self-selected subpopulation. A second-order signal (Postgres :54321 + redis-7-alpine container + supervisord process) selects operators who deployed via the stock docker-compose, which is a different subset (the lazy-deploy population). Use both axes; do not assume one represents the other.",
+  "lane_d_role": "Hybrid: ships as a library (in-process scan calls) AND as a self-hosted platform with admin UI. Operators choose. The platform-mode deployment is the OSINT-visible variant.",
+  "sources": [
+    {"url": "https://github.com/openguardrails/openguardrails", "status": "CONFIRMED", "verified": "2026-06-07"},
+    {"url": "https://github.com/openguardrails/openguardrails/blob/main/docker-compose.yml", "status": "CONFIRMED"},
+    {"url": "https://github.com/openguardrails/openguardrails/blob/main/.env.example", "status": "CONFIRMED"}
+  ]
+}

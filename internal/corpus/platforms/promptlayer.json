@@ -1,0 +1,57 @@
+{
+  "platform": "promptlayer",
+  "display_name": "PromptLayer",
+  "category": "observability",
+  "default_ports": [3000, 80, 443],
+  "api_paths": ["/rest/track-request", "/rest/get-prompt-template", "/rest/publish-prompt-template", "/rest/track-score"],
+  "auth_default": "api_key",
+  "auth_config_env": [
+    "PROMPTLAYER_API_KEY",
+    "PROMPTLAYER_BASE_URL",
+    "BETTER_AUTH_SECRET"
+  ],
+  "default_creds": [],
+  "install_tell": "Enterprise-only self-hosted; Docker Compose or Kubernetes Helm chart; Python Flask backend + PostgreSQL 15 + Redis/Valkey 8.1.0",
+  "misconfig_patterns": [
+    "PROMPTLAYER_API_KEY committed to source repos or client-side JavaScript",
+    "BETTER_AUTH_SECRET left as default 'change-me-in-production' in self-hosted deployments",
+    "API key passed as plain request body parameter (not header) in legacy REST calls",
+    "Self-hosted deployment without TLS exposes full prompt/response log stream in cleartext"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"promptlayer\"",
+      "http.title:\"PromptLayer\""
+    ],
+    "active_probe": {
+      "path": "/rest/track-request",
+      "method": "POST",
+      "response_markers": ["request_id", "promptlayer"],
+      "false_positive_check": "Must see 'request_id' in JSON response body — generic 400/401 without PromptLayer markers is not confirmation"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"promptlayer\"",
+    "strict": "http.title:\"PromptLayer\" http.html:\"promptlayer\"",
+    "version": "http.html:\"promptlayer\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "HTTP title contains 'PromptLayer' on port 3000 or 443",
+    "REST API base at /rest/ with JSON responses containing 'request_id' field",
+    "Backend is Python Flask (server header: Werkzeug or gunicorn)",
+    "Enterprise-only: public SaaS at api.promptlayer.com; self-hosted requires license"
+  ],
+  "pivot_paths": [
+    "PROMPTLAYER_API_KEY -> GET /rest/get-prompt-template returns full prompt versions and templates",
+    "Track-request log stream -> full prompt+completion history with timestamps and model metadata",
+    "BETTER_AUTH_SECRET default -> forged session tokens in self-hosted deployments",
+    "Celery/Redis queue exposed -> task injection into background worker pipeline"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.promptlayer.com/self-hosted",
+    "https://github.com/MagnivOrg/prompt-layer-docs/blob/master/self-hosted.mdx",
+    "https://github.com/MagnivOrg/prompt-layer-library",
+    "https://docs.promptlayer.com/languages/rest-api"
+  ]
+}

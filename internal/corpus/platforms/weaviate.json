@@ -1,0 +1,77 @@
+{
+  "platform": "weaviate",
+  "display_name": "Weaviate",
+  "category": "vector_db",
+  "default_ports": [
+    8080,
+    50051
+  ],
+  "api_paths": [
+    "/v1/meta",
+    "/v1/schema",
+    "/v1/graphql",
+    "/v1/objects",
+    "/.well-known/ready",
+    "/v1/backups/{backend}",
+    "/v1/backups/{backend}/{id}"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "AUTHENTICATION_APIKEY_ENABLED",
+    "AUTHORIZATION_ADMIN_LIST"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 -p 50051:50051 semitechnologies/weaviate:latest",
+  "misconfig_patterns": [
+    "GraphQL introspection not disabled — schema fully enumerable",
+    "CORS allows any origin",
+    "/v1/schema accessible unauthenticated",
+    "gRPC port 50051 exposed without TLS"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:Weaviate",
+      "http.html:\"weaviate.io\"",
+      "http.html:\"/v1/meta\"",
+      "http.html:\"/v1/graphql\"",
+      "http.headers:\"weaviate\"",
+      "\"grpcMaxMessageSize\" \"modules\" \"hostname\" port:8080 -\"login\""
+    ],
+    "active_probe": {
+      "path": "/v1/meta",
+      "method": "GET",
+      "response_markers": [
+        "\"version\"",
+        "\"modules\"",
+        "\"hostname\""
+      ],
+      "false_positive_check": "response must include modules field as array — uniquely identifies Weaviate"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8080 \"weaviate\"",
+    "strict": "product:Weaviate port:8080",
+    "version": "product:Weaviate http.html:\"v1/meta\""
+  },
+  "deployment_tells": [
+    "/v1/meta reveals version + all loaded modules",
+    "/v1/graphql explorer accessible without auth",
+    "gRPC port 50051 open alongside 8080"
+  ],
+  "pivot_paths": [
+    "GET /v1/schema → class definitions → query records via GraphQL without auth",
+    "POST /v1/graphql {Get{ClassName{_additional{id}}}} → record count + IDs",
+    "GET /v1/objects → raw record dump with no auth",
+    "cert CN pivot → identify operator org → check job postings"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-67818: ZipSlip — requires write access",
+    "CVE-2025-67819: path traversal — requires write access"
+  ],
+  "sources": [
+    "Learning LangChain (9781098167271) ch02",
+    "AI-Native LLM Security (9781836203759) ch04",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (backup-endpoint enrichment)"
+  ]
+}

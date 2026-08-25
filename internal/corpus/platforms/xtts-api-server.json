@@ -1,0 +1,96 @@
+{
+  "name": "XTTS API Server",
+  "slug": "xtts-api-server",
+  "category": "voice-tts-conversational",
+  "description": "xtts-api-server (daswer123/xtts-api-server) — a lightweight FastAPI/uvicorn REST wrapper around Coqui XTTSv2 for text-to-speech and voice cloning. Runs on default port 8020. Synthesizes speech via POST /tts_to_audio and clones a speaker's timbre from an uploaded reference clip via POST /clone_speaker (producing a reusable speaker latent). Widely used as the TTS backend for SillyTavern and similar local-AI stacks. This is a plain FastAPI service (not Gradio) with FastAPI Swagger docs at /docs and no built-in authentication.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The FastAPI app is created and served with uvicorn with no authentication middleware, no API key, and no session in the upstream repo. Any client reaching port 8020 can synthesize speech, clone a speaker from uploaded audio, list and set speaker/model folders, and change TTS settings. It is designed to be called by a local companion app (e.g. SillyTavern) over localhost, so operators who bind it to 0.0.0.0 or publish the Docker port expose the full API unauthenticated. Speaker-folder and output-folder path parameters accept server-local filesystem paths, giving an unauthenticated caller a path-oriented primitive.",
+  "default_ports": [
+    8020
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8020 http.html:\"tts_to_audio\"",
+      "rationale": "Default XTTS API port; the /tts_to_audio route rendered in the FastAPI /docs body is the signature endpoint. Low volume, high signal"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8020 http.html:\"XTTS\"",
+      "rationale": "XTTS name in the FastAPI docs title/description on the default port; broad but effective first-pass"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8020 http.html:\"clone_speaker\" http.html:\"tts_to_audio\"",
+      "rationale": "Co-occurrence of the /clone_speaker and /tts_to_audio routes in the Swagger body is near-unique to daswer123/xtts-api-server; eliminates other Coqui wrappers"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"tts_to_audio\" http.html:\"get_speakers\" http.html:\"set_tts_settings\"",
+      "rationale": "The full daswer123 route set (tts_to_audio + get_speakers + set_tts_settings) identifies the server even when moved off port 8020"
+    },
+    {
+      "tier": "version",
+      "query": "port:8020 http.html:\"XTTS\" http.html:\"streaming\" http.html:\"tts_stream\"",
+      "rationale": "Presence of the /tts_stream streaming route indicates a newer build with the streaming feature; use for version-targeted enumeration"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8020,
+    "http_path": "/docs",
+    "title_contains": "XTTS",
+    "response_body_contains": [
+      "tts_to_audio",
+      "clone_speaker",
+      "get_speakers",
+      "set_tts_settings",
+      "tts_stream",
+      "XTTS"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "POST /tts_to_audio",
+    "POST /tts_to_file",
+    "GET /tts_stream",
+    "POST /clone_speaker",
+    "GET /speakers",
+    "GET /speakers_list",
+    "GET /get_speakers",
+    "GET /languages",
+    "GET /get_folders",
+    "POST /set_tts_settings",
+    "POST /set_speaker_folder",
+    "POST /set_output",
+    "GET /sample/{filename}",
+    "GET /docs",
+    "GET /openapi.json"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated POST /tts_to_audio synthesizes arbitrary speech and POST /clone_speaker clones a voice from any uploaded reference clip",
+    "POST /set_speaker_folder and POST /set_output accept server-local filesystem paths — path-controlled read/write-location primitive for an unauthenticated caller",
+    "GET /sample/{filename} serves files from the speaker/output directory — reference/cloned samples are downloadable without auth",
+    "GET /tts_stream and /tts_to_audio take unbounded text with no rate limiting — GPU compute exhaustion / DoS at operator cost",
+    "Unrestricted reference-audio upload on /clone_speaker — no MIME/size validation in the wrapper; large files exhaust GPU VRAM and disk",
+    "FastAPI /docs and /openapi.json enabled by default — full schema disclosure aids automated enumeration",
+    "Speaker latents / cloned-voice embeddings persisted in the speaker folder are the biometric material and are enumerable via GET /speakers and downloadable via GET /sample"
+  ],
+  "default_creds": [],
+  "risk_notes": "xtts-api-server turns Coqui XTTSv2 into a one-call cloning REST API: POST a reference clip to /clone_speaker, then POST text to /tts_to_audio and get arbitrary speech in that voice. (1) Non-consensual voice cloning / biometric-identity theft — an open 8020 endpoint is a turnkey impersonation service requiring only a short reference sample. (2) Fraud / vishing / disinformation — synthesized audio in a target's voice drives voice-phishing, deepfake extortion, and fabricated-statement campaigns, fully scriptable against the REST API. (3) Reference-audio & speaker-latent exposure — uploaded reference clips and persisted speaker latents (the cloned-voice embeddings) are enumerable via GET /speakers and downloadable via GET /sample/{filename}; harvesting them yields ready-made clone assets for offline reuse. (4) Path-controlled primitives — /set_speaker_folder and /set_output take server-local paths, letting an unauthenticated caller redirect reads/writes across the filesystem. (5) Compute theft / DoS — unbounded, unauthenticated, unrate-limited synthesis runs at operator GPU cost and exhausts VRAM/disk via oversized inputs. Because it is the standard SillyTavern TTS backend, many instances are hobbyist boxes where 8020 has been published beyond localhost. Unlike the Gradio-based platforms in this family, this is a plain FastAPI service — fingerprint on the /tts_to_audio + /clone_speaker route pair in the Swagger body, not on a Gradio marker.",
+  "deployment_notes": "Docker (daswer123/xtts-api-server on Docker Hub) or pip install on CUDA GPU hosts; CPU mode works but is slow. The dominant use case is as the TTS backend for SillyTavern, so instances are commonly on personal/hobbyist machines where the operator published port 8020 to reach it from another host or container, exposing it beyond the intended localhost scope. GPU-as-a-service (RunPod, Vast.ai) deployments publish 8020 directly. First run downloads the XTTSv2 model from HuggingFace/Coqui. FastAPI Swagger docs live at /docs; the signature routes are /tts_to_audio (synthesis), /clone_speaker (cloning), /tts_stream (streaming, newer builds), /speakers and /sample (speaker/latent management). Port 8020 is the default but configurable via --port; confirm on the route set rather than port alone. Note Coqui TTS itself is archived upstream, so exposed servers are unlikely to receive security patches.",
+  "docker_images": [
+    "daswer123/xtts-api-server"
+  ],
+  "github_repos": [
+    "daswer123/xtts-api-server",
+    "coqui-ai/TTS",
+    "coqui-ai/xtts-streaming-server"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "name": "Coqui TTS Server",
+  "slug": "coqui-tts",
+  "category": "voice-tts-conversational",
+  "description": "The tts-server HTTP demo shipped with Coqui TTS (coqui-ai/TTS, now community-maintained as idiap/coqui-ai-TTS). A Flask app serving a rendered HTML index plus REST synthesis endpoints on port 5002, binding all interfaces with no authentication. One of the cleanly Shodan http.html-visible TTS servers - the served index carries multiple Coqui-branded strings.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication on any route. tts-server (TTS/server/server.py) is a Flask app started via app.run(host=\"::\", port=5002) - it binds the IPv6 wildcard (and therefore also IPv4) on all interfaces by default. No API key, no token, no basic auth anywhere in the canonical server. Running with --debug enables the Werkzeug interactive debugger, which is remote code execution if exposed. Operators are expected to front with a reverse proxy for auth; the raw demo server has none.",
+  "default_ports": [
+    5002
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:5002 http.html:\"Coqui AI TTS demo server\"",
+      "rationale": "The served index page contains the meta string 'Coqui AI TTS demo server' verbatim in server-rendered HTML - a direct, high-signal body match on the canonical port."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"coqui-log-green-TTS.png\"",
+      "rationale": "The Coqui logo asset filename coqui-log-green-TTS.png is hardcoded in the index template and appears in the served HTML body; nearly unique to this server across any port."
+    },
+    {
+      "tier": "strict",
+      "query": "port:5002 http.html:\"TTS engine\" http.html:\"api/tts\"",
+      "rationale": "Conjunctive: the page title text 'TTS engine' plus the /api/tts synthesis path referenced in the index JavaScript pins the Coqui tts-server specifically and excludes other TTS demos."
+    },
+    {
+      "tier": "version",
+      "query": "port:5002 http.html:\"Coqui AI TTS\" http.html:\"github.com/coqui-ai/TTS\"",
+      "rationale": "The GitHub fork-ribbon link to coqui-ai/TTS in the index body confirms the canonical server; pair with a /details or model-name read for version scoping (Coqui shut down, so the idiap/coqui-ai-TTS fork carries current releases)."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 5002,
+    "http_path": "/",
+    "title_contains": "TTS engine",
+    "response_body_contains": [
+      "Coqui AI TTS demo server",
+      "coqui-log-green-TTS.png",
+      "Type here...",
+      "Synthesizing...",
+      "github.com/coqui-ai/TTS"
+    ],
+    "http_header": "server: werkzeug"
+  },
+  "api_paths": [
+    "/",
+    "/details",
+    "/api/tts",
+    "/api/tts_stream",
+    "/locales",
+    "/voices",
+    "/process"
+  ],
+  "known_vulns": [
+    "No authentication - unauthenticated GET/POST /api/tts?text= is an open synthesis and compute-exhaustion surface",
+    "style_wav parameter takes a file path or URL for GST reference audio, passed to the model loader - local file read / SSRF candidate worth verifying per build",
+    "Flask --debug mode exposes the Werkzeug interactive console = remote code execution if the operator enabled it",
+    "Binds the IPv6/IPv4 wildcard (host='::') by default - exposed to all interfaces out of the box",
+    "Werkzeug development server (not a production WSGI server) - no request hardening, trivially DoS-able",
+    "Full API self-documented via / and /details - free enumeration of voices, speakers, and languages"
+  ],
+  "default_creds": [],
+  "risk_notes": "Coqui shut down as a company; the code lives on as the community fork idiap/coqui-ai-TTS (PyPI coqui-tts), so exposed servers span abandoned original installs and current fork installs. Vectors on an exposed instance: (1) Unauthenticated synthesis/compute theft via GET /api/tts?text= - any HTTP client drains operator GPU/CPU at zero cost, trivially scripted; (2) style_wav local-file-read / SSRF - the GST reference-audio parameter accepts a path or URL handed to the model loader, an unaudited file/network fetch surface; (3) Werkzeug debug-console RCE if --debug was left on; (4) voice/model enumeration via / and /details reveals loaded model identity for CVE scoping. Unlike the Gradio cohort this server is cleanly Shodan http.html-visible - the index page renders 'Coqui AI TTS demo server', the coqui-log-green-TTS.png asset, 'Type here...' / 'Synthesizing...' UI strings, and a github.com/coqui-ai/TTS ribbon in server-side HTML, so a body-string dork harvests it directly. Correction to a common assumption: the server header is Werkzeug/Flask, NOT TornadoServer.",
+  "deployment_notes": "Launched via the tts-server console command or 'python3 TTS/server/server.py'; Flask app.run(host='::', port=5002) binds all interfaces. Server header is 'Werkzeug/<ver> Python/<ver>' (Flask dev server), not Tornado. First-party container images: ghcr.io/coqui-ai/tts and ghcr.io/coqui-ai/tts-cpu (docker run -p 5002:5002); the community fork ships ghcr.io/idiap/coqui-tts. The index JavaScript calls /api/tts?text={text}&speaker_id=&style_wav=&language_id= - multi-speaker and GST toggles (--use_multi_speaker) conditionally render speaker/language selectors. /api/tts_stream exists in some fork variants; treat /api/tts as the primary confirmed synthesis path. No TLS in the default configuration. The original coqui-ai/TTS repo is effectively frozen (~45.9k stars); active development and current PyPI releases come from idiap/coqui-ai-TTS.",
+  "docker_images": [
+    "ghcr.io/coqui-ai/tts",
+    "ghcr.io/coqui-ai/tts-cpu",
+    "ghcr.io/idiap/coqui-tts"
+  ],
+  "github_repos": [
+    "coqui-ai/TTS",
+    "idiap/coqui-ai-TTS"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

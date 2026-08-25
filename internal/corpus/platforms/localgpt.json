@@ -1,0 +1,107 @@
+{
+  "platform": "localgpt",
+  "display_name": "LocalGPT",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000,
+    8000,
+    8001,
+    11434
+  ],
+  "api_paths": [
+    "/health",
+    "/models",
+    "/sessions",
+    "/sessions/{id}",
+    "/sessions/{id}/messages",
+    "/sessions/{id}/documents",
+    "/sessions/{id}/indexes",
+    "/sessions/{id}/upload",
+    "/sessions/{id}/index",
+    "/indexes",
+    "/indexes/{id}",
+    "/indexes/{id}/upload",
+    "/indexes/{id}/build",
+    "/chat"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "git clone https://github.com/PromtEngineer/localGPT.git && cd localGPT && ./start-docker.sh  (then open http://localhost:3000); dev path: python run_system.py",
+  "misconfig_patterns": [
+    "Bare http.server BaseHTTPRequestHandler bound to (\"\",8000) = all interfaces, no auth layer, no rate limiting",
+    "Access-Control-Allow-Origin: * on every response — any web origin can drive the API from a victim browser",
+    "docker-compose publishes 3000/8000/8001 to the host with no reverse-proxy auth; exposing the host to the internet exposes the raw API",
+    "Co-located Ollama OLLAMA_HOST=0.0.0.0 turns the optional LLM container into a second unauthenticated public service",
+    "No first-run setup/admin-creation step — there is nothing to secure even if an operator wanted to",
+    "chat_data.db is committed to the repo with sample data, signaling the schema has no auth columns by design"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"ollama_running\" http.html:\"database_stats\"",
+      "http.html:\"generation_models\" http.html:\"embedding_models\"",
+      "http.title:\"Create Next App\" port:3000 \"X-Powered-By: Next.js\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": [
+        "\"status\": \"ok\"",
+        "\"ollama_running\":",
+        "\"available_models\":",
+        "\"database_stats\":"
+      ],
+      "false_positive_check": "The frontend (:3000) is a stock Next.js app: it ships the DEFAULT create-next-app metadata title \\\"Create Next App\\\" and the DEFAULT create-next-app favicon (Shodan http.favicon.hash:-2070047203). NEITHER is vendor-unique — both collide with tens of thousands of unrelated Next.js deployments. Do NOT fingerprint on :3000 title or favicon alone. The reliable discriminator is the BACKEND API on :8000: GET /health returning a JSON body containing the exact key triad \\\"ollama_running\\\" + \\\"available_models\\\" + \\\"database_stats\\\" together (the co-occurrence of ollama_running with database_stats is unique to this codebase). Secondary confirm: GET /models returns {\\\"generation_models\\\":[...],\\\"embedding_models\\\":[...]}. To avoid the ~50% rule: a generic Ollama proxy may echo \\\"ollama_running\\\" but will NOT also return \\\"database_stats\\\"; require BOTH keys before labeling localgpt. CORS Access-Control-Allow-Origin:* plus the http.server/BaseHTTPRequestHandler Server header (Python-style) on :8000 is a tertiary tell."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"ollama_running\" http.html:\"database_stats\"",
+    "strict": "http.html:\"ollama_running\" http.html:\"available_models\" http.html:\"database_stats\" \"status\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Four-container Docker stack with container_names rag-frontend / rag-backend / rag-api / rag-ollama on the 'rag-network' bridge (docker-compose.yml)",
+    "Backend Server header is Python http.server / BaseHTTPRequestHandler style (custom ChatHandler, not Flask/FastAPI/gunicorn) on :8000",
+    "Co-located Ollama on :11434 with OLLAMA_HOST=0.0.0.0 (with-ollama profile) — Ollama /api/tags reachable alongside the app",
+    "Frontend on :3000 is stock Next.js (X-Powered-By: Next.js, default 'Create Next App' title) proxying NEXT_PUBLIC_API_URL=http://localhost:8000",
+    "Volumes ./lancedb, ./index_store, ./shared_uploads bind-mounted = LanceDB + on-disk index + upload staging present on host",
+    "Ships qwen3:0.6b / qwen3:8b as the documented default pulled models; Qwen3-Embedding HuggingFace models referenced in /models"
+  ],
+  "pivot_paths": [
+    "GET /health -> confirm liveness + read database_stats (session/message counts, most-used model) without touching content",
+    "GET /sessions -> enumerate all chat session titles + counts -> GET /sessions/{id}/messages -> read conversation history (metadata-first; sample minimally to confirm severity)",
+    "GET /sessions/{id}/documents and GET /indexes -> enumerate ingested document filenames + index/vector_table names (names ARE the finding; do not exfiltrate corpus)",
+    "GET /models -> enumerate wired generation+embedding models, infer Ollama backing and compute footprint",
+    "If with-ollama profile: GET :11434/api/tags -> enumerate pulled models on the co-located unauthenticated Ollama (read-only model inventory)"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-5000 (CWE-306 Missing Authentication) — LocalGPTHandler/BaseHTTPRequestHandler in backend/server.py exposes all API endpoints with no authentication, remotely exploitable; CVSS 3.1 7.3 High; affects localGPT up to commit 4d41c7d (no versioned release; rolling). Published 2026-03-28.",
+    "CVE-2026-5001 (CWE-434 Unrestricted Upload) — unauthenticated remote arbitrary file upload via crafted POST to the upload endpoints in backend/server.py; High; affects up to commit 4d41c7d.",
+    "CVE-2026-5002 (Injection / prompt injection) — _route_using_overviews in backend/server.py (LLM prompt handler); manipulation leads to injection, no user interaction; CVSS 7.3 High; affects up to commit 4d41c7d.",
+    "CVE-2026-5003 (CWE-200 Information Disclosure) — handle_index function in backend/server.py; remote attacker can retrieve sensitive information; Medium; affects up to commit 4d41c7d. Vendor was contacted prior to disclosure and did not respond."
+  ],
+  "auth_evidence": "Primary source: backend/server.py @ commit 4d41c7d defines the API as a bare `class ChatHandler(http.server.BaseHTTPRequestHandler)` served via `ReusableTCPServer((\"\", PORT), ChatHandler)` with `PORT = 8000`. The empty-string bind `(\"\", 8000)` listens on ALL interfaces. There is NO @login_required, no token/API-key check, no session-auth, no middleware anywhere in the file — every GET/POST/DELETE route (incl. /sessions, /indexes/{id}/upload, /chat) answers unauthenticated. CORS is wide open: `Access-Control-Allow-Origin: *`. backend/database.py creates only sessions/messages/session_documents/indexes/index_documents/session_indexes tables — NO users/auth/password table exists in the schema. docker.env ships ONLY OLLAMA_HOST/NODE_ENV/NEXT_PUBLIC_API_URL/RAG_API_URL — zero credential or auth-toggle vars. docker-compose.yml publishes 3000/8000/8001 (and 11434 under the with-ollama profile with OLLAMA_HOST=0.0.0.0) with no auth proxy. README quickstart is `./start-docker.sh` then `open http://localhost:3000` — no setup/login/first-run admin step. This is independently confirmed by CVE-2026-5000 (CWE-306 Missing Authentication, CVSS 3.1 7.3) filed against backend/server.py at this exact commit.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG corpus: uploaded source documents (PDF/text) under ./shared_uploads and ./index_store, exposed via /sessions/{id}/documents and /indexes — the user's private 'chat-with-your-documents' files and any PII/PHI/secrets inside them",
+    "Conversation history: full user+assistant chat content and metadata in backend/chat_data.db, readable via GET /sessions and GET /sessions/{id}/messages with no auth",
+    "Raw vector store: LanceDB tables under ./lancedb holding document chunk embeddings + chunk text references (index definitions enumerable via /indexes, /indexes/{id})",
+    "RAG/index definitions and routing config (vector_table_name, model_used, descriptions) revealing what corpora exist and which LLM/embedding models are wired in",
+    "Backing Ollama LLM endpoint: under the with-ollama profile Ollama binds OLLAMA_HOST=0.0.0.0 on :11434, exposing an unauthenticated model-inference/management API (model pull, free inference / model theft) co-located with the app",
+    "Unauthenticated write surface: /sessions/{id}/upload and /indexes/{id}/upload accept arbitrary file uploads (CVE-2026-5001), and /chat/messages allow free LLM inference at the operator's compute cost"
+  ],
+  "sources": [
+    "https://github.com/PromtEngineer/localGPT",
+    "https://github.com/PromtEngineer/localGPT/blob/4d41c7d1713b16b216d8e062e51a5dd88b20b054/backend/server.py",
+    "https://github.com/PromtEngineer/localGPT/blob/4d41c7d1713b16b216d8e062e51a5dd88b20b054/docker-compose.yml",
+    "https://github.com/PromtEngineer/localGPT/blob/4d41c7d1713b16b216d8e062e51a5dd88b20b054/docker.env",
+    "https://github.com/PromtEngineer/localGPT/blob/4d41c7d1713b16b216d8e062e51a5dd88b20b054/backend/database.py",
+    "https://github.com/PromtEngineer/localGPT/blob/4d41c7d1713b16b216d8e062e51a5dd88b20b054/README.md",
+    "https://cve.threatint.eu/CVE/CVE-2026-5000",
+    "https://www.thehackerwire.com/vulnerability/CVE-2026-5001/",
+    "https://radar.offseq.com/threat/cve-2026-5002-injection-in-promtengineer-localgpt-1aabfd3d",
+    "https://radar.offseq.com/threat/cve-2026-5003-information-disclosure-in-promtengin-b6513727",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

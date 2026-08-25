@@ -1,0 +1,130 @@
+{
+  "platform": "casibase",
+  "display_name": "Casibase",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    14000,
+    3306
+  ],
+  "api_paths": [
+    "/api/get-system-info",
+    "/api/get-version-info",
+    "/api/get-signin-options",
+    "/api/get-chats",
+    "/api/get-messages",
+    "/api/get-message",
+    "/api/get-chat",
+    "/api/get-global-stores",
+    "/api/get-store-names",
+    "/api/get-store",
+    "/api/get-providers",
+    "/api/get-provider",
+    "/api/get-vector",
+    "/api/get-tasks",
+    "/api/chat/completions",
+    "/api/get-account",
+    "/swagger/",
+    "/api/health"
+  ],
+  "auth_default": "ui-gated-api-open",
+  "auth_config_env": [
+    "isDemoMode (conf/app.conf, default false; when true authz_filter restricts to a POST whitelist)",
+    "clientId / clientSecret / issuer (conf/app.conf, empty in repo source; populated from Casdoor in the all-in-one image)",
+    "RUNNING_IN_DOCKER (docker-compose env)",
+    "DOCKER_DB_HOST (docker-compose env)",
+    "MYSQL_ROOT_PASSWORD (docker-compose, default 123456)"
+  ],
+  "default_creds": [
+    {
+      "user": "built-in/admin",
+      "pass": "123",
+      "context": "Documented login for the public writable demo (demo.casibase.com / demo-admin.casibase.com), org 'built-in', user 'admin', password '123' per casibase.org/docs/overview"
+    },
+    {
+      "user": "admin",
+      "pass": "admin123",
+      "context": "Default global admin for the casbin/casibase-all-in-one quickstart image per casibase.org/docs/basic/try-with-docker (bundled Casdoor seed)"
+    },
+    {
+      "user": "root",
+      "pass": "123456",
+      "context": "MySQL root password hardcoded in the repo default docker-compose.yml; port 3306 also published to host"
+    }
+  ],
+  "install_tell": "docker run -p 14000:14000 casbin/casibase-all-in-one   # all-in-one (bundled Casdoor+DB), login built-in/admin admin123. OR: docker compose up (repo docker-compose.yml -> service on :14000, MySQL :3306 root/123456).",
+  "misconfig_patterns": [],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Casibase\"",
+      "http.title:\"OpenAgent\"",
+      "http.html:\"cdn.openagentai.org\"",
+      "http.html:\"manifest.json\" http.html:\"openagent\""
+    ],
+    "active_probe": {
+      "path": "/api/get-system-info",
+      "method": "GET",
+      "response_markers": [
+        "JSON envelope with top-level \"status\":\"ok\" and a \"data\" object",
+        "system-info fields cpuUsage / memoryUsed / memoryTotal",
+        "version-info on /api/get-version-info returns \"version\",\"commitOffset\",\"commitId\" (Beego/Go build)",
+        "/api/get-signin-options returns Casdoor application signin providers (confirms Casdoor-delegated auth)",
+        "Beego server header / Set-Cookie casdoor_session_id on the /swagger/ route"
+      ],
+      "false_positive_check": "Do not match on generic 'AI knowledge base' / 'chat' / 'ChatGPT' title strings — they collide with thousands of unrelated apps (~50% rule). Confirm Casibase specifically by chaining TWO vendor-unique signals: (1) the title 'Casibase' OR 'OpenAgent' (master branch rebranded; index.html <title>OpenAgent</title>, apple-touch-icon https://cdn.openagentai.org/img/openagent.png), AND (2) a live JSON answer on a Casibase-unique kebab-case route, e.g. GET /api/get-system-info or GET /api/get-version-info returning the {\\\"status\\\":\\\"ok\\\",\\\"data\\\":...} Beego envelope. The kebab-case /api/get-<noun> route family + Casdoor signin-options is the discriminator; Casdoor/Casnode/Casvisor share the casbin-org HTTP envelope, so the get-stores/get-vectors/get-pipes noun set distinguishes Casibase from its siblings. Port 14000 alone is weak."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Casibase\"",
+    "strict": "http.title:\"OpenAgent\" http.html:\"cdn.openagentai.org\"",
+    "version": "http.html:\"cdn.openagentai.org\" http.html:\"manifest.json\""
+  },
+  "deployment_tells": [
+    "HTTP service on port 14000 (Beego/Go backend serving the embedded React SPA)",
+    "MySQL 8.0.25 sidecar on 3306 with root/123456 when run from the repo docker-compose.yml",
+    "<title>OpenAgent</title> + apple-touch-icon and manifest hosted on cdn.openagentai.org (master branch rebrand of casibase/casibase)",
+    "/swagger/ Beego auto-generated API docs reachable",
+    "Set-Cookie / signin flow redirecting to a Casdoor endpoint (door.casdoor.com for hosted default, or a self-hosted Casdoor) = Casdoor-delegated auth tell",
+    "kebab-case /api/get-<noun> route family (get-stores, get-pipes, get-skills, get-tools, get-vectors) unique to the casbin-org Go stack"
+  ],
+  "pivot_paths": [
+    "GET /api/get-system-info and /api/get-version-info -> host CPU/mem + exact build version for CVE scoping (read-only, anonymous-allowed)",
+    "GET /api/get-signin-options -> enumerate the Casdoor application + configured SSO/OAuth providers (maps the upstream IdP without auth)",
+    "GET /api/get-global-stores -> /api/get-store -> name the RAG knowledge stores and their bound model/embedding provider, revealing what corpus the org ingested",
+    "GET /api/get-chats -> /api/get-messages -> read prior conversation history to harvest PII / internal-doc content surfaced in answers (restraint: enumerate counts/titles, sample minimally to confirm severity, do not bulk-exfiltrate)",
+    "GET /api/get-providers -> map LLM/embedding/storage provider topology (endpoints/types; secrets masked) for operator attribution",
+    "Confirm the chat-completions authz bypass read-only by sending an empty/minimal model list request to /api/chat/completions and observing a 200 contract response vs a 401 — establishes unmetered-inference surface without actually consuming tokens against the operator"
+  ],
+  "vulnerabilities": [
+    "No CVE or GHSA published as of 2026-06-12 for casibase/casibase (NVD search 'casibase' = no results; GitHub Security Advisories page = 'There aren't any published security advisories'). The exposure here is a default-config / Casbin-policy posture issue, not a tracked CVE.",
+    "Posture risk (not a CVE): default-policy anonymous role grants unauthenticated read AND write (add-chat/add-message/add-task) plus an authz-bypassed /api/chat/completions on any deployment that exposes port 14000 without a fronting auth proxy.",
+    "Related-component context (separate project): casbin/casdoor ships default admin/123 and has its own historical advisories; Casibase delegates auth to Casdoor, so a Casdoor compromise inherits into Casibase."
+  ],
+  "auth_evidence": "PRIMARY SOURCE: authz/authz.go embeds a Casbin policy with three roles (g, admin, user; g, user, anonymous). The unauthenticated 'anonymous' role is explicitly granted on a whitelist of REST routes — literal policy lines include `p, anonymous, *, /api/get-chats`, `p, anonymous, *, /api/get-messages`, `p, anonymous, *, /api/get-message`, `p, anonymous, *, /api/get-chat`, `p, anonymous, *, /api/get-global-stores`, `p, anonymous, *, /api/get-store-names`, `p, anonymous, *, /api/get-store`, `p, anonymous, *, /api/get-providers`, `p, anonymous, *, /api/get-vector`, `p, anonymous, *, /api/get-tasks`, plus WRITE paths `p, anonymous, *, /api/add-chat`, `/api/add-message`, `/api/add-task`. routers/authz_filter.go applies default-DENY for everything else BUT short-circuits the OpenAI-compatible proxy entirely: `if controllerName == 'chat/completions' { return }` — so /api/chat/completions answers with NO authz check at all. The React admin SPA gates the browser UI behind a Casdoor login, but these JSON API routes answer without a session cookie/token, which is the textbook ui-gated-api-open split. NOTE on restraint: object/provider.go masks ClientSecret/ProviderKey/UserKey to '***' for non-admin callers via GetMaskedProvider, so the anonymous get-providers path does NOT leak raw upstream LLM keys — do not overclaim key exposure. Default install creds are admin (built-in/admin / password '123' on demos, 'admin123' on the all-in-one image), and docker-compose.yml ships MySQL root password '123456' with port 3306 published to the host.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Conversation history: anonymous GET /api/get-chats + /api/get-messages + /api/get-message returns end-user chat sessions and full message bodies (questions + AI answers) by default Casbin policy — RAG query content and any PII users typed into the knowledge-base chat",
+    "Knowledge store inventory: anonymous /api/get-global-stores + /api/get-store-names + /api/get-store exposes RAG store configs, embedding/model providerName bindings, store text fields and welcome/prompt text (business-logic leakage)",
+    "RAG vector record: anonymous /api/get-vector returns an individual stored vector/text chunk (ingested document content fragment)",
+    "Provider topology: anonymous /api/get-providers lists configured LLM/embedding/storage providers and their types/endpoints (secrets masked to '***' for non-admin via GetMaskedProvider, so raw upstream API keys are NOT leaked on this path — model/endpoint metadata only)",
+    "Free LLM inference / model-jacking: /api/chat/completions bypasses authz entirely (controllerName short-circuit), letting an unauth caller drive the operator's configured upstream model on the operator's billing",
+    "Task/scale data: anonymous /api/get-tasks + /api/get-task + /api/get-public-scales exposes evaluation tasks and scale definitions"
+  ],
+  "sources": [
+    "https://github.com/casibase/casibase",
+    "https://raw.githubusercontent.com/casibase/casibase/master/docker-compose.yml",
+    "https://raw.githubusercontent.com/casibase/casibase/master/conf/app.conf",
+    "https://raw.githubusercontent.com/casibase/casibase/master/authz/authz.go",
+    "https://raw.githubusercontent.com/casibase/casibase/master/routers/authz_filter.go",
+    "https://raw.githubusercontent.com/casibase/casibase/master/routers/router.go",
+    "https://raw.githubusercontent.com/casibase/casibase/master/object/provider.go",
+    "https://raw.githubusercontent.com/casibase/casibase/master/web/public/index.html",
+    "https://casibase.org/docs/basic/try-with-docker/",
+    "https://www.casibase.org/docs/basic/server-installation/",
+    "https://www.casibase.org/docs/overview",
+    "https://casibase.org/docs/basic/public-api/",
+    "https://hub.docker.com/r/casbin/casibase-all-in-one",
+    "https://github.com/casibase/casibase/security/advisories",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

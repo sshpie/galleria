@@ -1,0 +1,104 @@
+{
+  "platform": "salus",
+  "display_name": "Salus (Runtime Guardrails for AI Agent Actions)",
+  "category": "ai_agent_runtime_proxy",
+  "subcategory": "ai_email_guardrails_lane_b_primary_lane_c_n_a",
+  "default_ports": [443],
+  "api_paths": [
+    "(public API contract not disclosed on landing as of 2026-06-07; product is policy-aware proxy in front of every tool the agent already calls; integration documented as 'one endpoint change')"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "SALUS_API_KEY (inferred)"
+  ],
+  "default_creds": [],
+  "install_tell": "Hosted SaaS at usesalus.ai. Apex resolution corrected by Lane C platoon 2026-06-07: salus-ai.com is the Italian medication-management product 'Salus AI Designed for Life' (refuted by Lane B), trysalus.ai is a registered-but-Cloudflare-blocked variant (DMARC ruf=ceo@trysalus.ai), and usesalus.ai is the actual YC W2026 vendor landing (per ycombinator.com/companies/salus). Tagline: 'A runtime for agents that act. Salus sits between AI agents and backend tools, deciding whether each action can execute.'",
+  "misconfig_patterns": [
+    "Architectural pattern is 'policy-aware proxy in front of every tool your agent already calls: change the URL, the agent does not know the difference.' This is identical to the LiteLLM / OpenRouter / agentgateway model: customer ends up sending tool-call payloads (and any embedded customer data) to Salus first. Trust boundary moves to Salus's runtime. No public details on multi-tenancy isolation or per-customer audit-log scoping as of 2026-06-07.",
+    "Stated supported agent stacks include 'OpenAI, Anthropic, LangChain, custom, plus voice stacks like Retell and Vapi': voice-agent tool-calls would route through Salus as well, expanding the data the runtime sees to voice-transcript-derived action arguments."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"usesalus.ai\"",
+      "http.title:\"Salus. A runtime for AI agents that act.\"",
+      "http.html:\"A runtime for agents that act\"",
+      "http.html:\"identity.ambiguous_caller\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "<title>Salus. A runtime for AI agents that act.</title>",
+        "Vol. XXI &middot; No. 255 &middot; May 13, 2026",
+        "Salus sits between AI agents and backend tools",
+        "policy-aware proxy in front of every tool"
+      ],
+      "false_positive_check": "Body must contain BOTH '<title>Salus. A runtime for AI agents' AND the newspaper-style 'Vol. XXI · No. 255' header. The brand 'Salus' is extremely generic (Salus = Roman goddess of safety; used by ~50+ healthcare and wellness products); the newspaper-style typography + the 'identity.ambiguous_caller' policy-tag string are the anchor."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"usesalus.ai\"",
+    "strict": "ssl.cert.subject.cn:\"usesalus.ai\" http.html:\"A runtime for agents\"",
+    "version": "http.html:\"identity.ambiguous_caller\" http.html:\"Vol. XXI\"",
+    "favicon_pivot_needed": "Favicon hash TBD."
+  },
+  "deployment_tells": [
+    "usesalus.ai resolves to 216.198.79.1 (vercel-aliased IP class similar to 76.76.21.x).",
+    "MX = 1 smtp.google.com (Google Workspace inbound).",
+    "SPF: no root TXT spf (only google-site-verification TXT). Spf is implicit through MX = smtp.google.com path. Missing strict SPF root is hygiene gap, same class as Sluice.",
+    "DMARC: v=DMARC1; p=none; (no rua, no ruf, no fo). Bare minimum DMARC declaration.",
+    "Two google-site-verification TXT records (Workspace): operator has Google Workspace.",
+    "No A record for api.usesalus.ai / docs.usesalus.ai resolved 2026-06-07: runtime endpoint likely on a Cloud-Run-style sub-host announced only to design-partner customers.",
+    "Per YC profile: founders Kevin and Vedant, Stanford CS roommates; Vedant Singh = AI researcher ex-Stanford CS.",
+    "Funding: YC W2026, $4M (per category brief).",
+    "Product framed as 'identity.ambiguous_caller / appointment change, escalated for verification' policy tag: voice/healthcare design partner inferred."
+  ],
+  "pivot_paths": [
+    "DNS pivot: trysalus.ai (registered to ceo@trysalus.ai per DMARC, Cloudflare-fronted, 162.255.119.66, sandbox blocked) may be a redirect-target or admin/billing host. Worth a Censys cert search to confirm sibling SANs.",
+    "ycombinator.com/companies/salus is the canonical authoritative source for founder identity.",
+    "No public OSS repo for Salus found 2026-06-07 (no /salus or /trysalus org under github.com/salus, github.com/usesalus, github.com/trysalus: trysalus exists but has 0 public repos).",
+    "salus-ai.com is the Italian medication-management Astro site 'Salus AI Designed for Life': explicitly NOT the YC vendor; do not pivot from this apex."
+  ],
+  "lane_c_specific_finding": {
+    "verdict": "LANE C ABSENT: Salus is a tool-call-proxy at the API layer, not a Google Workspace / Microsoft 365 addon. There is no Workspace Marketplace listing, no AppSource listing, no Graph API or Gmail API OAuth scope manifest exposed (the integration model is 'change the URL the agent calls,' not 'install our addon in your Workspace tenant').",
+    "verified_by_what": "Landing-page text 'policy-aware proxy in front of every tool your agent already calls. Keep your stack. Change the URL. The agent does not know the difference.' This is unambiguous Lane B (API gateway) architecture, not Lane C (Workspace addon).",
+    "for_lane_b_platoon": "Salus belongs to Lane B's tome JSON. This file exists as a stub for Lane C dedup tracking and the apex-resolution-correction record. Lane B should write the full Salus platform JSON.",
+    "salus_lane_c_email_surface_if_built": "If Salus shipped a Workspace addon variant, the scope set would resemble Clawvisor's: Gmail.Send + Gmail.Modify + Calendars.ReadWrite + Files.ReadWrite, because the use-case overlap (validate-then-execute outbound LLM action) is the same. Not built as of 2026-06-07."
+  },
+  "vulnerabilities": [],
+  "no_secret_leaks_observed_passive": "Passive read of landing page only. No public docs or source repo accessible 2026-06-07.",
+  "operator": {
+    "marketing_apex": "usesalus.ai",
+    "refuted_apex_lookalikes": [
+      "salus-ai.com (Italian medication management: 'Salus AI Designed for Life', unrelated)",
+      "salus.ai (not the YC vendor)",
+      "trysalus.ai (registered to ceo@trysalus.ai; Cloudflare-blocked; possibly an admin/billing variant or pre-launch holding apex)"
+    ],
+    "registered_inferred_from_dns": "active 2026-06-07; 216.198.79.1 (Vercel infrastructure).",
+    "ns_inferred": "Vercel/Cloudflare hybrid",
+    "mx": "smtp.google.com",
+    "spf": "no v=spf1 root TXT (gap)",
+    "dmarc": "v=DMARC1; p=none; (no rua/ruf: minimal)",
+    "github_org": "github.com/trysalus exists but has 0 public repos as of 2026-06-07",
+    "stage_inferred": "YC W2026 batch, $4M. Per Insight #78: DMARC p=none confirms cohort. Founders: Kevin + Vedant Singh (Stanford CS).",
+    "design_partner_clues_in_landing": [
+      "Wires sent. Records written. Patients booked. Claims filed.",
+      "identity.ambiguous_caller policy tag (voice + healthcare)",
+      "Voice stacks: Retell, Vapi"
+    ]
+  },
+  "competitive_lane": {
+    "lane": "Lane B (API gateway) primary; Lane C absent",
+    "differentiator": "Closest architectural sibling to Sluice on the agent-runtime-proxy axis but covers all tool calls, not just email. Email is one of many tool-calls a Salus deployment would adjudicate.",
+    "siblings_in_lane_b": ["Sluice (sluice.email, also Lane A)", "Prompt Security", "Lakera Guard"],
+    "siblings_in_lane_c_n_a": "Salus does not occupy Lane C."
+  },
+  "sources": [
+    "https://usesalus.ai/ (PRIMARY landing)",
+    "https://www.ycombinator.com/companies/salus (PRIMARY canonical apex resolution + founder identity)",
+    "dig A/MX/TXT/_dmarc.usesalus.ai 2026-06-07",
+    "dig A/MX/TXT/_dmarc.trysalus.ai 2026-06-07 (DMARC rua=ceo@trysalus.ai)",
+    "dig A/MX/TXT/_dmarc.salus-ai.com 2026-06-07 (refuted: Italian medication product)",
+    "Lane B platoon writeup at cat33-lane-b-vendors-2026-06-07.md (apex blocker noted by Lane B, resolved by Lane C)"
+  ]
+}

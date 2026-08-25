@@ -1,0 +1,65 @@
+{
+  "platform": "scylladb",
+  "display_name": "ScyllaDB",
+  "category": "vector_feature",
+  "default_ports": [
+    9042,
+    10000
+  ],
+  "api_paths": [
+    "/v2/cluster_name",
+    "/v2/schema/keyspaces"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "SCYLLA_AUTHENTICATOR"
+  ],
+  "default_creds": [
+    {
+      "user": "cassandra",
+      "pass": "cassandra",
+      "context": "if PasswordAuthenticator enabled"
+    }
+  ],
+  "install_tell": "docker run -p 9042:9042 -p 10000:10000 scylladb/scylla:latest",
+  "misconfig_patterns": [
+    "AllowAllAuthenticator default — CQL and REST both open",
+    "REST API at :10000 exposes full schema without auth",
+    "SCYLLA_SHARD_AWARE in banner distinguishes from Cassandra",
+    "vector<float,N> support added in ScyllaDB 6.x"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9042 \"SCYLLA_SHARD_AWARE\"",
+      "http.html:\"SCYLLA_SHARD_AWARE\""
+    ],
+    "active_probe": {
+      "path": "/v2/cluster_name",
+      "method": "GET",
+      "response_markers": [
+        "\"cluster_name\""
+      ],
+      "false_positive_check": "REST :10000 /v2/cluster_name must return cluster_name field — unique ScyllaDB REST API"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:9042 \"SCYLLA_SHARD_AWARE\"",
+    "strict": "port:9042 \"SCYLLA_SHARD_AWARE\"",
+    "version": "port:9042 \"SCYLLA_SHARD_AWARE\" \"scylladb\""
+  },
+  "deployment_tells": [
+    "CQL banner includes SCYLLA_SHARD_AWARE — distinguishes ScyllaDB from Cassandra",
+    "REST API at :10000 — GET /v2/cluster_name returns cluster name without auth",
+    "GET /v2/schema/keyspaces → full schema without auth"
+  ],
+  "pivot_paths": [
+    "GET :10000/v2/cluster_name → cluster identification",
+    "GET :10000/v2/schema/keyspaces → all keyspaces + tables",
+    "CQL DESCRIBE TABLE {t} → detect vector<float,N> columns (ScyllaDB 6.x+)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.scylladb.com/stable/rest-api.html",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

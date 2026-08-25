@@ -1,0 +1,55 @@
+{
+  "platform": "debezium",
+  "display_name": "Debezium",
+  "category": "event_streaming_cdc",
+  "default_ports": [8080, 8083],
+  "api_paths": [
+    "/",
+    "/api/connectors"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 quay.io/debezium/debezium-ui — no auth on UI or REST API by default. Requires Kafka Connect backend (port 8083) to be configured separately.",
+  "misconfig_patterns": [
+    "Debezium UI exposed with no auth (default) — exposes connector list, config, and status including DB credentials embedded in connector configs",
+    "Kafka Connect REST API (port 8083) exposed — connector CRUD, includes plaintext DB creds in connector config responses"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Debezium UI\"",
+      "http.html:\"debezium\""
+    ],
+    "active_probe": {
+      "path": "/api/connectors",
+      "method": "GET",
+      "response_markers": [
+        "JSON array of connector names OR empty array []",
+        "Content-Type: application/json"
+      ],
+      "false_positive_check": "Debezium UI title is distinctive. Kafka Connect /connectors returns JSON array — conjunctive-check on Content-Type + array structure."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Debezium UI\"",
+    "strict": "http.title:\"Debezium UI\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Connector configs returned by /connectors/{name}/config include DB connection strings with plaintext passwords — high-value exfil target",
+    "Debezium runs on top of Kafka Connect — port 8083 is the Connect REST API, port 8080 is the optional UI",
+    "Common pattern: Debezium UI at 8080, Kafka Connect at 8083, Kafka broker at 9092 — three surfaces on same host"
+  ],
+  "pivot_paths": [
+    "GET /api/connectors -> connector name list",
+    "GET /connectors/{name}/config -> plaintext DB credentials (host/user/pass/database)",
+    "GET /connectors/{name}/status -> connector state, task offsets, lag metrics",
+    "POST /connectors -> create new connector (if no auth — arbitrary DB connection injection)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://debezium.io/documentation/reference/stable/operations/debezium-ui.html",
+    "https://debezium.io/documentation/reference/stable/connectors/",
+    "[CANDIDATE —  cat-event-streaming Stage 0d, 2026-07-14]"
+  ]
+}

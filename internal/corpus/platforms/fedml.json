@@ -1,0 +1,74 @@
+{
+  "platform": "fedml",
+  "display_name": "FedML / TensorOpera",
+  "category": "federated_learning",
+  "default_ports": [
+    1883,
+    8883,
+    443
+  ],
+  "api_paths": [
+    "mqtt://1883/fedml_<runId>_<role>_<id>",
+    "mqtt://8883/fedml_<runId>_<role>_<id>"
+  ],
+  "auth_default": "delegated_to_tensoropera",
+  "auth_config_env": [
+    "FEDML_API_KEY",
+    "MQTT_USER",
+    "MQTT_PASSWORD"
+  ],
+  "default_creds": [],
+  "install_tell": "fedml login <api_key> && fedml-server",
+  "misconfig_patterns": [
+    "OSS coordinator default backend = MQTT_S3 pointing at TensorOpera's hosted broker — operators reusing the shipped example federate THROUGH TensorOpera by default",
+    "Self-hosted Mosquitto/EMQX is a deliberate substitution; example mqtt_config.yaml default auth state unconfirmed in docs",
+    "No first-party self-hosted dashboard — 'on-premise' means TensorOpera control plane + on-prem workers bound via fedml login",
+    "Anonymous MQTT CONNECT on self-hosted broker = real-time read of FedML topic tree (gradients in transit)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:1883",
+      "ssl.cert.subject.CN:\"*.fedml.ai\""
+    ],
+    "active_probe": {
+      "path": "mqtt://1883/$SYS/broker/version",
+      "method": "MQTT_CONNECT_anon",
+      "response_markers": [
+        "CONNECT-ACCEPTED",
+        "fedml_"
+      ],
+      "false_positive_check": "Require fedml-pattern topic tree (fedml_<runId>_<role>_<id>) on subscribe wildcard — generic Mosquitto won't match"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:1883 \"fedml\"",
+    "strict": "ssl.cert.subject.CN:\"*.fedml.ai\"",
+    "version": "port:1883 \"fedml\" product:\"Mosquitto\""
+  },
+  "deployment_tells": [
+    "Three populations: research consortia (incl. EU clinical-stroke FL PaaS), edge/IoT (Jetson/Pi/Android), TensorOpera tenants",
+    "MQTT topic tree pattern: fedml_<runId>_<role>_<id>",
+    "S3-compatible store is mandatory — world-readable bucket = gradients/checkpoints leak",
+    "KubeFATE ships a FedML-agent-on-K8s recipe (outbound-only, no Ingress by default — internal-only signal)",
+    "PyTorch Serve / vLLM / Triton for the serving half; FedML has its own tracking (no MLflow/W&B default)"
+  ],
+  "pivot_paths": [
+    "MQTT anonymous CONNECT + wildcard subscribe -> real-time topic tree enumeration (metadata, read-only)",
+    "World-readable S3 bucket discovery -> model checkpoints / gradient dumps",
+    "gRPC sendMessage entry (Octopus surface) -> CVE-2026-5536 deserialization (DO NOT EXERCISE)",
+    "Android Beehive FileUtils path-traversal -> CVE-2026-5535 (DO NOT EXERCISE)"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-5535 — Beehive Android FileUtils.java MQTT-message path traversal (FedML <= 0.8.9, public PoC)",
+    "CVE-2026-5536 — Octopus gRPC sendMessage deserialization (FedML <= 0.8.9)",
+    "No SECURITY.md, no GHSA entries; no documented default creds on OSS"
+  ],
+  "sources": [
+    "https://doc.fedml.ai/",
+    "https://github.com/FedML-AI/FedML",
+    "https://nvd.nist.gov/vuln/detail/CVE-2026-5535",
+    "https://nvd.nist.gov/vuln/detail/CVE-2026-5536",
+    "data/platform-intel/cat53-fedml-osint-2026-06-09.md",
+    "[CANDIDATE -  2026-06-09, pre-population-verification]"
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "platform": "rosbridge-server",
+  "display_name": "rosbridge_server (rosbridge_suite, RobotWebTools)",
+  "category": "robotics_control_plane",
+  "default_ports": [
+    9090
+  ],
+  "api_paths": [
+    "/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ROS_MASTER_URI"
+  ],
+  "default_creds": [],
+  "install_tell": "roslaunch rosbridge_server rosbridge_websocket.launch (ROS1) OR ros2 launch rosbridge_server rosbridge_websocket_launch.xml (ROS2) — both leave ~authenticate=False by default",
+  "misconfig_patterns": [
+    "~authenticate defaults False (source-verified in ros1 branch rosbridge_websocket.py at 2026-06-09). Server accepts any WebSocket client, executes any op.",
+    "Default bind 0.0.0.0 on port 9090. Internet exposure is purely a routing/firewall question.",
+    "null_origin_allowed defaults True — browser cross-origin from arbitrary attacker JS pages is permitted.",
+    "Authentication, when enabled, requires the separate rosauth package; the operator has to flip the flag, install rosauth, and distribute a MAC token. Rarely done in practice (Issue #29 open since 2014).",
+    "TLS off by default (certfile=None, keyfile=None). When enabled, port 9090 serves wss://; older builds (pre-Issue #570) negotiate TLS 1.0/1.1.",
+    "`publish` op over WebSocket bypasses the rosmaster XML-RPC API entirely — single message can drive /cmd_vel or any other actuator topic.",
+    "`call_service` to non-/rosapi/* services invokes service handlers (nav goals, motor enable, costmap clear, etc.) — robot-motion primitive over WebSocket.",
+    "Co-deploy with web_video_server (8080) + rosmaster (11311) is the headline 'browser-controlled robot' exposure class."
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"Tornado\" \"rosbridge\"",
+      "http.html:\"rosbridge\"",
+      "port:9090 product:\"Tornado httpserver\"",
+      "port:9090 \"Tornado\" \"rosbridge\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "WS_HANDSHAKE",
+      "ws_message": "{\"op\":\"call_service\",\"service\":\"/rosapi/topics\",\"id\":\"-probe\"}",
+      "response_markers": [
+        "\"op\":\"service_response\"",
+        "\"service\":\"/rosapi/topics\"",
+        "\"topics\":[",
+        "\"result\":true"
+      ],
+      "false_positive_check": "rosbridge response to /rosapi/topics call is a service_response op with values.topics array and result:true. Reject if Tornado banner is the only signal (vanilla Tornado app — high FP). Reject if WS upgrade succeeds but op response is missing or is an 'unknown service' fault. Reject if 'rosapi' package not installed (rare — ships with rosbridge_suite default install). Confirm with secondary /rosapi/services + /rosapi/nodes calls returning same shape."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"Tornado\" \"rosbridge\"",
+    "strict": "port:9090 product:\"Tornado httpserver\"",
+    "version": "port:9090 \"Tornado\" \"rosbridge\"",
+    "notes": "Insight #93: basic dork is port-free and catches rosbridge relocated to non-9090 (some operators bind to 80/443/9091 behind nginx WS-proxy). Tornado server header alone is HIGH-FP because Tornado is a generic Python framework — conjunctive match with 'rosbridge' in body is required. Existing nuclei template `network/detection/rosbridge-detect.yaml` keys on WS handshake + advertise test; adapt for read-only /rosapi/topics confirm. No favicon shipped by default — favicon-hash pivot not available. roslibjs version in companion static GUI (vampire.py target) pins deployment date."
+  },
+  "deployment_tells": [
+    "Robot Web Tools stack: rosbridge_server (9090) + roslibjs (browser) + ros3djs + web_video_server (8080) — canonical 'control a robot from a browser' bundle.",
+    "TurtleBot Web GUI tutorials wire rosbridge + web_video_server on the same NUC.",
+    "Industrial telepresence: Beam, Double, Ohmni, suitable-tech derivatives (early generations ran ROS+rosbridge under the hood).",
+    "Docker-compose: `services: rosbridge: image: ros2-rosbridge ports: ['9090:9090']` — verbatim in many GitHub repos including university courseware.",
+    "Cloud robotics: AWS RoboMaker tutorials, Azure Percept robotics samples wire rosbridge.",
+    "Reverse-proxy: nginx `proxy_pass http://localhost:9090` with `Upgrade: websocket` headers — documented in RobotWebTools tutorials. Direct-IP :9090 often reachable past SNI filtering (Insight #12 shadow-port).",
+    "Co-deploy ports: 11311 (rosmaster — ROS1 only; ROS2 uses DDS discovery on 7400-7500), 8080/8181 (web_video_server), 11345 (gzserver), 22 (SSH), 5900 (VNC), 8888 (Jetson Jupyter).",
+    "TLS posture: most deployments are ws:// not wss://. When wss enabled, subject-CN often robot.<lab>.<univ>.edu — VisorGraph cert-pivot to operator portfolio.",
+    "University adopters with public rosbridge tutorials: Stanford CS324, MIT 6.141, CMU 16-311, Berkeley EECS C106B, ETH Zurich Programming for Robotics."
+  ],
+  "pivot_paths": [
+    "WS / call_service /rosapi/topics → topic list",
+    "WS / call_service /rosapi/services → service list",
+    "WS / call_service /rosapi/nodes → node list",
+    "WS / call_service /rosapi/topic_type → per-topic msg type",
+    "WS / call_service /rosapi/service_type → per-service msg type",
+    "WS / call_service /rosapi/get_param_names → parameter namespace dump (mirrors rosmaster getParamNames)",
+    "WS / call_service /rosapi/get_param → parameter value read (credential leak hotspot)",
+    "WS / call_service /rosapi/node_details → per-node publishers/subscribers/services",
+    "WS / subscribe to /tf, /rosout (log topic — diagnostic leakage), /joint_states (robot pose) — receive-only, set throttle_rate",
+    "HTTP GET / → Tornado identity banner + version string (where present)",
+    "Shadow-sweep on same IP: 11311 (rosmaster), 8080 (web_video_server), 11345 (gzserver), 8888 (Jupyter), 5900 (VNC)"
+  ],
+  "vulnerabilities": [
+    "Issue #29 (open since 2014) — rosbridge protocol should support generic authentication; ~authenticate=False default acknowledged.",
+    "Issue #459 — auth op handling bugs on websocket server side.",
+    "Issue #570 — TLS 1.0/1.1 still offered by older builds.",
+    "Issue #434 — auth flow regression after Autobahn → Tornado migration.",
+    "No published CVE specifically for the auth-disabled default (it is documented design, not a bug).",
+    "No CISA KEV entries as of 2026-06-09."
+  ],
+  "do_not_call": [
+    "WS publish op — publishes a message on a topic; can move actual robots when sent to /cmd_vel, /joint_states, motor topics",
+    "WS advertise op — registers as publisher (preludes a publish; also pollutes node graph)",
+    "WS unadvertise op — tears down a publisher",
+    "WS advertise_service op — registers rogue service server; robot routes calls to attacker",
+    "WS unadvertise_service op — tears down a service",
+    "WS call_service to non-/rosapi/* services — invokes service handlers (nav goals, motor enable, costmap clear, etc.)",
+    "WS send_action_goal — triggers nav goals, arm trajectories",
+    "WS advertise_action / unadvertise_action — rogue action server registration",
+    "WS set_level — mutates log verbosity state",
+    "WS auth — only meaningful when ~authenticate=true; do not attempt to brute the MAC"
+  ],
+  "data_class": "robot topology + parameter-server contents (frequent credential/token/path leakage via /rosapi/get_param) + indirect physical-motion capability when chained with publish or call_service to actuator topics. Diagnostic topics (/rosout) can leak operational state in transit. NOT user PII directly, but exposes operational robot state, sensor streams (cameras via co-deployed web_video_server), and the means to control physical actuators.",
+  "restraint_notes": [
+    "Identity probe = WS handshake + call_service /rosapi/topics only.",
+    "Topology read = call_service /rosapi/{topics, services, nodes} (three reads cover the full graph; mirrors rosmaster getSystemState).",
+    "Parameter read = /rosapi/get_param_names first; selectively /rosapi/get_param only on names suggesting secret-leak. Names ARE the finding.",
+    "NEVER call publish, advertise, advertise_service, call_service-to-non-rosapi, send_action_goal — these are robot-motion primitives.",
+    "Set throttle_rate on any subscribe op to avoid hammering operator bandwidth / camera streams.",
+    "Insight #93: pair port:9090-pinned dork with port-free Tornado+rosbridge anchor to catch reverse-proxied or relocated rosbridge.",
+    "Insight #12 shadow-sweep: every confirmed rosbridge gets a 11311 + 8080 + 11345 cross-port check on the same /32 — the 9090+8080 combo is the headline class.",
+    "Co-deployed web_video_server (8080) is a separate Lane D target — camera MJPEG streams are direct sensor exfil, no rosbridge needed."
+  ],
+  "version_history_auth_relevant": {
+    "rosbridge_suite 0.5 (2014)": "Issue #29 opened — generic auth requested; ~authenticate flag exists but defaults False",
+    "rosbridge_suite 0.7+ (2015-2016)": "Autobahn-based WS server, auth via rosauth MAC scheme",
+    "rosbridge_suite 0.10+ (2017)": "Tornado migration; auth op handling regression (Issue #434)",
+    "rosbridge_suite 0.11+ (ROS Noetic era, 2020)": "ROS1 final-generation builds; ~authenticate still defaults False",
+    "rosbridge_suite ros2 branch (Humble/Jazzy/Rolling, 2022-2026)": "ROS2 port; same ~authenticate False default; QoS parameters added to advertise/publish ops"
+  },
+  "sources": [
+    "https://github.com/RobotWebTools/rosbridge_suite",
+    "https://github.com/RobotWebTools/rosbridge_suite/tree/ros1",
+    "https://github.com/RobotWebTools/rosbridge_suite/tree/ros2",
+    "https://raw.githubusercontent.com/RobotWebTools/rosbridge_suite/ros1/rosbridge_server/scripts/rosbridge_websocket.py",
+    "https://github.com/RobotWebTools/rosbridge_suite/blob/ros1/ROSBRIDGE_PROTOCOL.md",
+    "https://github.com/RobotWebTools/rosbridge_suite/blob/ros2/ROSBRIDGE_PROTOCOL.md",
+    "https://github.com/RobotWebTools/rosbridge_suite/issues/29",
+    "https://github.com/RobotWebTools/rosbridge_suite/issues/459",
+    "https://github.com/RobotWebTools/rosbridge_suite/issues/570",
+    "https://github.com/RobotWebTools/rosbridge_suite/issues/434",
+    "https://github.com/RobotWebTools/web_video_server",
+    "https://index.ros.org/p/web_video_server/",
+    "https://github.com/Interbotix/turtlebot2i/wiki/07:-ROS-Web-Tools",
+    "https://arxiv.org/abs/1808.03322",
+    "https://github.com/vmayoral/robot_hacking_manual",
+    "[CANDIDATE —  Cat-X-ROS OSINT Platoon Squad 1, 2026-06-09; doc-grounded, host-unverified]",
+    "CONFIRMED 2026-07-03  survey cat-ros-robotics: host 133.11.216.212:9090 returned HTTP 200 Server: AutobahnPython/17.10.1 (rosbridge_websocket capability page). Control channel reachability verified; WS publish NOT exercised (physical ethical-stop, do_not_call honored)."
+  ],
+  "status": "CONFIRMED"
+}

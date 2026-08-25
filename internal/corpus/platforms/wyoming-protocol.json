@@ -1,0 +1,80 @@
+{
+  "name": "Wyoming Protocol Voice Services",
+  "slug": "wyoming-protocol",
+  "category": "voice-tts-conversational",
+  "description": "Wyoming is a peer-to-peer, JSONL-over-raw-TCP protocol used by Home Assistant's Assist voice pipeline to talk to self-hosted voice satellite services: wake-word (wyoming-openwakeword :10400, wyoming-porcupine1 :10500), speech-to-text (wyoming-faster-whisper :10300), text-to-speech (wyoming-piper :10200), and satellites (wyoming-satellite :10700). Each service is a standalone TCP daemon. The protocol has no authentication and no encryption of any kind — it was designed for trusted LAN use behind Home Assistant.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The Wyoming protocol defines no authentication, no handshake secret, and no TLS. A service simply accepts TCP connections and exchanges newline-delimited JSON events (each optionally followed by a binary audio payload). Any client that can reach the port speaks the protocol fully — it can request TTS synthesis, submit audio for transcription, or drive a satellite. Security is entirely positional: services are meant to bind on a LAN reachable only by the Home Assistant host. There is no config option to add auth to the raw Wyoming port; operators who need protection must front it with a TLS tunnel or firewall.",
+  "default_ports": [
+    10200,
+    10300,
+    10400,
+    10500,
+    10700
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:10200,10300,10400,10700",
+      "rationale": "Wyoming services are raw TCP with no HTTP body, so http.html filters are blind; the canonical port set (piper 10200 / whisper 10300 / openwakeword 10400 / satellite 10700) is the primary discovery pivot"
+    },
+    {
+      "tier": "basic",
+      "query": "port:10300 \"transcribe\"",
+      "rationale": "A Wyoming describe/info exchange returns JSONL event types including 'transcribe' and 'asr'; if any bytes are banner-grabbed this token narrows STT services on 10300"
+    },
+    {
+      "tier": "strict",
+      "query": "port:10200 \"synthesize\" \"tts\"",
+      "rationale": "Wyoming info events for a TTS service advertise 'synthesize'/'tts' program metadata; conjunction on 10200 is high-precision but requires an active describe request (see risk_notes) since the port does not serve http.html"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 10300,
+    "http_path": "",
+    "title_contains": "",
+    "response_body_contains": [
+      "transcribe",
+      "synthesize",
+      "detect",
+      "info",
+      "asr",
+      "tts"
+    ],
+    "http_header": ""
+  },
+  "api_paths": [],
+  "known_vulns": [
+    "No authentication and no TLS — any client reaching the TCP port can drive the service and read/write cleartext JSONL + raw PCM audio",
+    "Unauthenticated STT compute abuse — wyoming-faster-whisper (:10300) will transcribe arbitrary attacker-submitted audio, giving free (often GPU-backed) transcription compute and a processing-DoS vector",
+    "Unauthenticated TTS abuse — wyoming-piper (:10200) synthesizes arbitrary text to audio on demand",
+    "Satellite hijack — wyoming-satellite (:10700) exposes a device's microphone/speaker pipeline; a reachable satellite can be commanded and its audio pipeline observed",
+    "Audio content exposure — transcripts and PCM audio traverse the protocol in cleartext with no confidentiality",
+    "Protocol/version disclosure via the 'describe'->'info' exchange leaks exact service, model, and version for CVE scoping with no auth",
+    "Pipeline pivot — an exposed satellite/STT bound to Home Assistant can be a stepping stone toward the HA Assist pipeline and connected automations"
+  ],
+  "default_creds": [],
+  "risk_notes": "Wyoming is a LAN-trust protocol pushed onto the internet by port-forwarding and by base/satellite splits (a satellite in one location talking to HA in another). Because it is raw TCP JSONL, Shodan's http.* filters see nothing — the platform is http.html-blind and discovery is port-set + active-banner based (Censys / an active Wyoming 'describe' request that returns an 'info' event enumerating the service program, models, and version). Impact per service: :10300 = free STT compute + audio processing DoS + transcript exposure; :10200 = arbitrary TTS synthesis; :10400/:10500 = wake-word service abuse; :10700 = satellite mic/speaker pipeline reachable and drivable. The most serious chain is a reachable satellite or a co-located STT that lets an attacker inject/observe the voice pipeline feeding a Home Assistant instance, moving from open port to eavesdropping and to triggering real automations. Verification is an active protocol handshake (send a describe event, read the info response), never an http.html read.",
+  "deployment_notes": "Each Wyoming service is a small Python asyncio TCP daemon (the 'wyoming' pip library provides AsyncTcpServer) shipped as a Home Assistant add-on and as standalone Docker images under rhasspy/wyoming-* and homeassistant/*-wyoming. Canonical ports: wyoming-piper 10200 (TTS), wyoming-faster-whisper 10300 (STT), wyoming-openwakeword 10400 (wake word), wyoming-porcupine1 10500 (wake word), wyoming-satellite 10700 (satellite mic/speaker). Services bind 0.0.0.0 inside their container by default and rely on the operator not publishing the port beyond the LAN; Home Assistant auto-discovers them via zeroconf. Internet exposure comes from users port-forwarding to reach a remote satellite, from split home/cloud HA setups, and from container port publishing. No HTTP layer exists, so all fingerprinting and confirmation is banner/protocol-level. Maintained by the Rhasspy/Home Assistant author (synesthesiam / OHF-Voice).",
+  "docker_images": [
+    "rhasspy/wyoming-piper",
+    "rhasspy/wyoming-faster-whisper",
+    "rhasspy/wyoming-openwakeword",
+    "rhasspy/wyoming-satellite"
+  ],
+  "github_repos": [
+    "rhasspy/wyoming",
+    "rhasspy/wyoming-satellite",
+    "rhasspy/wyoming-faster-whisper",
+    "rhasspy/wyoming-piper",
+    "rhasspy/wyoming-openwakeword",
+    "rhasspy/wyoming-addons"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

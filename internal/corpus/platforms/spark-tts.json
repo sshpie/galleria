@@ -1,0 +1,87 @@
+{
+  "name": "Spark-TTS",
+  "slug": "spark-tts",
+  "category": "voice-tts-conversational",
+  "description": "SparkAudio's LLM-based zero-shot TTS engine (built on Qwen2.5) with voice cloning and controllable voice creation. Self-hosted via a Gradio web UI (webui.py, default port 7860); an opt-in NVIDIA Triton deployment path exposes a separate inference server. No authentication by default. The CLI inference path is library-only with no listener.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The Gradio web UI (webui.py) ships with no authentication. Gradio enforces credentials only when auth= is passed in code or GRADIO_USERNAME/GRADIO_PASSWORD env vars are set; neither is default. Gradio binds 127.0.0.1 by default and is internet-visible only when launched with GRADIO_SERVER_NAME=0.0.0.0, server_name=\"0.0.0.0\", or share=True. The opt-in Triton inference server (HTTP 8000 / gRPC 8001 / metrics 8002) has no auth of its own either. No token, no basic auth, no rate limiting in default configs.",
+  "default_ports": [
+    7860,
+    8000,
+    8001,
+    8002
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio\"",
+      "rationale": "Spark-TTS serves a Gradio SPA; the static HTML shell carries the gradio-app mount and gradio asset references but not the project name. Catches the Gradio surface on the canonical port for follow-up confirmation."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"Spark-TTS\"",
+      "rationale": "Name match reachable only when the Gradio version inlines window.gradio_config (the gr.Markdown banner) into the served HTML; Shodan-blind on versions that lazy-fetch /config. High-precision variant where config is inlined."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio-app\" http.html:\"Spark\"",
+      "rationale": "Conjunctive: Gradio mount plus the inlined project banner isolates Spark-TTS from other Gradio TTS apps when config is inlined; otherwise resolve via /config fetch or aimap deep-enum."
+    },
+    {
+      "tier": "version",
+      "query": "port:8000 http.html:\"spark_tts\" http.html:\"v2/models\"",
+      "rationale": "The opt-in Triton deployment path exposes /v2/models/{spark_tts}; presence of the model name in the Triton HTTP model listing pins the Triton-served Spark-TTS variant specifically."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/config",
+    "title_contains": "Gradio",
+    "response_body_contains": [
+      "gradio-app",
+      "gradio_config",
+      "Spark-TTS",
+      "voice creation",
+      "prompt"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/config",
+    "/info",
+    "/heartbeat/{hash}",
+    "/queue/join",
+    "/queue/data",
+    "/run/predict",
+    "/api/predict",
+    "/gradio_api/info",
+    "/file=",
+    "/v2/models",
+    "/v2/health/ready",
+    "/"
+  ],
+  "known_vulns": [
+    "No built-in auth on the Gradio UI - unauthenticated voice cloning and controllable voice creation when bound to 0.0.0.0",
+    "Gradio CVE-2024-1561 - arbitrary local file read via component routes on unpatched pins",
+    "Gradio CVE-2023-51449 - path traversal via /file= on Gradio 3.x < 3.47.0",
+    "Gradio CVE-2024-1727 - CSRF chain against /file and upload routes on Gradio 4.x pre-patch",
+    "SSRF via /queue/join upload proxy in the 2024 Gradio 4.x security batch",
+    "Opt-in Triton inference server (ports 8000/8001/8002) is unauthenticated and exposes /v2/models model management if deployed",
+    "Unauthenticated GPU compute consumption - no rate limiting on inference by default",
+    "share=True tunnel exposure - public *.gradio.live URL bypasses local network controls"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary vectors on an externally-bound instance: (1) Zero-shot voice cloning and controllable voice creation without auth - attacker synthesizes arbitrary speech in a cloned or newly-fabricated voice (deepfake/vishing); (2) GPU compute theft - LLM-based (Qwen2.5) TTS is GPU-heavy and the inference queue is ungated; (3) File-read/traversal on a Spark-TTS instance pinned to a vulnerable Gradio version (CVE-2024-1561 / CVE-2023-51449) via /file= or component routes; (4) The opt-in Triton path adds a second unauth surface - the Triton HTTP endpoint exposes /v2/models model management and /v2/repository controls that can load/unload models if reachable; (5) reference-audio PII stored server-side. Shodan http.html is largely blind to the Spark-TTS name on the Gradio surface (JS SPA; title 'Gradio', mount div id='gradio-app'); the identity lives in /config JSON, so confirmation needs a config fetch or aimap deep-enum. The Triton path is the more Shodan-visible surface via /v2/models on port 8000.",
+  "deployment_notes": "Default deployment is 'python webui.py --device 0' on a CUDA GPU host, binding 127.0.0.1:7860; exposure occurs when operators set GRADIO_SERVER_NAME=0.0.0.0 or pass share=True. A CLI path ('python -m cli.inference ...') is library-only with no listener. NVIDIA Triton support was added 2025-03-12 as an alternative deployment that stands up a Triton inference server (HTTP 8000, gRPC 8001, metrics 8002) - a distinct, non-default surface with its own /v2/* API. No first-party Docker image in the main README (the Triton dir may reference containers). Server header on the Gradio surface is 'uvicorn'. Because Shodan indexes only the SPA shell, pivot on the /config endpoint, the gradio-app mount, title 'Gradio', and the uvicorn header for the Gradio surface, and on /v2/models for the Triton surface. HuggingFace Spaces demos of Spark-TTS are public by design.",
+  "docker_images": [],
+  "github_repos": [
+    "SparkAudio/Spark-TTS"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

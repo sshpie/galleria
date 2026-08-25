@@ -1,0 +1,87 @@
+{
+  "name": "MeloTTS",
+  "slug": "melotts",
+  "category": "voice-tts-conversational",
+  "description": "Multilingual high-quality CPU-real-time TTS from MyShell.ai (myshell-ai/MeloTTS), supporting EN/ES/FR/ZH/JP/KR with multiple accent speaker IDs. Not a fixed-voice-clone model. Most commonly exposed as an HTTP API server via the community timhagel/MeloTTS-Docker-API-Server on port 8888 with a POST /convert/tts endpoint, or via an OpenAI-compatible FastAPI wrapper. No authentication by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the MeloTTS Docker API server or the OpenAI-compat FastAPI wrappers. The timhagel/MeloTTS-Docker-API-Server binds 0.0.0.0:8888 and accepts unauthenticated POST /convert/tts. MeloTTS core is a Python library with no server auth; any HTTP wrapper inherits none unless the operator adds a proxy. Because MeloTTS is CPU-real-time, exposed instances proliferate on small VPS hosts with the port forwarded directly.",
+  "default_ports": [
+    8888,
+    8000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8888 http.html:\"/convert/tts\"",
+      "rationale": "/convert/tts is the signature endpoint path of the dominant MeloTTS-Docker-API-Server; if the server renders FastAPI /docs the path appears in the HTML body. FP-risk low — this exact path is near-unique to MeloTTS. If the wrapper disables /docs the path is JSON-only (openapi.json) -> Censys/active-probe route."
+    },
+    {
+      "tier": "basic",
+      "query": "port:8888 http.html:\"MeloTTS\"",
+      "rationale": "Direct name match on a docs page, index, or Swagger title. Moderate recall; some wrappers omit the name from HTML."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8888 http.html:\"speaker_id\" http.html:\"convert\"",
+      "rationale": "speaker_id (with accent values like EN-BR, EN-US, EN-AU, EN_INDIA) + convert co-occur in the MeloTTS API schema/docs; disambiguates from generic OpenAI-compat TTS which uses 'voice' not 'speaker_id'. Some of this is JSON-body (openapi.json) -> verify via /docs or Censys."
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"/v1/audio/speech\" http.html:\"melo\"",
+      "rationale": "For the OpenAI-compat FastAPI variant on port 8000 exposing /v1/audio/speech; the 'melo' token strips the many generic /v1/audio/speech servers (openedai-speech, LocalAI, Kokoro). FP-risk HIGH without the melo qualifier — /v1/audio/speech alone matches every OpenAI-compat TTS."
+    },
+    {
+      "tier": "version",
+      "query": "port:8888 http.html:\"MeloTTS\" http.html:\"version\"",
+      "rationale": "Version disclosure via FastAPI /docs info block or an /openapi.json info.version field. JSON-body signals route to active /openapi.json fetch or Censys."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8888,
+    "http_path": "/docs",
+    "title_contains": "MeloTTS",
+    "response_body_contains": [
+      "/convert/tts",
+      "MeloTTS",
+      "speaker_id",
+      "EN-BR",
+      "language"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "POST /convert/tts (MeloTTS-Docker-API-Server — text, speed, language, speaker_id -> WAV)",
+    "GET /docs (FastAPI Swagger UI)",
+    "GET /redoc",
+    "GET /openapi.json",
+    "POST /v1/audio/speech (OpenAI-compat FastAPI wrapper variant)",
+    "GET /v1/models (OpenAI-compat variant)",
+    "GET /health"
+  ],
+  "known_vulns": [
+    "No authentication — unauthenticated POST /convert/tts synthesizes arbitrary text; open voice-generation backend",
+    "No rate limiting — CPU compute-theft and bulk TTS-abuse; MeloTTS is CPU-real-time so a single host sustains high abuse throughput cheaply for the attacker",
+    "FastAPI /docs, /redoc, /openapi.json enabled by default in common wrappers — full API/parameter schema disclosure aids automated abuse",
+    "Unrestricted text input, no output limits — DoS via oversized text bodies; unbounded WAV generation exhausts disk/CPU",
+    "OpenAI-compat wrappers exposing /v1/audio/speech inherit the same no-auth posture and are trivially chained into 'free TTS' proxy pools",
+    "No input content filtering — open synthesis of impersonation/disinformation/scam audio in 6 languages with regional accents"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) TTS-abuse-as-a-service — MeloTTS's multilingual + multi-accent output (EN-US/BR/AU/IN, ES, FR, ZH, JP, KR) on an open no-auth endpoint is ideal for localized robocall/vishing/spam audio and disinformation targeting specific regions; the CPU-real-time speed makes bulk generation cheap. (2) Compute-theft — unauth + no rate limit turns the host into a free TTS worker; less GPU-costly than F5/Bark/Orpheus but still resource abuse. (3) Schema disclosure — default FastAPI /docs hands attackers the exact request shape. Lower direct-data-sensitivity than cloning/STT platforms (MeloTTS uses fixed speaker IDs, not arbitrary voice cloning, and ingests no user audio), so the risk is abuse-of-compute and abuse-of-voice rather than PII exfiltration. Disambiguation: MeloTTS uses 'speaker_id' with accent codes; generic OpenAI-compat TTS uses 'voice' — this field name is the reliable discriminator.",
+  "deployment_notes": "The dominant exposed server is the community timhagel/MeloTTS-Docker-API-Server (docker run -p 8888:8888), POST /convert/tts returning WAV. The upstream myshell-ai/MeloTTS repo ships a Gradio/Streamlit demo and a Dockerfile but no canonical production API; PR #280 adds an OpenAI-compatible FastAPI server (/v1/audio/speech) which some operators run on port 8000. CPU-real-time inference (no GPU required) is the defining trait and the reason instances are common on cheap VPS hosts with 8888 forwarded. Speaker IDs are accent-coded (EN-US, EN-BR, EN-AU, EN_INDIA, EN-Default, plus per-language speakers). Fingerprint on the /convert/tts path + speaker_id field.",
+  "docker_images": [
+    "timhagel/melotts-docker-api-server",
+    "ghcr.io/myshell-ai/melotts"
+  ],
+  "github_repos": [
+    "myshell-ai/MeloTTS",
+    "timhagel/MeloTTS-Docker-API-Server"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

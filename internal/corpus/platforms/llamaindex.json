@@ -1,0 +1,81 @@
+{
+  "platform": "llamaindex",
+  "display_name": "LlamaIndex (server modes: LlamaIndex Server + llama_deploy apiserver)",
+  "category": "rag-framework-server",
+  "default_ports": [
+    8000,
+    4501
+  ],
+  "api_paths": [
+    "/api/chat",
+    "/api/chat/config",
+    "/api/chat/file",
+    "/api/files/data",
+    "/api/files/output",
+    "/docs",
+    "/status",
+    "/deployments"
+  ],
+  "auth_default": "off",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Tier-A : no auth concept. LlamaIndex Server (create-llama output) exposes /api/chat with no auth, CORS allow_origins=['*'] in dev. llama_deploy apiserver app.py registers routers with CORS '*' and no auth dependency/middleware. Documented run is bare 'uvicorn app:app --host 0.0.0.0 --port 8000' -> binds all interfaces. NOTE: llama_deploy is DEPRECATED ('use llama-agents'); live population may shift to LlamaAgents/llamactl whose default auth is unconfirmed.",
+  "misconfig_patterns": [
+    "uvicorn --host 0.0.0.0 documented as the run command -> all-interfaces bind is the dominant misconfig",
+    "CORS allow_origins=['*'] in dev mode",
+    "apiserver /deployments POST = unauth workflow creation/execution if write reachable",
+    "provider API keys in env, system prompts + indexed docs flow through /api/chat"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"/api/chat/config\"",
+      "http.title:\"LlamaIndex\" http.html:\"/api/chat\""
+    ],
+    "active_probe": {
+      "path": "/status",
+      "method": "GET",
+      "port": 4501,
+      "response_markers": [
+        "max_deployments",
+        "deployments",
+        "\"status\":\"healthy\""
+      ],
+      "false_positive_check": "apiserver: json_field max_deployments (number) + deployments (array) + status:healthy. App-server alt: GET /docs Swagger lists /api/chat AND /api/files/data, or /api/chat/config returns config JSON."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"/api/chat\" http.html:\"/api/files\"",
+    "strict": "http.html:\"/api/chat/config\"",
+    "version": "port:4501 http.html:\"deployments\""
+  },
+  "deployment_tells": [
+    "8000 LlamaIndex Server, 4501 llama_deploy apiserver control plane, 3000 Next.js create-llama front-end",
+    "Qdrant 6333/6334 most common vector store; also Weaviate 8080, Chroma",
+    "Ollama 11434 extremely common co-deploy",
+    "Redis 6379 for llama_deploy message queue"
+  ],
+  "pivot_paths": [
+    "GET :4501/status -> deployments array confirms platform+unauth in one read",
+    "/api/files/data/* serves RAG source-document directory (traversal risk)",
+    "shadow-sweep 11434 + 6333 on any IP answering on 8000",
+    "TLS SAN naming rag./chat./llama./ai. for operator attribution"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-1793 SQLi across vector-store integrations (9.8, fixed 0.12.28) -- library-level",
+    "CVE-2024-3271 command injection via safe_eval bypass -- library-level",
+    "CVE-2024-23751 SQLi in NL-to-SQL path -- library-level",
+    "No server-exposure auth-bypass CVE; no nuclei template for server exposure (gap)"
+  ],
+  "category_lane_classification": "RAG framework server. Two server forms: LlamaIndex Server (:8000, app tier) + llama_deploy apiserver (:4501, control plane). aimap FP GAP -- build both probes. Control-plane JSON roots Shodan-dark -> Censys/scanner.",
+  "disclosure_contact": {
+    "security_txt": "unknown",
+    "channel_observed": "run-llama GitHub org"
+  },
+  "sources": [
+    "CONFIRMED 2026-06-18 (Cat-RAG-Framework-Servers): app.babbid.com (108.132.72.10) POST /api/chat 200 unauth LLM inference (B/1); 23.239.19.219 LlamaIndex Chat surface-open (500 backend). Tier-A confirmed.",
+    "CANDIDATE 2026-06-17 -- Stage -1 OSINT, no host verified",
+    "run-llama/llama_deploy apiserver/app.py",
+    "create-llama python/llama-index-server README",
+    "data/platform-intel/rag-framework-servers-osint-2026-06-17.md"
+  ]
+}

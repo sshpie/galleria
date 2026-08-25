@@ -1,0 +1,132 @@
+{
+  "platform": "agentmail",
+  "display_name": "AgentMail (agent-native email infra + outbound scan)",
+  "category": "ai_email_guardrails",
+  "subcategory": "agentic-mail substrate w/ outbound-scan feature",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [
+    "/v0/inboxes",
+    "/v0/messages",
+    "/v0/threads"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "AGENTMAIL_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "Hosted SaaS, API-first. Per-agent persistent inbox; REST send/receive/thread/search + MCP. YC S2025; $6M seed (General Catalyst, Mar 2026; angels PG, Dharmesh Shah). Team ~10.",
+  "misconfig_patterns": [
+    "Outbound guard is claim-stage: blurb cites secret/API-key/PII scan + human-approval routing for blocked sends, plus a 10/day unverified-account send cap. NOT verified at the data layer (surface-claimed, not exercised).",
+    "Substrate risk: an agent given inbox + send + tool-use is the Lethal-Trifecta surface; content safety is punted upstream to the caller unless the outbound guard is real and enabled."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"agentmail.to\"",
+      "ssl.cert.subject.cn:\"api.agentmail.to\"",
+      "http.html:\"AgentMail\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "AgentMail",
+        "inbox for AI agents",
+        "agentmail.to"
+      ],
+      "false_positive_check": "Anchor on apex agentmail.to + 'agents'/'inbox' co-occurrence. Disambiguate from agenticmail.com (OSS, separate) and agenticmail.io (unrelated agent-workforce product)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"agentmail.to\"",
+    "strict": "ssl.cert.subject.cn:\"agentmail.to\" http.html:\"AgentMail\"",
+    "version": "http.html:\"inbox for AI agents\" http.title:\"AgentMail\""
+  },
+  "deployment_tells": [
+    "API-first; web app + docs at agentmail.to. Cloudflare-fronted likely (verify).",
+    "MCP-compatible; positions as the 'inbox for agents' substrate, not a guardrail."
+  ],
+  "pivot_paths": [
+    "Public docs expose REST contract (/v0/inboxes, /v0/messages) -> map surface without probing.",
+    "Domain disambiguation pivot: agentmail.to (YC S25 funded) vs agenticmail.com (OSS) vs agenticmail.io (unrelated).",
+    "Outbound-scan claim is the verification target: confirm whether secret/PII scan is real code or marketing before assigning category-core status."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "B (API gateway) + agentic-mail substrate; outbound-safety ADJACENT (feature, not core)",
+    "differentiator": "Category flagship by funding/visibility, but core product is per-agent inbox infra; outbound guard is a bolt-on feature claim."
+  },
+  "sources": [
+    "https://agentmail.to/ (PRIMARY landing) [CONFIRMED product]",
+    "https://www.ycombinator.com/companies/agentmail (PRIMARY YC S2025) [CONFIRMED]",
+    "https://thenextweb.com/news/agentmail-raises-6m-seed-ai-agent-email-inboxes ($6M seed) [CONFIRMED funding]",
+    "outbound-scan feature [CANDIDATE \u2014 sourced to YC/press blurb, NOT verified at data layer]",
+    "OSINT Platoon sweep 2026-06-23 (YC/funded lane)",
+    "lineage verified 2026-06-23: SEPARATE (AgentMail vs AgenticMail)",
+    "https://techcrunch.com/2026/03/10/agentmail-raises-6m-to-build-an-email-service-for-ai-agents/"
+  ],
+  "github_org": "github.com/agentmail-to (26 repos, NOT github.com/agenticmail)",
+  "founders": "Haakam Aujla, Michael Kim, Adi Singh (U Michigan / ex-Optiver/Nvidia/Accel, SF)",
+  "lineage_verdict": "SEPARATE from AgenticMail (agenticmail.com). Same market category, different founders/infra/trajectory. Name overlap = category convergence, not fork.",
+  "shodan_infrastructure": {
+    "verified": "2026-06-23",
+    "hosts": [
+      {
+        "ip": "166.117.154.245",
+        "hostname": "smtp.agentmail.to",
+        "ports": [
+          465
+        ],
+        "org": "Amazon.com, Inc.",
+        "asn": "AS16509",
+        "cloud": "AWS GlobalAccelerator GLOBAL",
+        "country": "US",
+        "city": "Seattle",
+        "last_seen": "2026-06-23"
+      },
+      {
+        "ip": "166.117.10.95",
+        "hostname": "smtp.agentmail.to",
+        "ports": [
+          465,
+          587
+        ],
+        "org": "Amazon.com, Inc.",
+        "asn": "AS16509",
+        "cloud": "AWS GlobalAccelerator GLOBAL",
+        "country": "US",
+        "city": "Seattle",
+        "last_seen": "2026-06-22"
+      },
+      {
+        "ip": "166.117.166.202",
+        "hostname": "imap.agentmail.to",
+        "ports": [
+          993
+        ],
+        "org": "Amazon.com, Inc.",
+        "asn": "AS16509",
+        "cloud": "AWS GlobalAccelerator GLOBAL",
+        "country": "US",
+        "city": "Seattle",
+        "last_seen": "2026-06-22"
+      },
+      {
+        "ip": "166.117.125.64",
+        "hostname": "imap.agentmail.to",
+        "ports": [
+          993
+        ],
+        "org": "Amazon.com, Inc.",
+        "asn": "AS16509",
+        "cloud": "AWS GlobalAccelerator GLOBAL",
+        "country": "US",
+        "city": "Seattle",
+        "last_seen": "2026-06-20"
+      }
+    ],
+    "infrastructure_notes": "AWS GlobalAccelerator for global SMTP/IMAP anycast. smtp.agentmail.to on ports 465+587; imap.agentmail.to on port 993. Multi-IP anycast pair per service. Operator hardened (AWS-managed infra, no self-hosted exposure). Cloudflare likely fronts the web API; SMTP/IMAP nodes visible directly.",
+    "shodan_dork_verified": "ssl.cert.subject.cn:\"agentmail.to\" -- 5 results (4 unique IPs)"
+  }
+}

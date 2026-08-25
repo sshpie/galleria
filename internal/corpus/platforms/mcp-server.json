@@ -1,0 +1,165 @@
+{
+  "platform": "mcp-server",
+  "display_name": "MCP Server (Model Context Protocol, Anthropic open spec)",
+  "category": "agent_tool_protocol",
+  "default_ports": [3000, 8000, 8080, 9090, 5000, 5005, 8888, 3001, 8081],
+  "api_paths": [
+    "/mcp",
+    "/sse",
+    "/rpc",
+    "/message",
+    "/"
+  ],
+  "auth_default": "none (spec has no auth section; ecosystem ships unauth by quickstart)",
+  "auth_config_env": [
+    "MCP_AUTH_TOKEN",
+    "MCP_API_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "npx @modelcontextprotocol/server-* | uvx mcp-server-* | python -m fastmcp | docker run mcp/<server-name> | npm i @modelcontextprotocol/sdk",
+  "misconfig_patterns": [
+    "MCP spec defines no authentication layer; auth posture is 100% inherited from the host/transport choice",
+    "Streamable-HTTP transport on a public IP without a reverse-proxy auth layer = unauth tools/list + tool-schema disclosure by default",
+    "tools/list is the lowest-effort exfil surface: tool names + descriptions + JSON-Schema input shape are returned to any HTTP caller after a valid initialize handshake",
+    "tools/call is the impact surface: get_aws_admin_credentials / get_ssh_session_credentials / read_file / execute_command tools execute by name on a single POST",
+    "initialize.capabilities object leaks schema fragments even when tools/list is empty (Insight #3, mcp-server-mysql case)",
+    "session-state servers issue Mcp-Session-Id on initialize; that header rendered in Shodan banners is the leakiest passive signal (113k FP hits — Insight #15)",
+    "stdio-transport servers are invisible to network scanning; HTTP/SSE-transport is where the public-IP exposure lives",
+    "Vendor-published reference servers (filesystem, git, slack, postgres) on a public IP = catastrophe by tool taxonomy alone — names ARE the finding"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"FastMCP\"",
+      "http.html:\"@modelcontextprotocol\"",
+      "http.html:\"mcp-server\"",
+      "ssl.cert.subject.CN:\"mcp\"",
+      "http.title:\"MCP Inspector\""
+    ],
+    "active_probe": {
+      "path": "/mcp",
+      "method": "POST",
+      "request_headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+      },
+      "request_body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-06-18",
+          "capabilities": {},
+          "clientInfo": {"name": "-survey", "version": "0.1"}
+        }
+      },
+      "response_markers": [
+        "\"jsonrpc\":\"2.0\"",
+        "\"result\"",
+        "\"protocolVersion\"",
+        "\"serverInfo\"",
+        "\"capabilities\""
+      ],
+      "follow_up_probe": {
+        "path": "/mcp",
+        "method": "POST",
+        "request_body": {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        "response_marker": "\"tools\":[",
+        "note": "Names ARE the finding (Insight #97 ancillary). Do not invoke tools/call. The mcp-initialize-probe.py prober has a DO_NOT_CALL hard refusal at module load."
+      },
+      "false_positive_check": "Insight #1 + Insight #30: protocol-strict envelope drops honeypot pollution from 91.6% to 1.1%, AND multi-port identical-response classifier identifies template-honeypot fleets (the 51-host Linode mcp-server 1.0.1 cohort responded canned on 6+ ports per IP). Real MCP servers respond on ONE port. Cohort-level cert-issuer distribution (Insight #97 candidate, Cat-MCP-Cred-Fleet) catches the sophisticated single-port cert-staged honeypot."
+    },
+    "alt_probes": {
+      "sse_transport": {
+        "path": "/sse",
+        "method": "GET",
+        "headers": {"Accept": "text/event-stream"},
+        "response_marker": "data: {\"jsonrpc\":\"2.0\""
+      },
+      "no_accept_negative": {
+        "path": "/mcp",
+        "method": "POST",
+        "headers_omit": "Accept",
+        "expect_status": 406,
+        "expect_body_marker": "Client must accept text/event-stream",
+        "note": "A 406 with that exact message is the real-MCP-server tell for HTTP+SSE transport — distinguishes from honeypot canned 200s"
+      },
+      "narrow_accept_language_probe": {
+        "path": "/mcp",
+        "method": "GET",
+        "headers": {"Accept": "application/xml"},
+        "expect_status": 406,
+        "classify": {
+          "python-sdk": "error.code == -32600 OR id == \"server-error\"",
+          "typescript-sdk": "error.code == -32000 OR id == null"
+        },
+        "note": "WIRE-CONFIRMED Cat-39 2026-06-27. A narrow Accept (application/xml) forces BOTH SDKs to 406, and the 406 envelope SHAPE attributes the language. This is how the Shodan-dark python-sdk fleet is recovered: python passes */* so is Shodan-dark but still 406s on a narrow Accept. CAUTION: a multi-port identical -32600 envelope with NO serverInfo behind a real initialize is the canned-406 honeypot cohort (Cat-39: 70 such hosts) — require a real serverInfo from initialize before counting a host as a confirmed MCP server."
+      }
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"Client must accept text/event-stream\"",
+    "strict": "http.html:\"Client must accept text/event-stream\"",
+    "version": "\"mcp-server\" \"1.0.1\" \"2025-06-18\"",
+    "transport_sse": "\"text/event-stream\" \"jsonrpc\"",
+    "framework_fastmcp": "http.html:\"FastMCP\"",
+    "header_session": "\"Mcp-Session-Id\"",
+    "title_inspector": "http.title:\"MCP Inspector\"",
+    "title_bridge": "http.title:\"MCP Bridge\"",
+    "module_literal": "\"@modelcontextprotocol\"",
+    "dork_viability_2026_06_27": "WIRE-CONFIRMED (Cat-39 survey 2026-06-27): the OLD strict dork '\"jsonrpc\":\"2.0\" \"serverInfo\" \"protocolVersion\"' returned 0 hits — those are POST-only JSON-RPC RESPONSE fields Shodan never indexes as page body. The HIGHEST-YIELD Shodan dork is the TypeScript-SDK 406 string http.html:\"Client must accept text/event-stream\" (154 hosts). NOTE the bias: only the TS-SDK emits this 406 to Shodan's */* crawler; the python-sdk passes */* and emits NO indexable literal, so the Python fleet is STRUCTURALLY Shodan-dark. http.title:\"MCP Bridge\" (19) and \"@modelcontextprotocol\" (18) are the other live selectors. Description-string dorks (info.description body) all returned 0 — only http.title: forms are Shodan-viable for FastAPI-proxy MCP.",
+    "python_fleet_recovery": "The Shodan-dark python-sdk fleet is recovered ONLY by active probe: narrow-Accept GET (Accept: application/xml) forces a language-attributing 406 — python-sdk = error.code -32600 / id \"server-error\"; typescript-sdk = error.code -32000 / id null. See active_probe and mcp-scanner.py Stage 0c.",
+    "fp_traps": [
+      "\"jsonrpc\":\"2.0\",\"error\" — 376 hits, 68% FP (crypto miners, IPFS :5001, SMTP :25)",
+      "\"Mcp-Session-Id\" bare — 113,038 hits, EXTREME FP (CMMS / Ivanti / routers / GitLab)",
+      "http.title:\"MCP\" — 2,811 hits, very high title noise",
+      "OLD strict '\"jsonrpc\":\"2.0\" \"serverInfo\" \"protocolVersion\"' — 0 hits, POST-only response fields not indexed (demoted 2026-06-27)"
+    ]
+  },
+  "deployment_tells": [
+    "Port 9090 + identical mcp-server 1.0.1 response + cert-heterogeneous staging = Cat-MCP-Cred-Fleet honeypot operator profile (66 AWS hosts, I/N=0.833, Insight #97)",
+    "Port 3001 + identical mcp-server 1.0.1 response + multi-port canary mimicry (Docker shapes, Ivanti, DrayTek, POC_SUCCESS_) = Linode AS63949 multi-protocol honeypot fleet (51 hosts, Insight #30 multi-port discriminator)",
+    "Single port + unique serverInfo + unique tools/list = real operator (most catastrophic single-host findings: Gmail mcp 51.75.128.16:3000, Adya WandB 20.198.18.237:5005, FAIS Azure 4.187.183.11:80)",
+    "FastMCP framework banner + uvicorn server header = Python ecosystem; usually self-hosted / lab operator",
+    "Open WebUI 8080 + MCP plugin on same /32 = self-hosted agentic LLM consumer pattern",
+    "Cloudflare Worker subdomain + MCP server name = zero-trust auth-gated (Anthropic internal deployment style; typically not exposed)",
+    "Stdio-transport servers (Claude Desktop, Cline, Cursor) are invisible to network scanning by design — public-IP MCP exposure is overwhelmingly Streamable-HTTP/SSE",
+    "rDNS *.compute.amazonaws.com + port 9090 + protocolVersion 2025-06-18 = Cat-MCP-Cred-Fleet members"
+  ],
+  "pivot_paths": [
+    "POST /mcp initialize -> result.capabilities (Insight #3: capabilities leaks schema fragments even when tools/list is empty)",
+    "POST /mcp tools/list -> tools[].name + tools[].description + tools[].inputSchema (the finding surface — names ARE the finding)",
+    "POST /mcp resources/list -> resources[] (file/URI/db handles the server exposes)",
+    "POST /mcp prompts/list -> prompts[] (pre-canned prompts; often leak operator system prompt)",
+    "GET / on same port -> front-end masquerade detection (Cat-MCP-Cred-Fleet had 25+ disjoint product titles on the same 66 IPs)",
+    "TLS no-SNI cert read (DER parse) -> issuer/subject CN distribution -> Insight #97 I/N discriminator (legitimate I/N<=0.05; honeypot I/N>=0.30)",
+    "Multi-port identical-response classifier (Insight #30): POST initialize to 6+ standard ports on the same IP; canned response on 3+ = honeypot",
+    "rDNS + RDAP -> operator identity (most real-MCP findings have rDNS leaking the owning org)",
+    "Same-/16 sweep -> coordinated fleet detection; honeypot operators cluster within one cloud region range",
+    "Cross-survey ledger: query .db for hosts that previously appeared with mcp_server tags (Insight #9 substrate)"
+  ],
+  "vulnerabilities": [
+    "No CVE applies to the MCP spec itself; risk class is 100% in (a) authentication absence and (b) tool-surface taxonomy",
+    "Spec-level threat: tool descriptions are LLM-readable side-channel attack surface (prompt-injection via tool description, EchoLeak / LLMail-Inject literature)",
+    "Implementation: mcp-server-mysql tools/list empty-when-disconnected; initialize.capabilities still leaks tool schema (Insight #3 evidence host)",
+    "Implementation: Claude Desktop MCP config reads/writes from a shared file path - downstream MCP servers may read claude_desktop_config.json for cross-server credential bleed",
+    "Operator: any tool named *_credentials, *_key, exec_*, run_command, write_file, schedule_* on an unauth public IP = single-tool catastrophe",
+    "Operator: tool with no inputSchema (the Cat-MCP-Cred-Fleet pattern: get_aws_admin_credentials takes {}) = no auth check by definition - one POST per credential"
+  ],
+  "sources": [
+    "https://modelcontextprotocol.io/",
+    "https://spec.modelcontextprotocol.io/specification/2025-06-18/",
+    "https://github.com/modelcontextprotocol/servers",
+    "https://github.com/jlowin/fastmcp",
+    "case-studies/commercial/cat-mcp-cred-fleet-2026-06-09.md",
+    "case-studies/commercial/mcp-server-survey-2026-05-17.md",
+    "case-studies/commercial/mcp-cloud-survey-2026-05.md",
+    "case-studies/commercial/mcp-crewai-negative-results-2026-06-07.md",
+    "case-studies/commercial/fais-mcp-server-unauth-4-187-183-11-2026-05-25.md",
+    "case-studies/commercial/adya-ai-vanijmcp-2026-05-17.md",
+    "methodology/insight-97-cert-heterogeneity-honeypot-discriminator.md",
+    "methodology/insight-30-multi-port-identical-responses-identify-honeypots.md",
+    "methodology/insight-19-protocol-strict-handshakes-honeypot-fleets.md",
+    "case-studies/commercial/cat-39-mcp-tool-servers-2026-06-27.md",
+    "[CONFIRMED —  active surveys 2026-05-17 through 2026-06-27; 115+ confirmed real MCP servers + 51-host Linode honeypot fleet + 66-host AWS cred-fleet honeypot + Cat-39 2026-06-27 (20 protocol-confirmed, 70 multi-port-406 honeypot cohort, TS-406 = top Shodan dork, python fleet Shodan-dark)]"
+  ]
+}

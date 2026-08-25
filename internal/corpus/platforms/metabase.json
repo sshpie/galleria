@@ -1,0 +1,103 @@
+{
+  "platform": "metabase",
+  "display_name": "Metabase",
+  "category": "bi_dashboard",
+  "default_ports": [
+    3000
+  ],
+  "api_paths": [
+    "/api/session/properties",
+    "/api/health",
+    "/api/setup/validate",
+    "/api/database",
+    "/api/geojson",
+    "/auth/login"
+  ],
+  "auth_default": "setup-flow-token-gated",
+  "auth_config_env": [
+    "MB_JETTY_PORT",
+    "MB_SETUP_TOKEN",
+    "MB_PASSWORD_COMPLEXITY",
+    "MB_PASSWORD_LENGTH",
+    "MB_ENABLE_EMBEDDING",
+    "MB_EMBEDDING_SECRET_KEY",
+    "MB_JWT_ENABLED",
+    "MB_JWT_SHARED_SECRET",
+    "MB_LDAP_ENABLED",
+    "MB_SAML_ENABLED"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d -p 3000:3000 --name metabase metabase/metabase",
+  "misconfig_patterns": [
+    "Unconfigured instance (no admin created) leaves /setup walkable and the single-use setup-token live and unauth-readable -> pre-auth RCE surface (CVE-2023-38646)",
+    "Instance pinned below 0.46.6.1 / 1.46.6.1 keeps the setup-token leak + JDBC-injection RCE chain exploitable even after admin creation, depending on patch line",
+    "Bundled H2 sample database present (has-sample-database:true) supplies the public exploit its preferred JDBC target (zip:/app/metabase.jar!/sample-database.db)",
+    "Direct exposure of port 3000 with no fronting proxy puts the full unauth /api/session/properties settings blob (version, setup-token, engines, branding, SSO config) on the public internet",
+    "Enterprise embedding (enable-embedding) with a weak/leaked embedding secret or mishandled JWT SSO token exposes signed-embed bypass"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Metabase\"",
+      "http.html:\"metabase.SESSION\""
+    ],
+    "active_probe": {
+      "path": "/api/session/properties",
+      "method": "GET",
+      "response_markers": [
+        "JSON keys setup-token + has-sample-database + version.tag together (vendor-unique triad)",
+        "GET /api/health returns {\"status\":\"ok\"}",
+        "version.tag holds the authoritative version string (e.g. v0.48.1)",
+        "engines map lists every available DB driver (postgres/mysql/bigquery/snowflake/h2/...)",
+        "setup-token non-null = unconfigured instance, pre-auth RCE leak vector live; null = admin configured"
+      ],
+      "false_positive_check": "Bare 'Metabase' in http.title/html collides with product mirrors, doc sites, marketing/embed proxies, and Metabase Cloud SaaS login pages (*.metabaseapp.com, patched + out of scope for self-hosted surveys). To cut the moderate-to-high FP: confirm the unauth JSON contract at GET /api/session/properties -> must return a JSON object carrying setup-token, has-sample-database, AND version.tag. A doc/blog mirror or reverse-proxied marketing page 404s this route. The metabase.SESSION Set-Cookie header is the near-zero-FP secondary tell. Distinguish unconfigured (setup-token non-null = pre-auth RCE candidate) from configured (setup-token null, login wall at /auth/login). pgvector/AI-backend is NOT visible at the engine layer (rides inside a normal postgres engine); AI-wired confirmation is an auth-gated schema/name read (/api/database, card/question names with embedding/vector/llm/rag), which is the verify lane's job."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Metabase\"",
+    "strict": "http.title:\"Metabase\" http.html:\"metabase.SESSION\"",
+    "version": "http.title:\"Metabase\" port:3000"
+  },
+  "deployment_tells": [
+    "Jetty default MB_JETTY_PORT=3000; most production deployments reverse-proxy behind 80/443 (nginx/Caddy/Traefik), so expect 443 more often than bare 3000",
+    "Clojure backend + React SPA; login page embeds window.MetabaseBootstrap and serves a hashed app bundle",
+    "opaque metabase.SESSION cookie by default (not a JWT); JWT only via Enterprise embedding/SSO (1.x)",
+    "OSS line is 0.x, Enterprise/Pro line is 1.x; premium-features key in /api/session/properties is the Enterprise tell",
+    "GET /api/health -> {\"status\":\"ok\"} is a near-zero-cost liveness/identity tell",
+    "Docker image metabase/metabase; app DB is H2 by default (single-file) or external postgres/mysql"
+  ],
+  "pivot_paths": [
+    "GET /api/session/properties (unauth) -> read version.tag for CVE scoping and setup-token for pre-auth RCE candidacy",
+    "On non-null setup-token + unpatched version: CVE-2023-38646 chain (POST /api/setup/validate, details.db JDBC H2 TRACE_LEVEL trigger RCE) -- VERIFY-LANE / controlled-target only, never run against a survey set",
+    "Auth-gated /api/database -> enumerate configured databases, engines, dbname/host to scope the data backend (postgres present = pgvector possible)",
+    "Read card/question/collection names for AI-shaped tells (embedding/vector/pgvector/cosine/similarity/llm/rag/chunks/inference) = in-scope AI-wired BI confirmation",
+    "Read site-name / application-name / application-logo-url from properties for operator branding/attribution (custom logo = named tenant)",
+    "Read google-auth-client-id / saml-enabled / ldap-enabled / enable-embedding from properties to map the SSO/embedding surface"
+  ],
+  "vulnerabilities": [
+    "CVE-2023-38646 -- pre-auth RCE (Critical, CVSS 9.8). Unauth setup-token leak via /api/session/properties (and login HTML) -> POST /api/setup/validate with details.db JDBC string -> H2 TRACE_LEVEL_SYSTEM_OUT + stacked SQL + CREATE TRIGGER AS $$//javascript$$ = command exec at server privilege. Affected OSS <0.43.7.2, 0.44.0-0.44.7.1, 0.45.0-0.45.4.1, 0.46.0-0.46.6.1; Ent equivalents on 1.x. Fixed 0.46.6.1/1.46.6.1 (+back-ports 0.45.4.1/0.44.7.1/0.43.7.2 and 1.x equivalents)",
+    "CVE-2023-39752 -- pre-auth info disclosure / null-pointer DoS on the setup surface (companion to 38646)",
+    "CVE-2021-41277 -- local file inclusion / SSRF via custom GeoJSON map-URL (/api/geojson), pre-auth; fixed 0.40.5 / 1.40.5",
+    "JWT-class (Enterprise embedding/SSO only): leaked MB_EMBEDDING_SECRET_KEY / MB_JWT_SHARED_SECRET enables signed-embed bypass; unsigned/alg-mishandled embedding tokens. Not a default-instance issue (requires enable-embedding)"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: Metabase ships an unconfigured setup flow on first boot, gated by a single-use setup-token minted at boot. GET /api/session/properties returns an UNAUTHENTICATED JSON settings blob whose 'setup-token' field holds that UUID while the instance is unconfigured (null once an admin exists). NVD CVE-2023-38646 and Assetnote primary research confirm the token leaks via this endpoint (and the index/login HTML embedding the same JSON), and that POST /api/setup/validate with a details.db JDBC string drives the H2 injection to RCE. NVD affected ranges: OSS <0.43.7.2 / 0.44.0-0.44.7.1 / 0.45.0-0.45.4.1 / 0.46.0-0.46.6.1; Enterprise 1.x equivalents. Fixed 0.46.6.1 / 1.46.6.1, CVSS 9.8. The vulnerability is not weak passwords; it is an unauth-readable setup token plus a database-add path that reaches code execution => setup-flow-token-gated, pre-auth-RCE on unconfigured/unpatched.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "version.tag / version.hash / setup-token / has-sample-database / engines list -- all unauth via /api/session/properties (fingerprint + version + RCE-candidacy in one read)",
+    "Configured database connection details (engine, host, dbname) via /api/database when session is obtained",
+    "Dashboard/question SQL and result data over the connected backends (the BI data layer -- potentially pgvector/embedding/LLM-analytics tables in scope for Cat-16 AI-wired BI)",
+    "Operator attribution: site-name, application-name, application-logo-url, google-auth-client-id, SSO config from properties",
+    "Embedding secret / JWT shared secret on Enterprise instances with embedding enabled",
+    "On RCE: full server-privilege command execution and the Metabase app DB (encrypted connection secrets for every connected warehouse)"
+  ],
+  "sources": [
+    "https://github.com/metabase/metabase",
+    "https://nvd.nist.gov/vuln/detail/CVE-2023-38646",
+    "https://www.assetnote.io/resources/research/chaining-our-way-to-pre-auth-rce-in-metabase-cve-2023-38646",
+    "https://www.metabase.com/docs/latest/security",
+    "https://nvd.nist.gov/vuln/detail/CVE-2021-41277",
+    "https://nvd.nist.gov/vuln/detail/CVE-2023-39752",
+    "[CANDIDATE -  Cat-16 BI/Dashboard Stage -1 OSINT, Metabase squad, 2026-06-28; software-default characterization, no live host probed yet]",
+    "shodan/cat16-bi-dashboards/osint/metabase.md"
+  ]
+}

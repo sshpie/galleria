@@ -1,0 +1,118 @@
+{
+  "platform": "maxkb",
+  "display_name": "MaxKB",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8080
+  ],
+  "api_paths": [
+    "/api/application/profile",
+    "/api/application/<application_id>/chat/open",
+    "/api/application/chat_message/<chat_id>",
+    "/api/application/embed",
+    "/api/application/<application_id>/chat/completions",
+    "/api/user/profile",
+    "/ui/chat/<access_token>",
+    "/doc/ (drf-yasg swagger / API docs)"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [],
+  "default_creds": [
+    {
+      "user": "admin",
+      "pass": "MaxKB@123..",
+      "context": "Hardcoded default admin login printed in the official README quickstart and docs.maxkb.pro/quick_start/. Globally identical across every default-image deployment until the operator manually changes it. Note the literal trailing two dots in the password."
+    }
+  ],
+  "install_tell": "docker run -d --name=maxkb --restart=always -p 8080:8080 -v ~/.maxkb:/var/lib/postgresql/data -v ~/.python-packages:/opt/maxkb/app/sandbox/python-packages 1panel/maxkb",
+  "misconfig_patterns": [
+    "Exposed on 8080 to the internet still using the shipped default admin / MaxKB@123.. credential (most common and highest-impact misconfig)",
+    "Default deployment with no reverse-proxy auth and no IP allowlist in front of the single image",
+    "Running a build < 2.4.0 exposing the tool-module sandbox-escape chain (CVE-2025-66419) to any authenticated/low-priv user",
+    "Cross-origin enabled on an API key (off by default) widening unauth API reach",
+    "Old builds storing unsalted MD5 password hashes, trivially crackable once the user table is read"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"MaxKB\"",
+      "http.html:\"/ui/chat/\"",
+      "http.html:\"MaxKB\""
+    ],
+    "active_probe": {
+      "path": "/api/application/profile",
+      "method": "GET",
+      "response_markers": [
+        "JSON body with top-level integer field \"code\" (e.g. 200) and \"message\" plus a \"data\" object — MaxKB's standard Django REST envelope",
+        "Unauthenticated calls to management routes return code/message envelope rather than HTML, distinguishing the API from the Vue SPA shell",
+        "Login page served at /ui/login with Vue app and document title containing 'MaxKB'",
+        "Server/X-Powered-By and routing handled by bundled nginx in front of the Django/uWSGI app on a single image"
+      ],
+      "false_positive_check": "Do NOT match on generic strings ('chat','AI','knowledge base','RAG') — they collide with thousands of unrelated chatbots. Anchor on the conjunction of: (1) http.title or HTML containing the exact token 'MaxKB' (vendor coined, low collision), AND (2) the SPA route prefix '/ui/chat/' or '/ui/login' which is MaxKB-specific (not the generic '/chat'), AND (3) an active GET /api/application/profile returning the {code, message, data} JSON envelope. The 1Panel ecosystem also ships the 1Panel host-management panel (default port 80/443, distinct title '1Panel') and JumpServer (same FIT2CLOUD vendor, different favicon/title) — confirm the literal 'MaxKB' token and the /api/application/ route prefix to avoid attributing a sibling FIT2CLOUD product. Favicon-hash dorking is unreliable here: MaxKB has rebranded across the 1.x->2.x line, so a single favicon hash will both miss old builds and risk colliding with other Vue/Element-Plus default-favicon apps; prefer the title+route conjunction over favicon alone."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"MaxKB\"",
+    "strict": "http.title:\"MaxKB\" http.html:\"/ui/chat/\"",
+    "version": "http.title:\"MaxKB\" http.html:\"v1.9\" (version surfaces in the SPA bundle/footer, not a server banner; confirm exact version at the active /doc or from JS bundle rather than relying on this dork)"
+  },
+  "deployment_tells": [
+    "Single self-contained Docker image '1panel/maxkb' bundling Vue SPA + Django/uWSGI backend + nginx + PostgreSQL/pgvector + Python sandbox in one container",
+    "Listens on 8080 by default; web UI at http://host:8080/ui/, login at /ui/login",
+    "Volume mounts ~/.maxkb -> /var/lib/postgresql/data (DB lives inside the same container) and ~/.python-packages -> /opt/maxkb/app/sandbox/python-packages (tool-module sandbox)",
+    "Often co-deployed alongside the 1Panel host panel and other FIT2CLOUD products (JumpServer, 1Panel) on the same host — pivot indicator",
+    "Element-Plus / Vue front-end; drf-yasg-style API docs",
+    "Chinese-origin vendor (FIT2CLOUD, Hangzhou); docs bilingual (docs.maxkb.pro / maxkb.cn)"
+  ],
+  "pivot_paths": [
+    "GET /api/application/profile to confirm platform + enumerate published-application metadata without admin auth",
+    "If default creds unchanged: authenticate admin/MaxKB@123.. (READ-ONLY confirm only) -> model-management lists configured upstream LLM provider key references and knowledge-base inventory",
+    "Published-application public chat link /ui/chat/<access_token> exercises the RAG corpus unauthenticated (reveals ingested-document content via answers) where an app is published",
+    "Co-located 1Panel host panel / JumpServer on the same operator host as a lateral OSINT pivot (same FIT2CLOUD ecosystem)",
+    "API docs route enumerates the full route table for the running version, scoping which CVEs/GHSAs apply"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-56137 (HIGH, CVSS 7.2, CWE-78 OS command injection): privileged user can execute arbitrary OS commands via custom scripts in the function-library module; affects < 1.9.0, fixed 1.9.0",
+    "CVE-2025-32383 (reverse shell / RCE): function-library module lets a privileged user create a reverse shell; sandbox-related",
+    "CVE-2025-64511 (SSRF, < 2.3.1): Python code in the tool module reaches internal network services (e.g. databases) despite the sandbox",
+    "CVE-2025-64703 (information leak, < 2.3.1): Python code in the tool module reads sensitive host information despite the sandbox",
+    "CVE-2025-66419 (HIGH, CVSS 8.8): tool-module sandbox escape -> privilege escalation under concurrent conditions; affects <= 2.3.1, fixed 2.4.0 (GHSA-f9qm-2pxq-fx6c)",
+    "GHSA-r3j3-j58q-rjpp (Moderate): Webhook Trigger Authentication Bypass (CWE-287/CWE-306) — missing auth on webhook trigger endpoint",
+    "GHSA-r8hf-mwwr-hxgc (High): SSRF bypass in OSS URL Fetch via URL-parsing discrepancy",
+    "GHSA-x9g5-j56j-4mfj (Low): Unauthenticated SSRF via Workflow Template Import",
+    "GHSA-6m4p-9wwc-4q5q (Low): SSRF bypass via DNS rebinding in OSS URL Fetch",
+    "GHSA-2jmj-gwvg-3gp2 (Low): Broken Access Control in OSS URL Fetch API",
+    "GHSA-q2qg-43vq-f2wv / GHSA-3rq5-pgm7-pvp4 / GHSA-462x-99gf-mp79 (Moderate): Stored XSS via iframe_render, html_rander markdown tags, and EchartsRander eval injection",
+    "GHSA-2m4c-mcq5-q8xq (Low): Unsalted MD5 password hashing",
+    "GHSA-rr4r-7cj2-29vp (Low): CSV injection in Application Chat export",
+    "Historical (issue #970): Django JSONField SQL injection exposure (CVE-2024-42005 dependency)"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: official README.md and docs.maxkb.pro/quick_start/ both ship the SAME quickstart: `docker run -d --name=maxkb --restart=always -p 8080:8080 -v ~/.maxkb:/var/lib/postgresql/data -v ~/.python-packages:/opt/maxkb/app/sandbox/python-packages 1panel/maxkb` and then instruct: log in at http://server_ip:8080 with default credentials user `admin` / pass `MaxKB@123..`, then 'Change the default password after logging in.' So the first-run posture is auth-on-default (a Django login gates the UI and the management API), NOT open-by-default. The load-bearing caveat: MaxKB ships a HARDCODED, globally-known shared default credential (admin / MaxKB@123..) baked into the image's bootstrap rather than generating a random one or forcing a setup wizard. An operator who runs the documented quickstart and exposes 8080 to the internet without changing the password is one credential-stuff away from full admin (model API keys, RAG corpus, agent flows). The thin 'login required' shell therefore degrades in practice to near-open for the not-uncommon default-password deployment. Reinforced by shipped-version auth gaps in primary advisories: GHSA-r3j3-j58q-rjpp 'Webhook Trigger Authentication Bypass' (CWE-287/CWE-306, missing auth on the webhook trigger endpoint) and GHSA-2jmj-gwvg-3gp2 'Broken Access Control in MaxKB OSS URL Fetch API' — both are routes that answered unauthenticated in released builds.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Azure/Ollama/DeepSeek/Qwen/Claude model credentials configured under the model-management module) — recoverable on admin access",
+    "Ingested RAG knowledge-base documents and any PII/PHI/business-confidential content uploaded into them",
+    "Application/agent and workflow flow definitions (revealing internal business logic, prompts, tool wiring, MCP tool configs)",
+    "End-user conversation history / chat logs (chat_message records, exportable to CSV)",
+    "Raw vector store contents (PostgreSQL + pgvector embeddings of the ingested corpus)",
+    "Per-application API keys (application-prefixed bearer tokens) usable to drive the chat/completions endpoint",
+    "User accounts and unsalted MD5 password hashes (GHSA-2m4c-mcq5-q8xq) in older builds"
+  ],
+  "sources": [
+    "https://github.com/1Panel-dev/MaxKB",
+    "https://github.com/1Panel-dev/MaxKB/blob/main/README.md",
+    "https://docs.maxkb.pro/quick_start/",
+    "https://docs.maxkb.pro/dev_manual/APIKey_chat/",
+    "https://github.com/1Panel-dev/MaxKB/security/advisories",
+    "https://github.com/1Panel-dev/MaxKB/blob/main/apps/application/urls.py",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-56137",
+    "https://www.cvedetails.com/cve/CVE-2024-56137/",
+    "https://osv.dev/vulnerability/CVE-2025-32383",
+    "https://api.osv.dev/v1/vulns/CVE-2025-64511",
+    "https://api.osv.dev/v1/vulns/CVE-2025-64703",
+    "https://osv.dev/vulnerability/CVE-2025-66419",
+    "https://github.com/advisories/GHSA-f9qm-2pxq-fx6c",
+    "https://hub.docker.com/r/1panel/maxkb",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "platform": "noma",
+  "display_name": "Noma Security",
+  "category": "ai-guardrails",
+  "apex": "noma.security",
+  "api_apex": "api.noma.security",
+  "api_endpoint": "/ai-dr/v1/prompt",
+  "default_ports": [
+    443
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "NOMA_API_KEY",
+    "NOMA_API_BASE",
+    "NOMA_APPLICATION_ID"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL \u2014 well-funded AI security vendor; founded 2023; Tel Aviv/NYC; CEO Niv Braun; $32M Series A 2024; AI lifecycle posture + runtime defense (AIDR)",
+  "install_tell": "SaaS api.noma.security; v1 and v2 LiteLLM hooks; AIDR (AI Detection and Response) endpoint",
+  "misconfig_patterns": [
+    "NOMA_API_KEY leaked; default_application_id=litellm makes operator detection trivial in Noma-side logs",
+    "v1/v2 hook coexistence may allow downgrade"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"*.noma.security\"",
+      "ssl.cert.subject.cn:\"api.noma.security\""
+    ],
+    "active_probe": {
+      "path": "/ai-dr/v1/prompt",
+      "method": "POST",
+      "response_markers": [
+        "noma",
+        "AIDR",
+        "verdict"
+      ],
+      "false_positive_check": "Require noma brand in cert SAN"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"noma.security\"",
+    "strict": "ssl.cert.subject.cn:\"noma.security\" http.status:200",
+    "version": "ssl.cert.subject.cn:\"noma.security\" http.html:\"AIDR\""
+  },
+  "dmarc_posture": "p=reject (STRONGEST tier); rua/ruf split to nomasec.com + EasyDMARC; Google MX + Salesforce + HubSpot SPF (mature go-to-market)",
+  "deployment_tells": [
+    "api.noma.security canonical",
+    "AIDR endpoint",
+    "v1 + v2 endpoints both shipped"
+  ],
+  "pivot_paths": [
+    "NOMA_API_KEY -> AI posture data across operator's tenant; AIDR detection feed access"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/noma/",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "_dmarc.noma.security",
+      "status": "CONFIRMED"
+    }
+  ]
+}

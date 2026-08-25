@@ -1,0 +1,84 @@
+{
+ "name": "Apache PredictionIO",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "Apache Software Foundation (originally PredictionIO Inc., acquired by Salesforce Feb 2016, then donated to ASF Incubator)",
+  "backing": "OSS",
+  "hq": "Apache Software Foundation, Wakefield, MA, USA (original startup: Palo Alto, CA)",
+  "repo": "https://github.com/apache/predictionio",
+  "scale": "~12.5k GitHub stars; was a high-profile open-source ML server 2014-2018; last release 0.14.0 (Mar 2019); ~20 source-built engine-template repos under apache/",
+  "status": "defunct"
+ },
+ "ports": [
+  "8000/tcp (deployed engine server / POST /queries.json + GET / status page)",
+  "7070/tcp (Event Server / events.json)",
+  "7071/tcp (admin server, optional)",
+  "9000/tcp (pio dashboard, optional)"
+ ],
+ "auth_default": "OPTIONAL",
+ "dorks": [
+  "http.title:\"PredictionIO Engine Server\"",
+  "http.html:\"Engine Factory Class\" http.html:\"Event Server Port\" port:8000",
+  "\"{\\\"status\\\":\\\"alive\\\"}\" port:7070"
+ ],
+ "verification_primitive": {
+  "probe": "GET http://TARGET:8000/  (read the status page only - do NOT POST crafted queries to alter behavior). Parallel: GET http://TARGET:7070/ for the Event Server.",
+  "success_signal": "Engine server: HTTP 200 with an HTML page whose <title>/<h1> contains 'PredictionIO Engine Server at <ip>:<port>' and body labels 'Engine Factory Class', 'Event Server IP/Port', 'Average Serving Time'. Event server: HTTP 200 body exactly {\"status\":\"alive\"}.",
+  "impact_when_open": "Confirms a LIVE unmaintained (Attic-retired) PredictionIO instance. The :8000 status page leaks the full model/algorithm topology unauthenticated, and POST /queries.json is queryable without any credential - an attacker can run unlimited predictions against the production model (model extraction / inference abuse) and read the engine's wiring (algorithm classes, params, Event Server location) to pivot. Restraint note: liveness + status-page read is sufficient to label exposure; do not exercise the model."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/ (engine server :8000)",
+   "returns": "HTML status page titled 'PredictionIO Engine Server at <ip>:<port>' leaking engine instance details, algorithm class names + params, model toString, data source/preparator/serving params, server start time, Event Server IP+port, request count, avg/last serving time. UNAUTHENTICATED."
+  },
+  {
+   "method": "POST",
+   "path": "/queries.json (engine server :8000)",
+   "returns": "The live prediction. For a Recommendation engine, a JSON body like {\"user\":\"1\",\"num\":4} returns recommended itemScores. UNAUTHENTICATED by default - anyone reachable can query the model."
+  },
+  {
+   "method": "GET",
+   "path": "/ (event server :7070)",
+   "returns": "{\"status\":\"alive\"} health check. UNAUTHENTICATED - confirms it is a PredictionIO Event Server."
+  },
+  {
+   "method": "GET",
+   "path": "/plugins.json (event server :7070)",
+   "returns": "Installed event-server plugin metadata (names/classes). UNAUTHENTICATED."
+  },
+  {
+   "method": "GET",
+   "path": "/events.json (event server :7070)",
+   "returns": "Stored training events (up to 20 by default) for an app - REQUIRES ?accessKey=. Returns 401/Unauthorized without a valid key."
+  },
+  {
+   "method": "POST",
+   "path": "/events.json (event server :7070)",
+   "returns": "Ingests an event - REQUIRES ?accessKey=. Write path is auth-gated."
+  },
+  {
+   "method": "POST",
+   "path": "/reload , /stop (engine server :8000)",
+   "returns": "Control ops - guarded by authenticate(withAccessKeyFromFile)."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://predictionio.apache.org/",
+  "https://attic.apache.org/projects/predictionio.html",
+  "https://github.com/apache/predictionio",
+  "https://raw.githubusercontent.com/apache/predictionio/d9628ca2f148b45a51bf4cea68699a72f25cb383/data/src/main/scala/org/apache/predictionio/data/api/EventServer.scala",
+  "https://raw.githubusercontent.com/apache/predictionio/d9628ca2f148b45a51bf4cea68699a72f25cb383/core/src/main/scala/org/apache/predictionio/workflow/CreateServer.scala",
+  "https://raw.githubusercontent.com/apache/predictionio/d9628ca2f148b45a51bf4cea68699a72f25cb383/tools/src/main/scala/org/apache/predictionio/tools/RunServer.scala",
+  "https://raw.githubusercontent.com/apache/predictionio/d9628ca2f148b45a51bf4cea68699a72f25cb383/tools/src/main/scala/org/apache/predictionio/tools/console/Console.scala",
+  "https://raw.githubusercontent.com/apache/predictionio/d9628ca2f148b45a51bf4cea68699a72f25cb383/core/src/main/twirl/org/apache/predictionio/workflow/index.scala.html",
+  "https://raw.githubusercontent.com/apache/predictionio/d9628ca2f148b45a51bf4cea68699a72f25cb383/docker/docker-compose.yml",
+  "https://predictionio.apache.org/datacollection/eventapi/",
+  "https://predictionio.apache.org/deploy/",
+  "https://predictionio.apache.org/install/",
+  "https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=PredictionIO",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

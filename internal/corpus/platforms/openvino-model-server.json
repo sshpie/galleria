@@ -1,0 +1,53 @@
+{
+  "platform": "openvino-model-server",
+  "display_name": "OpenVINO Model Server (OVMS)",
+  "category": "embedding_serving",
+  "default_ports": [9000, 8080],
+  "api_paths": ["/v1/config", "/v2/", "/v1/models/{model}/metadata", "/v1/models/{model}/versions/{version}:predict"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 9000:9000 openvino/model_server --model_path /models/bge-m3 --model_name bge-m3 --port 9000",
+  "misconfig_patterns": [
+    "OVMS backend exposed directly alongside FastAPI wrapper — bypasses wrapper input validation",
+    "GET /v1/config leaks all loaded model names and version status",
+    "No authentication on TF Serving predict API — direct model inference without wrapper",
+    "CORS wildcard on all OVMS endpoints",
+    "Model architecture disclosed via /v1/models/{name}/metadata (tensor shapes, dtypes)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"OpenVINO Model Server\"",
+      "port:9000 http.html:\"model_version_status\""
+    ],
+    "active_probe": {
+      "path": "/v2/",
+      "method": "GET",
+      "response_markers": ["OpenVINO Model Server"],
+      "false_positive_check": "response must contain OpenVINO Model Server name and version string in JSON body"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"OpenVINO Model Server\"",
+    "strict": "http.html:\"model_version_status\"",
+    "version": "http.html:\"OpenVINO Model Server\" http.html:\"4d3933c\""
+  },
+  "deployment_tells": [
+    "GET /v2/ returns JSON with name=OpenVINO Model Server and version string",
+    "GET /v1/config returns model names as JSON keys with version status",
+    "Port 9000 default (TF Serving gRPC), port 8080 default (HTTP REST)",
+    "Co-located with FastAPI embedding wrapper (port 8001) in typical deployments",
+    "Version string includes git commit hash (e.g. 2026.0.0.4d3933c5c)"
+  ],
+  "pivot_paths": [
+    "GET /v1/config → model name list → cross-reference with HuggingFace Hub to identify model provenance",
+    "GET /v1/models/{name}/metadata → SignatureDef input tensor shapes → infer model architecture class (BERT-base vs large, etc.)",
+    "Version string git hash → match to OVMS GitHub commit → identify exact build date and patch level",
+    "Port 9000 OVMS + Port 8001 FastAPI → deployment pattern fingerprint → find similar deployments via Shodan"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    " — embedding-tier2-2026-05-21 survey (live host: 46.4.204.44:9000)",
+    "Intel OpenVINO Model Server docs: https://docs.openvino.ai/latest/ovms_what_is_openvino_model_server.html"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "platform": "apache-helix",
+  "display_name": "Apache Helix (cluster manager, ZK-backed)",
+  "category": "distributed_coordination",
+  "default_ports": [],
+  "api_paths": [],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "no standalone listener — Helix runs as an in-process controller/participant agent inside Pinot/other Helix-based systems, using an existing ZooKeeper ensemble (often the SAME ensemble tracked under the 'zookeeper' tome entry) as its only external-facing store",
+  "misconfig_patterns": [
+    "Has NO distinct network port or listener of its own -- not directly Shodan-dorkable as a service",
+    "Detected only by connecting to a ZooKeeper ensemble already reachable (via 'zookeeper' 4lw/znode access) and walking the znode tree for Helix-specific paths",
+    "Hard fingerprint: znode root named after the cluster (e.g. /PinotCluster, /<clustername>) containing child znodes CONFIGS/, IDEALSTATES/, EXTERNALVIEW/, LIVEINSTANCES/, INSTANCES/, PROPERTYSTORE/, CONTROLLER/ -- this exact child-node set is what Helix (not raw application ZK usage) creates",
+    "Because it rides on ZK, every ZooKeeper misconfig in the 'zookeeper' tome entry (open 4lw wchs/dump, no ACL on znodes) applies transitively to Helix-managed clusters -- Helix adds no additional auth layer of its own"
+  ],
+  "fingerprint": {
+    "passive": [],
+    "active_probe": {
+      "path": "wchs",
+      "method": "4LW-then-znode-walk",
+      "response_markers": [
+        "LIVEINSTANCES",
+        "IDEALSTATES",
+        "PROPERTYSTORE",
+        "EXTERNALVIEW"
+      ],
+      "false_positive_check": "not a passive-dorkable fingerprint -- requires an already-reachable ZK ensemble (from the 'zookeeper' harvest) plus an active znode ls (e.g. via zkCli 'ls /') that surfaces the Helix-specific child-node set; do not run this as an independent Shodan dork, log it as 'detected via ZK znode structure, not a separate listener' per dispatch scope"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "",
+    "strict": "",
+    "version": ""
+  },
+  "deployment_tells": [
+    "No independent banner -- inherits the ZooKeeper ensemble's exposure entirely",
+    "Presence confirmed only post-hoc, during ZK znode enumeration on hosts already flagged by the zookeeper dork set",
+    "Most commonly riding on ZK ensembles that also serve Kafka/Pinot -- cross-reference znode roots against known Helix-based products (Pinot, formerly Espresso/Gobblin at LinkedIn) rather than treating as a standalone population"
+  ],
+  "pivot_paths": [
+    "znode /CONTROLLER -> current controller leader identity -> pivots to the Pinot (or other Helix-based) controller host",
+    "znode /EXTERNALVIEW -> per-partition state map -> full data-node topology of the managed cluster",
+    "znode /PROPERTYSTORE -> cluster + resource configs, sometimes including connection info for downstream stores"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.pinot.apache.org/architecture-and-concepts/components/cluster",
+    "[CANDIDATE —  cat-distributed-coordination survey 2026-07-30; explicitly NOT a Shodan-harvestable population per dispatch scope (\"treat as detected via ZK znode structure, not a separate listener\") -- tome entry written for corpus completeness / future znode-walk tooling, Step 0 will log this platform as Shodan-dark by design, not a gap]"
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "platform": "kopia-repository-server",
+  "display_name": "Kopia Repository Server",
+  "category": "backup_snapshot",
+  "default_ports": [51515],
+  "api_paths": [
+    "/api/v1/sources",
+    "/api/v1/snapshots?userName=<u>&host=<h>&path=<p>",
+    "/api/v1/repo/status",
+    "/api/v1/cli",
+    "/api/v1/current-user",
+    "/api/v1/tasks"
+  ],
+  "auth_default": "optional-off",
+  "auth_config_env": ["KOPIA_SERVER_USERNAME", "KOPIA_SERVER_PASSWORD", "KOPIA_PASSWORD"],
+  "default_creds": [],
+  "install_tell": "kopia server start --address 0.0.0.0:51515 --without-password --insecure  (auth-OFF mode; default legacy `kopia server` is auth-ON)",
+  "misconfig_patterns": [
+    "kopia server started with --without-password --insecure returns a real 200 sources/snapshots body unauthenticated; the legacy default (no flag) is auth-ON and returns 401 \"Missing credentials.\" / \"Invalid or missing CSRF token.\"",
+    "AI-scope discriminator: the in-scope gate is the snapshot SOURCE PATH, not the server. GET /api/v1/sources returns sources[] where each source.path (names only) is in-scope when it targets AI/ML data: MLflow artifact stores (/mlruns, mlflow/artifacts, mlartifacts/), HuggingFace caches (~/.cache/huggingface, hub/models--*), model checkpoints (*.ckpt, *.safetensors, *.gguf, checkpoints/, models/), vector-DB data dirs (.../chroma, qdrant/storage, milvus, weaviate, lancedb, *.faiss), or dataset roots (datasets/, *.parquet corpora, .dvc). A server whose only sources are /home, /etc, Docker volumes, or generic DB dumps is plain substrate, OUT of scope.",
+    "Restraint: names and metadata only. The in-scope finding is an unauth Kopia server whose snapshot SOURCE PATHS point at AI/ML data — that source-path list IS the finding. Do NOT call GET /api/v1/objects/{objectID} or mount/restore endpoints (reading a snapshot tree/object = exfiltration). Do NOT POST to /api/v1/restore, /api/v1/mounts, /api/v1/repo/connect, /api/v1/repo/create, or /api/v1/repo/exists — restore/mount are write/read-out primitives and /api/v1/repo/exists is the CVE-2026-45695 RCE sink. Enumerate the catalog, never the cargo."
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"localUsername\" \"multiUser\" \"sources\" port:51515",
+      "\"localUsername\" \"localHost\" \"multiUser\" \"sources\" -\"Login\" -\"<html\" port:51515",
+      "http.html:\"KopiaUI\" \"formatVersion\" \"splitter\" port:51515"
+    ],
+    "active_probe": {
+      "path": "/api/v1/sources",
+      "method": "GET",
+      "response_markers": [
+        "JSON body of GET /api/v1/sources contains the exact field quartet: \"localUsername\", \"localHost\", \"multiUser\", and a \"sources\" array",
+        "Each /api/v1/sources element has SourceStatus fields \"source\",\"status\",\"schedule\",\"lastSnapshot\",\"nextSnapshotTime\",\"upload\",\"currentTask\" (vendor-unique combination)",
+        "GET /api/v1/repo/status StatusResponse fields: \"connected\",\"configFile\",\"formatVersion\",\"hash\",\"encryption\",\"ecc\",\"splitter\",\"maxPackSize\",\"storage\" (hash/encryption/splitter trio is Kopia-format-unique)",
+        "GET /api/v1/snapshots SnapshotsResponse fields \"snapshots\",\"unfilteredCount\",\"uniqueCount\"",
+        "Web UI: HTML title / React bundle branded \"KopiaUI\"; default self-signed TLS cert on :51515",
+        "Unauthenticated request to a protected route returns body \"Missing credentials.\"; with creds but no token returns \"Invalid or missing CSRF token.\""
+      ],
+      "false_positive_check": "Require the EXACT field quartet localUsername+localHost+multiUser+sources AND a well-formed SourceStatus element, not just the substring \"sources\". A catch-all that 200s every path is the negative guard. Broad \"backup\" dorks pull in Restic REST server, Bacula, UrBackup, Duplicati, BorgBackup UIs — exclude by requiring the SourcesResponse JSON field names, which none of those emit. Port 51515 is not IANA-reserved for Kopia; confirm with the /api/v1/repo/status hash+encryption+splitter trio. Drop-in UIs (joachimdalen/kopia-alternate-ui) proxy the same API — fingerprint the API JSON, not the HTML chrome. 401 \"Missing credentials.\"/\"Invalid or missing CSRF token.\" = surface open, access NOT exercised; do NOT label unauth. The load-bearing read is a 200-with-data on /api/v1/sources returning a populated sources[] array."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"localUsername\" \"multiUser\" \"sources\" port:51515",
+    "strict": "\"localUsername\" \"localHost\" \"multiUser\" \"sources\" -\"Login\" -\"<html\" port:51515",
+    "version": "http.html:\"KopiaUI\" \"formatVersion\" \"splitter\" port:51515"
+  },
+  "deployment_tells": [
+    "GET /api/v1/sources returns the localUsername+localHost+multiUser+sources quartet",
+    "GET /api/v1/repo/status exposes the Kopia-format-unique hash/encryption/splitter trio",
+    "Web UI / React bundle branded KopiaUI on :51515 behind a default self-signed TLS cert"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/repo/status -> read repo format metadata (storage backend type, hash/encryption/splitter, formatVersion) to confirm a live Kopia repo, names/config only",
+    "GET /api/v1/sources -> enumerate every backup source: list the source[].path values to apply the AI-scope discriminator (which paths are MLflow/vector-DB/model/dataset dirs)",
+    "GET /api/v1/snapshots?userName=<u>&host=<h>&path=<p> -> list snapshot manifests (timestamps, sizes, root object IDs) for an in-scope source; metadata only, never resolve the root",
+    "GET /api/v1/cli and GET /api/v1/current-user -> confirm passwordless/anonymous mode and server identity",
+    "GET /api/v1/tasks and /api/v1/tasks-summary -> read backup-job history/cadence for operator attribution, read-only"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-45695: unauthenticated RCE (CVSS 9.8) on POST /api/v1/repo/exists — SFTP storage-config fields passed unsanitized into an OpenSSH command line (naive space-split, no tokenizer/quote handling) enabling -oProxyCommand=<cmd> injection; exploitable only when server runs --without-password; affects <=0.22.3, fixed 0.23.0"
+  ],
+  "sources": [
+    "https://kopia.io/docs/repository-server/",
+    "https://github.com/kopia/kopia/blob/master/internal/server/server.go",
+    "https://raw.githubusercontent.com/kopia/kopia/master/internal/serverapi/serverapi.go",
+    "https://raw.githubusercontent.com/kopia/kopia/master/internal/server/api_sources.go",
+    "https://github.com/kopia/kopia/blob/master/cli/command_server_start.go",
+    "https://orca.security/resources/blog/kopia-backup-rce-vulnerability/",
+    "https://github.com/kopia/kopia/issues/4772",
+    "https://kopia.discourse.group/t/how-to-use-the-api/1324",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (CONFIRMED)"
+  ]
+}

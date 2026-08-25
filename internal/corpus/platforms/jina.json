@@ -1,0 +1,61 @@
+{
+  "platform": "jina",
+  "display_name": "Jina VectorDB",
+  "category": "vector_db",
+  "default_ports": [
+    8081,
+    8080
+  ],
+  "api_paths": [
+    "/status",
+    "/post",
+    "/index",
+    "/search"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "JINA_AUTH_TOKEN"
+  ],
+  "default_creds": [],
+  "install_tell": "jina flow --uses Flow.yml",
+  "misconfig_patterns": [
+    "No JINA_AUTH_TOKEN in default Flow deployment — all endpoints open",
+    "GET /status returns jina+used_memory fields without auth",
+    "CN operator pattern: Jina AI is Berlin-founded but CN-cloud-deployed"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8081 \"jina\"",
+      "http.html:\"jina\""
+    ],
+    "active_probe": {
+      "path": "/status",
+      "method": "GET",
+      "response_markers": [
+        "\"jina\"",
+        "\"used_memory\""
+      ],
+      "false_positive_check": "response must include jina and used_memory fields — port 8081 shared with SemaDB and Vald"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8081 \"jina\"",
+    "strict": "port:8081 \"jina\"",
+    "version": "port:8081 \"jina\" \"version\""
+  },
+  "deployment_tells": [
+    "GET /status returns {jina:..., used_memory:...} without auth",
+    "Port 8081 shared with SemaDB and Vald — require body confirmation",
+    "Flow topology visible via /status endpoint"
+  ],
+  "pivot_paths": [
+    "GET /status → jina version + memory usage + flow topology",
+    "POST /index → insert vectors without auth",
+    "POST /search → vector search without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.jina.ai",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

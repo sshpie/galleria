@@ -1,0 +1,65 @@
+{
+  "platform": "kdb-ai",
+  "display_name": "KDB.AI (kx / kdb+)",
+  "category": "vector_feature",
+  "default_ports": [
+    5000,
+    8082
+  ],
+  "api_paths": [
+    "/api/tables",
+    "/api/search"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "KDB_USER",
+    "KDB_PASS"
+  ],
+  "default_creds": [
+    {
+      "user": "admin",
+      "pass": "",
+      "context": "no -u flag in default kdb+ start"
+    }
+  ],
+  "install_tell": "q kdb_server.q -p 5000",
+  "misconfig_patterns": [
+    "No -u flag in default kdb+ start — q prompt accessible without credentials",
+    "REST API at :8082 open by default — /api/tables enumerates all tables",
+    "High-value target: finance/quant deployments, tick data + vector search"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:5000 \"kdb\"",
+      "port:8082 \"kdb\""
+    ],
+    "active_probe": {
+      "path": "/api/tables",
+      "method": "GET",
+      "response_markers": [
+        "\"tables\""
+      ],
+      "false_positive_check": "kdb+ q protocol on :5000 is binary IPC — REST :8082 is the HTTP surface; port 5000 alone is very high FP"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:5000 \"kdb\"",
+    "strict": "port:5000 \"kdb\"",
+    "version": "port:8082 \"kdb\""
+  },
+  "deployment_tells": [
+    "kdb+ IPC on :5000 — binary protocol, telnet reveals .z.vs version without auth",
+    "REST endpoint :8082 /api/tables returns table list without auth",
+    "Finance/quant pattern: colocated with time-series data"
+  ],
+  "pivot_paths": [
+    "GET :8082/api/tables → table list without auth",
+    "kdb+ IPC :5000 → .Q.tables[] → all table names",
+    "kdb+ IPC → tables with vector columns (.ml. namespace, embedpy)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://code.kx.com/kdbai/",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

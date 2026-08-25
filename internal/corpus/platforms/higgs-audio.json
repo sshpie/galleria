@@ -1,0 +1,76 @@
+{
+  "name": "Higgs Audio",
+  "slug": "higgs-audio",
+  "category": "voice-tts-conversational",
+  "description": "Boson AI's expressive multimodal audio/TTS foundation model (boson-ai/higgs-audio, v2 and v3). Self-hosted via an OpenAI-compatible inference server - vLLM (v2) or SGLang-Omni (v3) - exposing POST /v1/audio/speech on port 8000 with no authentication by default. JSON/API surface (no served HTML); identity resolves via the served-model-name in /v1/models.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication for self-hosted inference. v3 serves via SGLang-Omni (sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000) and v2 via a vLLM OpenAI-compatible server (examples/vllm) - both ship unauthenticated by default and bind per the launch flags (the docker example uses --network=host, binding the host network with no auth). The HiggsAudioServeEngine Python class is an in-process engine, not itself a listener. Only the hosted api.boson.ai service requires a Bearer BOSON_API_KEY; the self-hosted server does not. No rate limiting by default.",
+  "default_ports": [
+    8000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"higgs-audio\"",
+      "rationale": "The served-model-name (higgs-audio-v2-generation-3B-base / higgs-audio-v3-tts-4b) is returned by the vLLM/SGLang /v1/models JSON endpoint; the higgs-audio token in that served content is the primary body-reachable signal on the canonical port."
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"/v1/audio/speech\"",
+      "rationale": "The OpenAI-compatible /v1/audio/speech route is the confirmed synthesis path; on servers that expose it in error/JSON bodies or docs this catches the Higgs inference surface on port 8000."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"higgs-audio-v3-tts-4b\"",
+      "rationale": "The exact v3 served-model-name string in /v1/models is near-unique to Higgs Audio and pins the current release, excluding generic vLLM/SGLang OpenAI servers hosting other models."
+    },
+    {
+      "tier": "version",
+      "query": "port:8000 http.html:\"higgs-audio-v2-generation-3B-base\"",
+      "rationale": "The v2 served-model-name distinguishes the v2 vLLM deployment from the v3 SGLang-Omni deployment for version-targeted enumeration; pair with a /v1/models read for the full model list."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/v1/models",
+    "title_contains": "",
+    "response_body_contains": [
+      "higgs-audio-v3-tts-4b",
+      "higgs-audio-v2-generation-3B-base",
+      "/v1/audio/speech",
+      "bosonai",
+      "object"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/v1/audio/speech",
+    "/v1/models",
+    "/v1/chat/completions",
+    "/health",
+    "/metrics"
+  ],
+  "known_vulns": [
+    "Self-hosted vLLM/SGLang OpenAI server unauthenticated by default - open POST /v1/audio/speech inference and GPU compute abuse",
+    "Docker run example uses --network=host - binds the host network with no auth, exposing the endpoint if the host is public",
+    "No rate limiting - trivially scripted compute-exhaustion against operator GPU",
+    "/v1/models leaks the exact served-model-name (v2/v3) unauthenticated, aiding fingerprinting and targeting",
+    "vLLM/SGLang inference servers have their own advisory history (SSRF/deserialization classes) that a stale pin may inherit"
+  ],
+  "default_creds": [],
+  "risk_notes": "Vectors on an exposed instance: (1) Free unauthenticated GPU inference / compute theft - the self-hosted vLLM (v2) or SGLang-Omni (v3) server exposes OpenAI-compatible POST /v1/audio/speech with no API key, so any client that would call OpenAI can point at an open Higgs instance at operator cost; the shipped docker example's --network=host makes accidental public exposure easy; (2) Expressive voice-clone/deepfake synthesis - Higgs Audio v2/v3 are high-fidelity expressive models, raising the value of the forged output; (3) Model fingerprinting via /v1/models (served-model-name discloses v2 vs v3 and exact 3B/4B variant); (4) inherited vLLM/SGLang server-class advisories on stale pins. This is an API/JSON surface with no served HTML, so the platform name is NOT in a page title - detection is via the served-model-name (higgs-audio-v2-generation-3B-base / higgs-audio-v3-tts-4b) in the /v1/models JSON and the /v1/audio/speech path, which are http.html-blind unless surfaced in a body/error/doc response; route via Censys/aimap deep-enum reads of /v1/models. Repo has pivoted to v3 (higgs-audio-v3-tts-4b); v2 docs moved to README_V2.md. No official Gradio in-repo (community forks and HF Space smola/higgs_audio_v2 exist).",
+  "deployment_notes": "~8.3k stars, not archived, active. Two self-hosted serving paths, both on port 8000: v3 via SGLang-Omni (sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000) and v2 via a vLLM OpenAI-compatible server (examples/vllm). First-party Docker image bosonai/higgs-audio-vllm:latest (the v2 vLLM server image and a key fingerprint); recommended base builds nvcr.io/nvidia/pytorch:25.02-py3 / 25.01-py3. PyPI package boson-multimodal. Server header is 'uvicorn' (vLLM/SGLang run on Starlette/uvicorn). Because the surface is JSON-only, harvest via the served-model-name in /v1/models and the /v1/audio/speech path rather than a title dork; the audio tokenizer bosonai/higgs-audio-v2-tokenizer is a secondary identifier. The hosted demo (boson.ai/demo/tts) and api.boson.ai are Bearer-key-gated and out of scope for self-hosted harvesting.",
+  "docker_images": [
+    "bosonai/higgs-audio-vllm"
+  ],
+  "github_repos": [
+    "boson-ai/higgs-audio"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

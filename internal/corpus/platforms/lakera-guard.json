@@ -1,0 +1,83 @@
+{
+  "platform": "lakera-guard",
+  "display_name": "Lakera Guard (LLM safety REST API)",
+  "category": "guardrail",
+  "default_ports": [443],
+  "api_paths": ["/v1/guard", "/v2/guard", "/v1/results", "/v1/screen"],
+  "auth_default": "on",
+  "auth_config_env": ["LAKERA_GUARD_API_KEY"],
+  "default_creds": [],
+  "install_tell": "SaaS; SDK package lakera-chainguard / lakera-llm-vulnerability-scanner; bearer token Authorization header",
+  "misconfig_patterns": [
+    "Customer-side API key leakage in client-side SPA bundles or public GitHub repos: lak_ prefix tokens grant prompt-injection scan quota; verify-do-not-exercise.",
+    "Self-hosted appliance (self-hosted.docs.lakera.ai surfaces) is documented but population is dark to public Shodan; cert-pivot via lakera.ai operator CN is the discovery move."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"lakera.ai\"",
+      "http.html:\"Lakera Guard\""
+    ],
+    "active_probe": {
+      "path": "/v1/guard",
+      "method": "POST",
+      "port": 443,
+      "body": "{}",
+      "response_markers": ["docs.lakera.ai", "messages, or tools must be provided"],
+      "false_positive_check": "400 body MUST cite docs.lakera.ai/docs/api; status-code-alone is identity not auth-state"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"lakera.ai\"",
+    "strict": "ssl.cert.subject.cn:\"api.lakera.ai\"",
+    "version": "http.html:\"Lakera Guard\""
+  },
+  "deployment_tells": [
+    "Cloudflare-fronted SaaS apex (api.lakera.ai, eu-west-1.api.lakera.ai, us-east-1.api.lakera.ai, ap-southeast-1.api.lakera.ai)",
+    "Internal eu-west-1-internal / us-east-1-internal / ap-southeast-1-internal subdomains resolve to private AWS space (RFC1918-adjacent / VPC) -- DNS-only exposure, not a surface",
+    "litellm-eu.lakera.ai, litellm-us.lakera.ai indicate LiteLLM in the inference path",
+    "gandalf.lakera.ai = public prompt-injection challenge product; distinct surface from Guard",
+    "platform.lakera.ai, platform-aws.lakera.ai = customer dashboard"
+  ],
+  "pivot_paths": [
+    "POST /v2/guard -- returns marker error string with docs URL; fingerprint anchor, no auth needed for status read",
+    "ssl.cert.subject.cn pivot on lakera.ai for operator attribution including embedded customers"
+  ],
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://lakera.ai/.well-known/security.txt (404 as of 2026-06-07)",
+    "dmarc_rua": "dmarc@lakera.ai",
+    "channel_observed": "easydmarc.us + dmarc-reports.cloudflare.net (third-party DMARC aggregation)"
+  },
+  "sources": [
+    "https://docs.lakera.ai/docs/api",
+    "https://www.lakera.ai/lakera-guard",
+    "DNS hostsearch hackertarget 2026-06-07",
+    "passive probe POST /v2/guard -> distinctive 400 body 2026-06-07",
+    "LiteLLM litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py + lakera_ai_v2.py (2026-06-07, Slice D delta read)"
+  ],
+  "litellm_v1_vs_v2_delta": {
+    "verdict": "Same vendor, same SaaS host (api.lakera.ai), same env var (LAKERA_API_KEY), same network fingerprint. v2 is a NEW endpoint + new capabilities, not a new platform. One tome entry covers both; passive enumeration cannot distinguish v1-using from v2-using operators.",
+    "v1": {
+      "litellm_class": "lakeraAI_Moderation",
+      "endpoint": "POST /v1/prompt_injection",
+      "model_field": "lakera-guard-1",
+      "capabilities": ["prompt_injection scan only"],
+      "scope": "any LiteLLM call type",
+      "request_shape": "{\"input\": [{\"role\":..., \"content\":...}, ...]}"
+    },
+    "v2": {
+      "litellm_class": "LakeraAIGuardrailV2",
+      "endpoint": "POST /v2/guard",
+      "model_field": "n/a (server-side selection)",
+      "capabilities": ["prompt injection", "PII detection + masking (payload=true)", "per-detector breakdown (breakdown=true)"],
+      "scope": "chat completions ONLY (/v1/chat/completions); NOT supported for Responses API, /v1/messages, MCP, A2A per source comments",
+      "request_shape": "messages + payload/breakdown booleans; response includes masked-entity count and per-message modifications array"
+    },
+    "operator_choice_signal": "v2 is the newer surface and the documented direction; operators still on v1 are either legacy (older LiteLLM) or have a non-chat-completions use case. The v1-vs-v2 split is a TEMPORAL signal at the operator config layer, not at the network layer.",
+    "added_surface_v2_over_v1": [
+      "PII masking pipeline (payload=true) creates a mapping in LiteLLM memory between original and masked tokens; same in-memory de-anonymization risk pattern as Presidio wrapper.",
+      "breakdown=true returns per-detector results; an attacker who can read guardrail responses learns Lakera's detector taxonomy on every call, which informs evasion."
+    ],
+    "tome_separate_entry_decision": "NO. v2 is an endpoint + parameter delta on the same SaaS, same auth, same network fingerprint. One platform entry, dual endpoint coverage."
+  }
+}

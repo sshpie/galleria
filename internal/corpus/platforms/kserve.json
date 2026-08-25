@@ -1,0 +1,47 @@
+{
+  "platform": "kserve",
+  "display_name": "KServe",
+  "category": "inference_serving",
+  "default_ports": [8080],
+  "api_paths": ["/v1/models", "/v1/completions", "/health"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "kubectl apply -f inferenceservice.yaml",
+  "misconfig_patterns": [
+    "Kubernetes RBAC not applied to InferenceService endpoints",
+    "ServingRuntime CRDs expose model configuration",
+    "Inherits runtime auth defaults (vLLM/TGI = none)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"InferenceService\"",
+      "http.html:\"kserve\""
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": ["\"kserve\""],
+      "false_positive_check": "response or error body must reference kserve — KFServing V2 error format includes kserve in server identification"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"kserve\"",
+    "strict": "http.html:\"InferenceService\" http.html:\"kserve\"",
+    "version": "http.html:\"kserve\" http.html:\"ServingRuntime\""
+  },
+  "deployment_tells": [
+    "ServingRuntime + InferenceService CRDs in Kubernetes",
+    "Kubernetes-native annotations in HTTP response headers",
+    "Port inherits from runtime (8080 for vLLM/TGI)"
+  ],
+  "pivot_paths": [
+    "InferenceService metadata → namespace + model name → full K8s context",
+    "Kubernetes service account token → cluster pivot if RBAC misconfigured",
+    "ServingRuntime spec → identify backing runtime and its own CVE surface"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01"
+  ]
+}

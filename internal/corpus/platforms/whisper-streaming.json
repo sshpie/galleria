@@ -1,0 +1,63 @@
+{
+  "name": "Whisper Streaming (whisper_online_server)",
+  "slug": "whisper-streaming",
+  "category": "voice-tts-conversational",
+  "description": "ufal/whisper_streaming — a real-time Whisper transcription implementation (LocalAgreement streaming policy) whose whisper_online_server.py exposes a self-hosted raw-TCP server. Clients pipe raw 16kHz mono S16_LE PCM over a plain socket and receive incremental timestamped transcript lines. Not an HTTP or WebSocket service. No authentication by default. Raw-TCP with no HTTP banner makes it Shodan http.html-blind; discovery is port/behavior-based via Censys/active-probe.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication. whisper_online_server.py binds a raw TCP socket (--host/--port configurable; examples use 43001/43007) and speaks a line-oriented custom protocol: the client streams raw PCM in, the server emits 'beg_ts end_ts text' lines out. There is no HTTP layer, no TLS, and no credential — any TCP client (e.g. nc) that sends correctly formatted audio gets transcription. Because nothing HTTP is served, Shodan http.html/http.title/product markers do not apply; the port answers no HTTP probe meaningfully, so fingerprinting is port-range + connect-behavior based (Censys/active-probe route).",
+  "default_ports": [
+    43001,
+    43007
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:43007",
+      "rationale": "Port-based only: whisper_online_server has no HTTP surface and emits no HTML/product banner, so http.html and product dorks return 0. The commonly-documented 43007/43001 ports on an otherwise service-less TCP listener are the sole Shodan-visible signal; expect high noise, confirm by active probe"
+    },
+    {
+      "tier": "basic",
+      "query": "port:43001",
+      "rationale": "Alternate documented port from the client example (nc localhost 43001); same raw-TCP no-banner profile. Pair with active connect-and-observe to separate whisper_streaming from other 43001 listeners"
+    },
+    {
+      "tier": "strict",
+      "query": "port:43007 -http -ssl",
+      "rationale": "Narrows to raw-TCP listeners on the whisper_streaming port that expose neither HTTP nor TLS — consistent with the line-protocol server. Confirmation requires an active PCM-stream probe, not Shodan metadata; this is fundamentally a Censys/active-route platform"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 43007,
+    "http_path": "",
+    "title_contains": "",
+    "response_body_contains": [],
+    "http_header": ""
+  },
+  "api_paths": [
+    "TCP :43007 (raw line protocol: client streams 16kHz mono S16_LE PCM in; server emits 'beg_ts end_ts text' transcript lines out)",
+    "TCP :43001 (alternate documented port, same protocol)"
+  ],
+  "known_vulns": [
+    "No built-in auth — any TCP client that streams correctly-formatted PCM gets unlimited transcription",
+    "No TLS — plaintext audio in and transcript out on the wire; on-path interception trivial",
+    "GPU/CPU compute theft — no rate limiting; a single socket ties up a Whisper decode loop, and repeated connections exhaust resources (DoS)",
+    "Audio PII exfiltration — streamed audio transcribed with no consent, auth, or audit logging",
+    "Custom line protocol with no framing hardening — malformed/oversized input handling is unaudited (potential DoS / crash surface)",
+    "Single-purpose research server with no operational hardening intended by upstream"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — an open raw-TCP whisper_online_server is free streaming Whisper; any nc/socket client drives it. (2) Plaintext audio interception — no TLS means an on-path observer reads both the streamed audio and the emitted transcript. (3) Audio PII exfiltration — live audio transcribed with no auth or logging. (4) Discovery asymmetry — the no-HTTP/no-banner design makes it Shodan-blind (http.html dorks return 0), so operators lean on obscurity; Censys/active connect-and-stream probing on the 43001/43007 range surfaces these hosts. Note upstream points web-oriented users to WhisperLiveKit (WebSocket/FastAPI) for a browser-friendly alternative.",
+  "deployment_notes": "Python script (whisper_online_server.py) run directly from ufal/whisper_streaming — no official Docker image. Binds a raw TCP socket on --host/--port (documented examples: 43001, 43007). Line-oriented custom protocol over plaintext TCP; NO HTTP, NO WebSocket, NO TLS, NO auth. This is a Shodan http.html-blind platform: http.html/http.title/product dorks return 0 because nothing HTTP is served — discovery is port-range + active connect/PCM-stream confirmation (Censys/active-probe route). Backend is Whisper via faster-whisper/whisper-timestamped; GPU strongly recommended. For a WebSocket/FastAPI web variant, upstream references the separate QuentinFuxa/WhisperLiveKit project. Deployments are research/experimental; hardening is minimal by design.",
+  "docker_images": [],
+  "github_repos": [
+    "ufal/whisper_streaming",
+    "QuentinFuxa/WhisperLiveKit"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

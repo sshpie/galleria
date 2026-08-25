@@ -1,0 +1,132 @@
+{
+  "platform": "open-webui",
+  "display_name": "Open WebUI",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3000,
+    8080
+  ],
+  "api_paths": [
+    "/api/config",
+    "/api/version",
+    "/api/v1/auths/signup",
+    "/api/v1/auths/signin",
+    "/ollama/api/tags",
+    "/openai/models",
+    "/api/v1/retrieval/process/web",
+    "/audio/api/v1/transcriptions",
+    "/api/v1/files/",
+    "/api/models",
+    "/api/chat/completions",
+    "/manifest.json",
+    "/static/favicon.png"
+  ],
+  "auth_default": "auth-on-default",
+  "auth_config_env": [
+    "WEBUI_AUTH (default True; set False for single-user no-login mode)",
+    "ENABLE_SIGNUP (default True when WEBUI_AUTH on; open registration)",
+    "ENABLE_LOGIN_FORM (default True)",
+    "DEFAULT_USER_ROLE (default 'pending')",
+    "WEBUI_SECRET_KEY (default empty/'' in compose; JWT signing key)",
+    "WEBUI_AUTH_TRUSTED_EMAIL_HEADER (trusted-header SSO bypass)",
+    "ENABLE_OAUTH_SIGNUP",
+    "ENABLE_API_KEY (default True)"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main  (bundled-Ollama variant uses tag :ollama with --gpus=all)",
+  "misconfig_patterns": [
+    "WEBUI_AUTH=False explicitly set -> fully unauth UI+API (operator opt-out of login)",
+    "Fresh instance exposed to internet before first registration -> first visitor self-registers as admin (ENABLE_SIGNUP default True)",
+    "ENABLE_SIGNUP re-enabled on an internet-facing instance (docs explicitly warn against this)",
+    "Empty/default WEBUI_SECRET_KEY left unset -> JWT signing key regenerated per restart or weak",
+    "CORS_ALLOW_ORIGIN='*' default left in place when public",
+    "google_drive client_id/api_key configured -> leaked via unauth /api/config (issue #9211)",
+    "WEBUI_AUTH_TRUSTED_EMAIL_HEADER set behind a proxy that does not actually inject the header -> header-spoof auth bypass"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Open WebUI\"",
+      "http.html:\"/static/favicon.png\" http.title:\"Open WebUI\"",
+      "http.html:\"crossorigin=\\\"use-credentials\\\"\" http.title:\"Open WebUI\""
+    ],
+    "active_probe": {
+      "path": "/api/config",
+      "method": "GET",
+      "response_markers": [
+        "\"name\":\"Open WebUI\"",
+        "\"features\":{",
+        "\"enable_signup\"",
+        "\"enable_login_form\"",
+        "\"auth_trusted_header\"",
+        "\"enable_websocket\"",
+        "\"default_locale\"",
+        "\"oauth\":{\"providers\"",
+        "\"version\":"
+      ],
+      "false_positive_check": "Do NOT fingerprint on the HTML <title>Open WebUI</title> alone or on \"AI\"/\"chat\" body strings — title scraping collides with forks, mirrors, and unrelated chat UIs (~50%-rule trap). Require BOTH: (1) GET /api/config returns 200 with Content-Type application/json AND the body contains the literal key \"features\" wrapping the exact tuple {auth, enable_signup, enable_login_form, enable_websocket}; AND (2) \"name\":\"Open WebUI\" inside that same JSON. A bare 200 on / with the title but a 404/HTML on /api/config means a reverse-proxy landing page or a clone, not a live Open WebUI backend. The /api/config features-object key set is vendor-unique and not reproduced by LibreChat, Lobe Chat, or AnythingLLM. Note the /api/config JSON-body signal is invisible to Shodan http.html on the web UI; confirm it at the active-probe/scanner step, not the dork."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Open WebUI\"",
+    "strict": "http.title:\"Open WebUI\" http.html:\"/static/favicon.png\" http.html:\"theme-color\"",
+    "version": "http.title:\"Open WebUI\" http.html:\"manifest.json\""
+  },
+  "deployment_tells": [
+    "Host port 3000 -> container 8080 (canonical quickstart mapping)",
+    "Image ghcr.io/open-webui/open-webui:main or :ollama",
+    "Volume open-webui:/app/backend/data (SQLite webui.db + uploaded RAG docs + chroma vector store live here)",
+    "Often co-located with an Ollama container on 11434 (compose sets OLLAMA_BASE_URL=http://ollama:11434)",
+    "Default CORS_ALLOW_ORIGIN='*' and FORWARDED_ALLOW_IPS='*' in .env.example",
+    "<meta name=robots content=noindex,nofollow> and theme-color #171717 in app.html",
+    "SvelteKit SPA shell served by FastAPI/uvicorn"
+  ],
+  "pivot_paths": [
+    "GET /api/config (unauth) -> read name/version (CVE scoping) + features.auth/enable_signup state -> determine if first-user-admin race is still open + harvest leaked oauth/google_drive client_id+api_key",
+    "GET /api/version (unauth) -> exact build for CVE matching against the 0.3.x-0.6.34 advisory set",
+    "GET /manifest.json and /static/favicon.png -> deployment confirmation without touching auth",
+    "If features.enable_signup true on a fresh host: enumerate the open-signup state via /api/config only (read-only-pivot boundary: do NOT register)",
+    "Co-located Ollama on 11434 -> GET /ollama/api/tags enumerates pulled models"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-64496 (GHSA-cm35-v4vp-5xvx): Direct Connections feature evaluates untrusted SSE 'execute' events via new Function() -> JS injection, account takeover via JWT theft, RCE with workspace.tools perms; affected <=0.6.34, fixed 0.6.35",
+    "CVE-2025-64495 (GHSA-w7xj-8fx7-wfch): Stored DOM XSS via prompts when 'Insert Prompt as Rich Text' enabled (prompt body -> .innerHTML unsanitized) -> ATO for users, RCE for admins; affected <=0.6.34, fixed 0.6.35",
+    "CVE-2025-63681 (GHSA-frv8-gffc-37px): Incorrect Access Control - /api/tasks/stop/ cancels tasks without ownership check, any authed user stops others' LLM tasks; affected <=0.6.33 (Low CVSS 2.1)",
+    "CVE-2024-8060: Arbitrary file upload / path traversal via /audio/api/v1/transcriptions (insufficient content_type + user-controlled filename) -> RCE as root in container; authed; affected ~0.3.0",
+    "CVE-2024-7959 (GHSA-x757-hv69-jr45): SSRF via /openai/models - attacker-set OpenAI base URL fetched without validation; affected 0.3.8",
+    "GHSA-c6xv-rcvw-v685: SSRF via /api/v1/retrieval/process/web - any authed user forces server-side requests to arbitrary URLs incl. cloud metadata (169.254.169.254); RAG ingestion path",
+    "CVE-2024-7806: CSRF -> RCE via pipeline Python code modification by non-admin; affected <=0.3.8, fixed 0.3.33",
+    "CVE-2024-6707: Path-traversal arbitrary file upload to arbitrary filesystem location; HIGH CVSS 8.8, authed (PR:L); affected ~0.1.105",
+    "CVE-2024-7044 (GHSA-j274-m559-cj4j): Stored XSS via chat file upload"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: backend/open_webui/config.py sets `WEBUI_AUTH = os.getenv('WEBUI_AUTH', 'True').lower() == 'true'` — auth is ON when the env var is unset. The canonical quickstart `docker run -d -p 3000:8080 -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main` (README.md) passes NO WEBUI_AUTH override, so the True default holds. The default docker-compose.yaml contains no WEBUI_AUTH and only an empty `WEBUI_SECRET_KEY=`. The hardening doc (docs.openwebui.com/getting-started/advanced-topics/hardening/) confirms runtime behavior verbatim: \"Signup is open only until the first user registers, who becomes the administrator\" and \"Open WebUI is built for private, trusted networks ... Do not expose it directly to the public internet without an additional access control layer in front of it.\" NUANCE that downgrades the protection: with WEBUI_AUTH=True the first run shows a setup/login form, but on a FRESH internet-exposed instance ENABLE_SIGNUP defaults True (config.py: `os.getenv('ENABLE_SIGNUP','True')`) and the first registrant becomes admin — a first-user-becomes-admin race, not a pre-set credential. DEFAULT_USER_ROLE defaults 'pending' so subsequent signups are quarantined. Classified auth-on-default (the documented quickstart forces a setup/login before use), NOT open-by-default; the open state requires the operator to explicitly set WEBUI_AUTH=False.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG documents and knowledge-base files (uploaded PDFs/PII) stored under /app/backend/data",
+    "Conversation/chat history for all users (webui.db SQLite)",
+    "Built-in Chroma vector store contents (embedded RAG chunks)",
+    "Upstream LLM API keys if a first-user-admin foothold is gained (OPENAI_API_KEY, per-connection keys) and OAuth/Google-Drive client_id+api_key leaked unauth via /api/config (issue #9211)",
+    "Model/prompt/tool/pipeline (function) definitions revealing business logic",
+    "Admin-claimable state on a fresh exposed instance (first registrant becomes admin)",
+    "User roster, emails, and roles once admin is held"
+  ],
+  "sources": [
+    "https://raw.githubusercontent.com/open-webui/open-webui/main/backend/open_webui/config.py",
+    "https://raw.githubusercontent.com/open-webui/open-webui/main/docker-compose.yaml",
+    "https://raw.githubusercontent.com/open-webui/open-webui/main/.env.example",
+    "https://raw.githubusercontent.com/open-webui/open-webui/main/README.md",
+    "https://raw.githubusercontent.com/open-webui/open-webui/main/src/app.html",
+    "https://docs.openwebui.com/getting-started/advanced-topics/hardening/",
+    "https://docs.openwebui.com/reference/env-configuration/",
+    "https://github.com/open-webui/open-webui/issues/9211",
+    "https://github.com/advisories/GHSA-frv8-gffc-37px",
+    "https://github.com/advisories/GHSA-w7xj-8fx7-wfch",
+    "https://github.com/open-webui/open-webui/security/advisories/GHSA-cm35-v4vp-5xvx",
+    "https://github.com/open-webui/open-webui/security/advisories/GHSA-c6xv-rcvw-v685",
+    "https://github.com/advisories/GHSA-x757-hv69-jr45",
+    "https://nvd.nist.gov/vuln/detail/cve-2024-6707",
+    "https://advisories.gitlab.com/pkg/pypi/open-webui/CVE-2024-8060/",
+    "https://www.catonetworks.com/blog/cato-ctrl-vulnerability-discovered-open-webui-cve-2025-64496/",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

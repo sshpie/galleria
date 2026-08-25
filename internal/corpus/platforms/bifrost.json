@@ -1,0 +1,59 @@
+{
+  "platform": "bifrost",
+  "display_name": "Bifrost (maximhq/bifrost)",
+  "category": "gateway",
+  "default_ports": [8080],
+  "api_paths": ["/", "/v1/chat/completions", "/v1/embeddings"],
+  "auth_default": "off",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 -v $(pwd)/data:/app/data maximhq/bifrost",
+  "misconfig_patterns": [
+    "Web UI at :8080 accessible without authentication by default",
+    "Logs tab in web UI shows full request/response history for all proxied LLM calls",
+    "Providers tab shows all configured provider API keys",
+    "Root path bypass (GitHub issue #937) -- / returns 200 unauthenticated even with auth configured",
+    "No auth layer on /v1/chat/completions -- attacker routes requests through victim's provider accounts"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"bifrost\" port:8080 http.html:\"providers\"",
+      "\"maximhq\" port:8080",
+      "http.html:\"bifrost\" port:8080"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 8080,
+      "response_markers": ["bifrost", "Providers", "Dashboard"],
+      "false_positive_check": "response HTML must contain bifrost branding; :8080 collides with many services"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"bifrost\" port:8080",
+    "strict": "\"bifrost\" port:8080 http.html:\"providers\"",
+    "version": "\"bifrost\" port:8080 http.html:\"version\""
+  },
+  "deployment_tells": [
+    "Port 8080 web UI with Dashboard/Providers/Logs/Settings tabs",
+    "Bifrost branding in page HTML",
+    "OpenAI-compatible /v1/chat/completions endpoint",
+    "claimed 50x faster than LiteLLM (marketing copy in UI)"
+  ],
+  "pivot_paths": [
+    "GET :8080/ -- web UI loads without auth; Dashboard shows real-time metrics",
+    "Providers tab -- all configured LLM provider API keys visible",
+    "Logs tab -- full request/response history for all proxied calls including prompts and completions",
+    "POST :8080/v1/chat/completions -- route LLM requests through victim's provider accounts (billing abuse)"
+  ],
+  "vulnerabilities": [
+    "No CVE: auth bypass on root path (GitHub issue #937); / returns HTTP 200 unauthenticated even with auth configured; web UI always accessible; patch status TBD",
+    "CVE-2025-69194 CVSS 8.8: bundled GNU wget in Alpine runtime image; removed via Snyk scanning in subsequent release"
+  ],
+  "sources": [
+    "https://github.com/maximhq/bifrost",
+    "https://docs.getbifrost.ai/quickstart/gateway/setting-up",
+    "https://hub.docker.com/r/maximhq/bifrost",
+    "https://github.com/maximhq/bifrost/security"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "platform": "lobstermail",
+  "display_name": "LobsterMail (inbound prompt-injection scanner \u2014 Cat-33 mirror)",
+  "category": "ai_email_guardrails",
+  "subcategory": "INBOUND mirror (NOT outbound) \u2014 boundary/reference sibling",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Hosted SaaS. Agent self-provisions an inbox; ships an INBOUND prompt-injection scanner (6 categories) + safeBodyForLLM() sanitizer. Team behind Palisade Research. No funding round disclosed.",
+  "misconfig_patterns": [
+    "DIRECTION NOTE: LobsterMail guards the INBOUND path (untrusted mail -> agent context). It is the inverse of the Cat-33 thesis (outbound LLM draft -> recipient). Cataloged as the documented mirror, NOT an in-category outbound platform."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"lobstermail.ai\"",
+      "http.html:\"LobsterMail\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "LobsterMail",
+        "prompt injection",
+        "inbox"
+      ],
+      "false_positive_check": "Brand anchor on lobstermail.ai apex + 'prompt injection'/'inbox'."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"lobstermail.ai\"",
+    "strict": "ssl.cert.subject.cn:\"lobstermail.ai\" http.html:\"LobsterMail\""
+  },
+  "deployment_tells": [
+    "Hosted; self-provisioning agent inbox; safeBodyForLLM() is the named sanitizer primitive."
+  ],
+  "pivot_paths": [
+    "Inbound-mirror structural finding: inbound agent-mail safety EXISTS at the substrate (LobsterMail, MailGuard MCP), outbound content safety does NOT \u2014 the asymmetry is the Cat-33 category finding.",
+    "Palisade Research lineage -> operator pivot."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "C (inbox agent) INBOUND \u2014 mirror of Cat-33, not in-category",
+    "differentiator": "Defends the inbound context-poisoning boundary (the mirror image of outbound LLM-draft guarding)."
+  },
+  "sources": [
+    "https://lobstermail.ai/ (PRIMARY) [CONFIRMED \u2014 but INBOUND, mirror sibling]",
+    "MailGuard MCP (github.com/stbenjam/mailguard-mcp) \u2014 second inbound-mirror data point [CONFIRMED]",
+    "OSINT Platoon sweep 2026-06-23 (substrate + OSS lanes)"
+  ]
+}

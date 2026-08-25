@@ -1,0 +1,104 @@
+{
+  "name": "Silero VAD/STT",
+  "slug": "silero-vad",
+  "category": "voice-tts-conversational",
+  "description": "Silero VAD (Voice Activity Detection) and STT (Speech-to-Text) are production-ready PyTorch/ONNX ML models from snakers4, typically deployed via community-built HTTP server wrappers (FastAPI/Flask/uvicorn). No official standalone server — auth posture and API surface depend entirely on the wrapper used. The most common wrappers expose completely unauthenticated inference endpoints on port 8000 (uvicorn/FastAPI) or 5000 (Flask). Wyoming protocol variant (wyoming-silero-vad) used in Home Assistant deployments exposes raw TCP on port 10400 with no auth layer.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in any known wrapper by default. Silero is a model library — auth is entirely delegated to the operator-chosen serving layer. FastAPI wrappers expose /docs (Swagger UI) and /openapi.json publicly by default, revealing full API surface. Flask wrappers have no middleware. Wyoming protocol (Home Assistant variant, TCP 10400) has no auth layer at the protocol level. No API key, no token, no basic auth in any official or widely-used community wrapper. The upstream snakers4 repos contain no server component whatsoever — all HTTP surfaces are community-built and ship auth-off.",
+  "default_ports": [
+    8000,
+    5000,
+    10400
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"silero\"",
+      "rationale": "Broad catch for any HTTP wrapper serving Silero on the default uvicorn port; catches /docs, /openapi.json, and root pages that reference the model name"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"silero-vad\" http.html:\"/transcribe\"",
+      "rationale": "Conjunctive match requiring both the model name token and the canonical transcription endpoint path — reduces Flask/FastAPI generic servers to Silero-specific wrappers"
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"Silero\" port:8000 http.html:\"openapi.json\"",
+      "rationale": "Targets FastAPI deployments where the root or /docs page carries Silero in the title and exposes the OpenAPI schema link — high-precision for FastAPI-wrapped deployments"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"silero\" http.html:\"wyoming\" port:10400",
+      "rationale": "Wyoming-protocol Silero VAD variant used in Home Assistant ecosystems; port 10400 is the wyoming-silero-vad default; body sometimes contains both tokens on the status page"
+    },
+    {
+      "tier": "basic",
+      "query": "port:5000 http.html:\"silero\" http.html:\"vad\"",
+      "rationale": "Flask-wrapped Silero on default Flask port 5000; VAD token distinguishes from generic Flask apps referencing the word silero in unrelated contexts"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/openapi.json",
+    "response_body_contains": [
+      "silero",
+      "silero-vad",
+      "voice activity",
+      "transcribe",
+      "uvicorn"
+    ],
+    "http_header": "server: uvicorn",
+    "title_contains": "Silero"
+  },
+  "api_paths": [
+    "/",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/health",
+    "/healthz",
+    "/transcribe",
+    "/asr",
+    "/detect",
+    "/vad",
+    "/v1/audio/transcriptions",
+    "/v1/audio/translations",
+    "/api/transcribe",
+    "/api/detect",
+    "/api/asr",
+    "/stream",
+    "/ws"
+  ],
+  "known_vulns": [
+    "Unauthenticated model inference on all known HTTP wrappers (no CVE — design posture)",
+    "FastAPI /docs endpoint exposed by default — full API surface disclosure without credentials",
+    "Arbitrary audio file upload accepted on /transcribe and /vad without size, type, or rate-limit controls — compute exhaustion vector",
+    "wyoming-silero-vad TCP protocol (port 10400) accepts audio frames with no auth — any host with network access can submit audio",
+    "FastAPI debug mode left enabled in development-to-production deployments — stack traces and internal paths disclosed on errors",
+    "Flask development server (werkzeug) shipped in production containers — single-threaded, debugger enabled, PIN-based RCE if debugger reachable"
+  ],
+  "default_creds": [],
+  "risk_notes": "Unauth access impact: (1) Compute theft — free continuous model inference; edge hardware is resource-constrained so sustained inference load causes DoS-equivalent degradation. (2) Audio PII exfiltration — /transcribe accepts arbitrary audio; any audio stored server-side (common in logging wrappers) is exfiltrable; transcripts of voice conversations are high-sensitivity PII. (3) VAD timing oracle — unauthenticated /detect endpoint reveals whether audio segments contain speech; in multi-tenant or shared deployments this leaks presence/activity metadata about other users. (4) Voice data harvesting — unauth POST to /transcribe lets an attacker submit audio and receive transcripts; the reverse (submitting audio, receiving nothing) allows storing audio of third parties on victim infrastructure. (5) Wyoming protocol abuse — raw TCP on 10400 allows injecting arbitrary audio frames into Home Assistant voice pipelines; depending on pipeline design this could trigger voice commands on smart home systems. No known voice cloning attack surface — Silero is detection/transcription only, no synthesis capability.",
+  "deployment_notes": "Silero is not a server product — it is a PyTorch/ONNX model library. All HTTP surfaces come from community-built wrappers. The two dominant patterns: (1) FastAPI + uvicorn wrapping snakers4/silero-vad on port 8000, commonly containerized; (2) wyoming-silero-vad for Home Assistant/Rhasspy ecosystems on TCP 10400. Flask wrappers (port 5000) are common in hobbyist and home-lab deployments. Many deployments are part of larger voice pipeline stacks alongside Whisper, Piper TTS, or Rhasspy, often on low-power ARM hardware (Raspberry Pi, Jetson). Cloud deployments are uncommon — the model is explicitly marketed as edge-optimized. Docker Compose stacks pairing Silero VAD with Whisper ASR are common; in these stacks Silero is often internal (not port-forwarded) but misconfiguration frequently exposes it externally anyway.",
+  "docker_images": [
+    "snakers4/silero-models",
+    "rhasspy/wyoming-silero-vad",
+    "ghcr.io/rhasspy/wyoming-silero-vad",
+    "onerahmet/openai-whisper-asr-webservice",
+    "synesthesiam/rhasspy-silence"
+  ],
+  "github_repos": [
+    "snakers4/silero-vad",
+    "snakers4/silero-models",
+    "rhasspy/wyoming-silero-vad",
+    "davabase/whisper_rest_api",
+    "ahmetoner/whisper-asr-webservice"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

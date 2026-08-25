@@ -1,0 +1,124 @@
+{
+  "platform": "foxglove-studio",
+  "display_name": "Foxglove Studio (foxglove_bridge — self-hosted teleop console bridge)",
+  "category": "robotics_mission_control",
+  "default_ports": [
+    8765,
+    8080,
+    443,
+    80
+  ],
+  "api_paths": [
+    "/",
+    "/topics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "FOXGLOVE_BRIDGE_PORT",
+    "FOXGLOVE_BRIDGE_ADDRESS",
+    "FOXGLOVE_BRIDGE_TLS",
+    "FOXGLOVE_BRIDGE_CERTFILE",
+    "FOXGLOVE_BRIDGE_KEYFILE"
+  ],
+  "default_creds": [],
+  "install_tell": "ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765",
+  "misconfig_patterns": [
+    "foxglove_bridge has NO authentication by default — anyone reaching port 8765 gets full WebSocket subscribe + publish capability",
+    "tls / certfile / keyfile launch params add transport encryption but NOT authentication — encrypted-anonymous is still anonymous",
+    "No token, password, or API-key parameter exists in the foxglove_bridge launch file as of 2026-06-09",
+    "Sec-WebSocket-Protocol: foxglove.websocket.v1 handshake echoes back even before any auth challenge — identity leak before any access decision",
+    "Channel-list (/listChannels) enumerates every topic the bridge exposes without subscribing — capability fingerprint leak",
+    "advertise + publish messages let a connected client become a new publisher on any topic, including robot control topics",
+    "Foxglove Studio (the browser/desktop app) connects to ws://<host>:8765 directly — no client-side authentication enforced",
+    "Foxglove Cloud (the paid SaaS at app.foxglove.dev) DOES have OAuth/org auth — but the self-hosted bridge does not inherit that",
+    "Common docker-compose pattern: foxglove_bridge published to host port 8765 alongside ros:humble — both reachable",
+    "Reverse-proxy guidance is documented but optional; bare bridge on public IP is a frequent pattern in academic + early-startup deployments"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8765 \"foxglove\"",
+      "http.html:\"foxglove_bridge\"",
+      "\"foxglove\" \"websocket\"",
+      "\"Sec-WebSocket-Protocol: foxglove.websocket.v1\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Sec-WebSocket-Protocol: foxglove.websocket.v1",
+        "Upgrade: websocket",
+        "foxglove"
+      ],
+      "false_positive_check": "WebSocket upgrade response with Sec-WebSocket-Protocol exactly foxglove.websocket.v1 is the unique identity signal — this subprotocol is foxglove-bridge-specific and not used by other websocket services. Reject if subprotocol header is absent (generic websocket) or if it advertises a different protocol (rosbridge-v1.0, mqtt, etc). Secondary confirmation: open the websocket and read first server message — foxglove_bridge sends a serverInfo JSON message with 'name' = 'foxglove_bridge' as the first frame."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"foxglove\"",
+    "strict": "port:8765 \"foxglove\" -product:\"Windows\"",
+    "version": "\"Sec-WebSocket-Protocol: foxglove.websocket.v1\"",
+    "notes": "Foxglove bridge IS directly Shodan-indexable on port 8765 — WebSocket handshake echoes Sec-WebSocket-Protocol: foxglove.websocket.v1 which is the unique fingerprint. Per Insight #93, basic dork has no port: constraint to catch reverse-proxied deployments on 80/443/8080. Body-marker variants of 'foxglove_bridge' also surface bare HTTP responses where the bridge advertises itself via favicon or redirect. Population is the headline number for this survey — direct internet-exposed self-hosted teleop bridges."
+  },
+  "deployment_tells": [
+    "Docker image foxglove/studio (the desktop renderer, less common) or osrf/ros:humble + foxglove_bridge launched as a ROS package",
+    "Launch file foxglove_bridge_launch.xml or foxglove_bridge_launch.py with port:=8765 the default",
+    "Co-deployed siblings on same IP (shadow-sweep priorities): rosbridge_server :9090, web_video_server :8080, Nav2/MoveIt action servers (via rosbridge), DDS UDP :7400+",
+    "Browser-side app at studio.foxglove.dev or self-hosted desktop client connects to ws://<host>:8765",
+    "Academic robotics labs: Foxglove is the de-facto teleop + data-review console across hundreds of public ROS2 GitHub repos",
+    "Startup deployments: drone, agriculture, last-mile delivery — Foxglove is the standard early-stage teleop UI",
+    "PX4-Autopilot and Isaac ROS reference stacks ship foxglove_bridge as a recommended companion package",
+    "Cert subject-CN patterns: teleop.<org>, ops.<org>, mission.<org>, foxglove.<org>, console.<org>",
+    "Often behind no reverse proxy at all — direct port 8765 in firewall rules is the typical pattern",
+    "Foxglove Cloud (paid SaaS, app.foxglove.dev) is a different product with OAuth — out of scope for this exposure class"
+  ],
+  "pivot_paths": [
+    "WebSocket /listChannels → topic-list enumeration (capability fingerprint of attached robot)",
+    "WebSocket /listServices → service-list enumeration",
+    "WebSocket /listParameters → parameter enumeration (often reveals robot model, map filename, costmap config)",
+    "First server-message after handshake → serverInfo JSON (name, version, capabilities)",
+    "Channel-list with /move_base*, /move_group*, /cmd_vel topics → confirms Nav2 + MoveIt are attached behind the bridge",
+    "Channel-list with /image_raw or /camera/* topics → confirms live camera feed is reachable",
+    "Channel-list with /tf, /tf_static → kinematic chain reveals robot model and joint structure",
+    "Shadow-sweep on same IP: 9090 (rosbridge), 8080 (web_video_server), 9091 (rosapi), UDP 7400+ (DDS direct)",
+    "TLS cert subject-CN on :443 or :8765 with TLS enabled → VisorGraph operator-portfolio pivot"
+  ],
+  "vulnerabilities": [],
+  "do_not_call": [
+    "WebSocket 'publish' message on any robot control topic — robot moves",
+    "WebSocket 'advertise' message creating a new publisher on a control topic — sets up the move primitive",
+    "WebSocket 'callService' on any state-changing service (clear_costmap, reset_localization, set_param)",
+    "WebSocket 'setParameters' message — modifies live ROS parameters",
+    "Subscribing to high-bandwidth topics (camera, lidar, pointcloud) without need — operator-visible bandwidth spike",
+    "Connecting and holding a session — increments the bridge's connection-count metric the operator sees"
+  ],
+  "data_class": "robot capability surface + live sensor stream (camera, lidar, IMU, joint state, costmap) when subscribed; primary harm is unauthenticated motion command via publish message (kinetic-impact safety hazard); secondary: live operator situational awareness leak (facility interior, fleet positions, ongoing tasks)",
+  "restraint_notes": [
+    "Identity probe = WebSocket handshake only; read Sec-WebSocket-Protocol header and the first serverInfo frame; do not send subscribe",
+    "Channel list (/listChannels) is the read-only enumeration boundary at Stage 0c",
+    "Subscribing to data topics pulls live bandwidth and is operator-visible — channel list is sufficient at this stage",
+    "Never send publish, advertise, callService, or setParameters — any of these is the harm-side of the open-state finding",
+    "Connection itself increments the bridge's connection-count metric — keep sessions short; one handshake + listChannels + close is the discipline",
+    "Severity rationale: a Foxglove bridge exposing Nav2/MoveIt topics is remote-robot-control on the public internet; the open state is the headline finding",
+    "Foxglove Cloud (paid SaaS) is auth-on-default — only the self-hosted foxglove_bridge ROS package is in scope",
+    "Insight #40 watch-item: if foxglove_bridge ever adds a default token parameter, track which release fraction adopts it"
+  ],
+  "version_history_auth_relevant": {
+    "foxglove_bridge v0.5.x (2022)": "initial ROS package release; no auth; port 8765 default established",
+    "foxglove_bridge v0.6.x (2023)": "TLS / certfile / keyfile params added — encryption only, not auth",
+    "foxglove_bridge v0.7.x (2023-2024)": "ROS2 Iron / Jazzy compatibility improvements; no auth added",
+    "foxglove_bridge v0.8.x (2025)": "performance improvements; no auth added",
+    "Foxglove Cloud (paid SaaS, app.foxglove.dev)": "OAuth / org / role model — separate product, not the self-hosted bridge",
+    "2026-06-09 status": "no auth in self-hosted foxglove_bridge launch params"
+  },
+  "sources": [
+    "https://docs.foxglove.dev/docs/connecting-to-data/frameworks/ros2/",
+    "https://docs.foxglove.dev/docs/connecting-to-data/foxglove-websocket/",
+    "https://github.com/foxglove/ros-foxglove-bridge",
+    "https://github.com/foxglove/ws-protocol",
+    "https://foxglove.dev/blog",
+    "https://github.com/foxglove/foxglove-sdk",
+    "https://docs.ros.org/en/rolling/Tutorials/Advanced/Security/Introducing-ros2-security.html",
+    "[CANDIDATE —  Cat-X-ROS-Robotics OSINT Platoon Squad 4, 2026-06-09; doc-grounded, host-unverified]",
+    "AI-LLM-Infrastructure-OSINT/data/platform-intel/cat-x-ros-nav2-moveit-osint-2026-06-09.md"
+  ],
+  "status": "CANDIDATE"
+}

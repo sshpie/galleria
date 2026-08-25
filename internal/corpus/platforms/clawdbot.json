@@ -1,0 +1,219 @@
+{
+  "name": "Clawdbot / OpenClaw",
+  "platform": "clawdbot",
+  "display_name": "Clawdbot / OpenClaw (formerly Moltbot)",
+  "category": "agent_framework",
+  "github": "https://github.com/openclaw/openclaw",
+  "description": "Self-hosted personal AI assistant gateway. Single long-running process owns all channel connections (WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Matrix, Teams, 20+ others) and manages a WebSocket control plane at port 18789. Browser-based Control UI on the same port. Launched as Clawdbot Nov 2025, renamed Moltbot Jan 27 2026 (Anthropic trademark), renamed OpenClaw Jan 30 2026. 381k+ GitHub stars as of Apr 2026.",
+  "default_ports": [18789, 80, 443],
+  "protocols": ["http", "https", "ws", "wss"],
+  "tls_default": false,
+  "auth_default": "open-by-default",
+  "auth_default_note": "Gateway auth token is generated during onboarding for loopback access, but no auth enforcement exists on the Control UI when exposed publicly. http.title:\"Clawdbot Control\" + http.status:200 = 1,770 hits with ZERO HTTP 401s across the entire exposed population. The UI is a local admin dashboard designed for loopback — public exposure is accidental but extremely common.",
+  "auth_config_env": [
+    "OPENCLAW_GATEWAY_TOKEN",
+    "OPENCLAW_GATEWAY_PASSWORD",
+    "OPENCLAW_HOME",
+    "OPENCLAW_STATE_DIR",
+    "OPENCLAW_CONFIG_PATH",
+    "OPENCLAW_INCLUDE_ROOTS",
+    "OPENCLAW_LOG_LEVEL",
+    "OPENCLAW_LOAD_SHELL_ENV",
+    "OPENCLAW_EXEC_SHELL_SNAPSHOT",
+    "OPENCLAW_SANDBOX",
+    "OPENCLAW_IMAGE",
+    "OPENCLAW_HOME_VOLUME",
+    "OTEL_EXPORTER_OTLP_ENDPOINT"
+  ],
+  "auth_config_env_note": "CLAWDBOT_* and MOLTBOT_* legacy prefixes silently ignored as of 2026 rename. gateway.auth.token and gateway.auth.password are the openclaw.json config keys. remote.token/remote.password govern remote-client auth separately.",
+  "default_creds": [],
+  "config_file": "~/.openclaw/openclaw.json",
+  "config_format": "JSON5 (comments and trailing commas allowed)",
+  "sensitive_credential_paths": [
+    "~/.openclaw/credentials/",
+    "~/.openclaw/agents/<agentId>/agent/auth-profiles.json",
+    "~/.openclaw/secrets.json",
+    "~/.openclaw/.env"
+  ],
+  "install_tell": "npm install -g openclaw@latest && openclaw onboard --install-daemon; Docker: ghcr.io/openclaw/openclaw:latest on port 18789; config at ~/.openclaw/openclaw.json; daemon via launchd (macOS) or systemd user service (Linux); Node 24 or Node 22.19+ required.",
+  "api_paths": [
+    "/",
+    "/healthz",
+    "/readyz",
+    "/v1/models",
+    "/v1/embeddings",
+    "/v1/chat/completions",
+    "/api/v1/admin/rpc",
+    "/api/channels/",
+    "/tools/invoke"
+  ],
+  "rpc_methods": [
+    "config.schema.lookup",
+    "config.get",
+    "config.patch",
+    "config.apply",
+    "update.run",
+    "update.status",
+    "node.invoke",
+    "exec.approvals.set",
+    "operator.admin",
+    "operator.approvals"
+  ],
+  "misconfig_patterns": [
+    "Gateway bound to 0.0.0.0 without OPENCLAW_GATEWAY_TOKEN/PASSWORD set",
+    "dmPolicy=open combined with exec tool access — any inbound DM triggers agent tool invocation",
+    "allowFrom misconfigured as string instead of numeric ID (Telegram) — allowlist silently bypassed (GitHub issue #57888)",
+    "Config validation failure drops security settings to empty config {} — resets dmPolicy to insecure default (GitHub issue #5052)",
+    "tools.exec.host=gateway (bypasses Docker sandbox, runs exec on host directly)",
+    "exec.approvals.set=off (disables confirmation gates on shell exec)",
+    "Reverse proxy strips auth headers — gateway sees unauthenticated WS from trusted proxy",
+    "Docker volume mounts with wrong UID — container writes credentials world-readable",
+    "security=full + ask=off combination (intentional default for trusted setups, dangerous when publicly exposed)"
+  ],
+  "tool_integrations": [
+    "Shell (exec tool — arbitrary OS command execution on host or sandboxed)",
+    "Browser automation",
+    "Canvas (agent-driven visual workspace)",
+    "Gmail / email via Pub/Sub",
+    "Calendar",
+    "Cron jobs",
+    "Webhook integration",
+    "Discord / Slack actions",
+    "Session management",
+    "Nodes (iOS/Android pairing + voice)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Clawdbot Control\"",
+      "http.title:\"Clawdbot\"",
+      "http.title:\"OpenClaw\"",
+      "http.title:\"Moltbot Control\"",
+      "(\"Clawdbot\" OR \"OpenClaw\" OR \"Moltbot\") port:18789"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Clawdbot Control",
+        "OpenClaw",
+        "Moltbot",
+        "openclaw",
+        "clawdbot",
+        "gateway",
+        "lobster"
+      ],
+      "false_positive_check": "Verify page contains a gateway management UI element (session list, channel status, config tab) not just a string match. Check /healthz returns 200 with JSON body as secondary confirmation.",
+      "secondary_probe": {
+        "path": "/healthz",
+        "method": "GET",
+        "expected_status": 200,
+        "expected_content_type": "application/json"
+      }
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Clawdbot\"",
+    "strict": "http.title:\"Clawdbot Control\" http.status:200",
+    "version": "(\"Clawdbot\" OR \"OpenClaw\" OR \"Moltbot\") port:18789",
+    "html": "http.html:\"clawdbot\"",
+    "combined": "http.title:\"OpenClaw\" OR http.title:\"Clawdbot Control\" OR http.title:\"Moltbot Control\""
+  },
+  "shodan_population": {
+    "http.title:\"Clawdbot Control\"": 1770,
+    "http.title:\"Clawdbot\"": 1818,
+    "port:18789 (Clawdbot OR OpenClaw)": 166,
+    "http.html:\"clawdbot\"": 1933,
+    "openclaw (unfiltered, polluted)": 157812,
+    "measurement_date": "2026-06-26",
+    "auth_status": "ZERO HTTP 401s across 1,770 http.title:\"Clawdbot Control\" http.status:200 population"
+  },
+  "deployment_tells": [
+    "npm global install: which openclaw returns /usr/local/bin/openclaw or ~/.nvm/versions/node/.../bin/openclaw",
+    "Launchd plist at ~/Library/LaunchAgents/ai.openclaw.gateway.plist (macOS daemon install)",
+    "systemd user service at ~/.config/systemd/user/openclaw.service (Linux daemon install)",
+    "Docker: ghcr.io/openclaw/openclaw:latest image; compose project name openclaw",
+    "Config file: ~/.openclaw/openclaw.json (JSON5)",
+    "State dir: ~/.openclaw/ contains credentials/, agents/, sessions/, secrets.json",
+    "Process: node process named openclaw-gateway or openclaw with gateway subcommand",
+    "Node 24+ or Node 22.19+ runtime requirement",
+    "Railway, Zeabur, Vercel AI Gateway, Hostinger one-click deploy templates publicly documented"
+  ],
+  "pivot_paths": [
+    "/api/channels/ — enumerate connected channels (WhatsApp, Telegram, Slack etc)",
+    "/api/v1/admin/rpc config.get — full config dump including channel tokens and API key refs",
+    "~/.openclaw/agents/<agentId>/agent/auth-profiles.json — LLM provider API keys",
+    "~/.openclaw/credentials/ — channel bot tokens (Telegram, Discord, Slack, WhatsApp)",
+    "~/.openclaw/secrets.json — optional file-backed secrets store",
+    "node.invoke RPC — arbitrary tool invocation including exec on host"
+  ],
+  "vulnerabilities": [
+    {
+      "id": "CVE-2026-25253",
+      "name": "OpenClaw Auth Token Exfiltration via gatewayUrl leading to 1-Click RCE",
+      "cvss": 8.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+      "cwe": "CWE-669",
+      "description": "Control UI auto-trusts user-supplied gatewayUrl query param, opens WebSocket to attacker-controlled host, sends stored auth token. No WebSocket origin header validation. Attacker replays token, calls node.invoke to run arbitrary shell commands. Attack chain: exec.approvals.set=off disables confirmation, tools.exec.host=gateway escapes Docker sandbox.",
+      "affected_versions": "< 2026.1.29 (all Clawdbot and Moltbot releases)",
+      "fixed_version": "2026.1.29",
+      "published": "2026-02-01",
+      "patch_description": "Gateway URL confirmation modal requiring explicit user approval before connecting to new gateway URLs",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-25253",
+        "https://github.com/EQSTLab/CVE-2026-25253",
+        "https://www.sonicwall.com/blog/openclaw-auth-token-theft-leading-to-rce-cve-2026-25253"
+      ]
+    },
+    {
+      "id": "CANDIDATE-CONFIG-VALIDATION-DROP",
+      "name": "Config validation failure silently resets security settings to insecure defaults",
+      "description": "When loadConfig() fails validation (e.g. missing plugin manifests), returns empty config {} instead of erroring, silently resetting dmPolicy, allowFrom allowlist, and auth settings.",
+      "github_issue": "https://github.com/openclaw/openclaw/issues/5052",
+      "status": "CANDIDATE - no CVE assigned as of 2026-06-26"
+    },
+    {
+      "id": "CANDIDATE-ALLOWFROM-STRING-BYPASS",
+      "name": "Telegram allowFrom numeric ID mismatch allows allowlist bypass",
+      "description": "openclaw configure writes Telegram allowFrom as string type, but DM allowlist matching requires numeric IDs. Allowlist silently bypassed for all Telegram DMs.",
+      "github_issue": "https://github.com/openclaw/openclaw/issues/57888",
+      "status": "CANDIDATE - no CVE assigned as of 2026-06-26"
+    }
+  ],
+  "auth_evidence": "Population survey: http.title:\"Clawdbot Control\" http.status:200 = 1,770 hits, ZERO HTTP 401s across the entire population. Gateway default port 18789 shows 166 hits. Gateway docs state Control UI is local-only (http://127.0.0.1:18789) but public exposure is common via 0.0.0.0 bind, reverse proxy misconfiguration, or cloud one-click deploys. CrowdStrike found 42,000+ exposed instances with 93.4% auth bypass rate. Censys found 21,000+ over plain HTTP at CVE-2026-25253 disclosure. Tool integrations include shell exec (host or Docker sandbox), browser, email (Gmail Pub/Sub), calendar, cron. Largest confirmed unauth agent framework population on the internet.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "LLM provider API keys (billed to operator per request) — in auth-profiles.json",
+    "Shell exec access to host OS via exec tool (no sandbox by default for main session)",
+    "Channel bot credentials (Telegram, Discord, Slack, WhatsApp, Signal, iMessage tokens)",
+    "Email (Gmail Pub/Sub) and calendar integrations if configured",
+    "Browser sessions via browser automation tool",
+    "Session transcripts stored in ~/.openclaw/ readable by any local process",
+    "Cron job definitions (persistent scheduled commands)",
+    "Webhook secrets"
+  ],
+  "severity": "critical",
+  "severity_note": "Unauth access = shell exec on host via node.invoke + exec tool, LLM API key theft (operator-billed), full channel bot token exfiltration, email/calendar access. CVE-2026-25253 enables 1-click RCE from a single malicious URL click even when auth is configured. Largest unauth agent framework population on the internet.",
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "research_date": "2026-06-26",
+  "sources": [
+    "https://docs.openclaw.ai/",
+    "https://docs.openclaw.ai/gateway/configuration",
+    "https://docs.openclaw.ai/gateway/authentication",
+    "https://docs.openclaw.ai/gateway/security",
+    "https://docs.openclaw.ai/help/environment",
+    "https://docs.openclaw.ai/install/docker",
+    "https://docs.openclaw.ai/tools/exec",
+    "https://github.com/openclaw/openclaw",
+    "https://github.com/SSujitX/clawdbot-ui",
+    "https://nvd.nist.gov/vuln/detail/CVE-2026-25253",
+    "https://github.com/EQSTLab/CVE-2026-25253",
+    "https://www.sonicwall.com/blog/openclaw-auth-token-theft-leading-to-rce-cve-2026-25253",
+    "https://thehackernews.com/2026/02/openclaw-bug-enables-one-click-remote.html",
+    "https://socradar.io/blog/cve-2026-25253-rce-openclaw-auth-token/",
+    "https://github.com/openclaw/openclaw/issues/5052",
+    "https://github.com/openclaw/openclaw/issues/57888",
+    "CANDIDATE:  population survey 2026-06-26 — http.title:\"Clawdbot Control\" http.status:200 = 1,770 hits, ZERO 401s"
+  ]
+}

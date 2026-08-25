@@ -1,0 +1,83 @@
+{
+  "platform": "sillytavern",
+  "display_name": "SillyTavern",
+  "category": "llm_app_orchestration",
+  "default_ports": [8000],
+  "api_paths": [
+    "/api/extensions/delete",
+    "/api/extensions/update",
+    "/api/extensions/version",
+    "/api/extensions/branches",
+    "/api/settings/get",
+    "/csrf-token",
+    "/version",
+    "/proxy/:url"
+  ],
+  "auth_default": "off (basicAuthMode: false); network-exposure gate is whitelistMode, commonly disabled via securityOverride: true",
+  "auth_config_env": [
+    "basicAuthMode (config.yaml)",
+    "whitelistMode (config.yaml)",
+    "securityOverride (config.yaml)",
+    "listen (config.yaml)"
+  ],
+  "default_creds": [
+    {"user": "n/a", "pass": "n/a", "context": "No default credential pair -- basicAuthMode ships false. Operator risk is the whitelist/securityOverride gate being disabled entirely, not a copy-pasted password."}
+  ],
+  "install_tell": "node server.js  (default config.yaml: listen:false, whitelistMode:true, basicAuthMode:false, securityOverride:false -- operator must flip listen:true AND either keep whitelistMode or set securityOverride:true to expose)",
+  "misconfig_patterns": [
+    "listen:true + securityOverride:true + whitelistMode left true but whitelist.txt empty/0.0.0.0 -- full open exposure, vendor explicitly warns against this in docs",
+    "basicAuthMode left false on an internet-exposed instance -- no credential layer at all",
+    "Pre-fix versions vulnerable to CVE-2025-59159 (CVSS 9.7, full remote control of local AI instance)",
+    "Pre-fix versions vulnerable to unauthenticated path-traversal directory deletion via /api/extensions/delete (and /update, /version, /branches, /switch share the flawed pattern)",
+    "Pre-1.18.0 CORS proxy at /proxy/:url -- unauthenticated SSRF, no redirect validation, external server can redirect to internal resource",
+    "CVE-2026-44649 SSO auth bypass -- unauthenticated header injection logs in as any user including admin, given direct network access to the port"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"SillyTavern\"",
+      "http.title:\"SillyTavern\" port:8000",
+      "http.html:\"st-tailwind.css\""
+    ],
+    "active_probe": {
+      "path": "/version",
+      "method": "GET",
+      "response_markers": ["pkgVersion", "gitRevision"],
+      "false_positive_check": "response body must be JSON containing pkgVersion field; distinguishes from generic Node apps on 8000",
+      "auth_discriminator": "GET / status code is the real auth gate, NOT platform-match presence: 200 direct = whitelistMode/basicAuth off, likely unauthenticated (verify with GET /version returning pkgVersion JSON); 302 = redirected to a login/whitelist-block flow, gated. Ground-truthed 2026-07-13 on a 96-host cat-01 sample: 66/87 confirmed-platform hosts were 302-gated, 21/87 were 200-direct with unauth /version reads. A fingerprint that stops at title/path match without checking this status code will flatten the whole population to one auth state (false-negative on the unauth subset)."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"SillyTavern\"",
+    "strict": "http.title:\"SillyTavern\" port:8000",
+    "version": "http.title:\"SillyTavern\" http.html:\"st-tailwind.css\""
+  },
+  "deployment_tells": [
+    "Port 8000 serving title 'SillyTavern', noindex/nofollow meta robots tag (won't suppress Shodan crawl, only search-engine indexing)",
+    "Static assets st-tailwind.css, rm-groups.css, group-avatars.css, world-info.css",
+    "Preset panels referencing Kobold/NovelAI/OpenAI/TextGenerationWebUI backends -- distinguishes from a generic Node.js chat app"
+  ],
+  "pivot_paths": [
+    "GET /version -- pkgVersion + gitRevision, scopes exact CVE applicability",
+    "POST /api/extensions/delete -- unauthenticated path traversal directory deletion on unpatched versions",
+    "GET /proxy/:url -- unauthenticated SSRF via CORS proxy on pre-1.18.0",
+    "Header-injection SSO bypass (CVE-2026-44649) -- login as any user incl. admin with no prior auth, direct network access only",
+    "/api/settings/get -- exposes configured backend API keys/endpoints if operator stored them server-side rather than browser-local"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-59159 CVSS 9.7: full remote control of local AI instance",
+    "CVE-2026-44649: SSO authentication bypass via HTTP header injection -- unauthenticated attacker logs in as any user incl. admin",
+    "Unauthenticated path traversal / directory deletion via /api/extensions/delete (same flawed pattern in /update, /version, /branches, /switch)",
+    "CORS proxy SSRF via /proxy/:url, unauthenticated, no redirect validation, pre-1.18.0",
+    "CVE-2026-46372: SSRF via /api/search/searxng baseUrl param -- requires an authenticated low-priv session, not directly unauth"
+  ],
+  "sources": [
+    "https://docs.sillytavern.app/usage/remoteconnections/",
+    "https://docs.sillytavern.app/administration/config-yaml/",
+    "https://github.com/SillyTavern/SillyTavern/blob/release/default/config.yaml",
+    "https://securityonline.info/critical-flaw-cve-2025-59159-cvss-9-7-in-sillytavern-allows-full-remote-control-of-local-ai-instances/",
+    "https://www.thehackerwire.com/sillytavern-critical-sso-authentication-bypass-cve-2026-44649/",
+    "https://dailycve.com/sillytavern-unauthenticated-path-traversal-directory-deletion-cve-n-a-critical/",
+    "https://www.thehackerwire.com/sillytavern-ssrf-via-baseurl-in-api-search-searxng/",
+    "https://github.com/SillyTavern/SillyTavern/blob/release/public/index.html"
+  ]
+}

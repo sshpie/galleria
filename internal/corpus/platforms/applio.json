@@ -1,0 +1,94 @@
+{
+  "name": "Applio",
+  "slug": "applio",
+  "category": "voice-tts-conversational",
+  "description": "Applio (IAHispano/Applio) — a polished RVC (Retrieval-based Voice Conversion) fork focused on ease of use and performance. Gradio WebUI entry point app.py launches on default port 6969; converts and clones voices from short training data and, in client mode, mounts a FastAPI app at /api. Tabs cover inference, training, TTS, model download, and audio analysis. Built on the RVC pipeline (RMVPE/crepe pitch extraction, .pth timbre models + .index feature retrieval). Gradio provides no authentication unless auth= is set, which Applio does not by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "app.py's launch_gradio() calls Gradio launch() without auth=, so the WebUI on port 6969 is unauthenticated when server_name is 0.0.0.0. Applio also supports a --share flag that publishes a public *.gradio.live tunnel, and a client mode that mounts a FastAPI server at /api (additional unauthenticated REST surface). Any visitor can run inference, upload training audio, launch training, and use the built-in model-download tab to pull remote models. No login, token, or session in the default configuration.",
+  "default_ports": [
+    6969
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:6969 http.html:\"gradio\"",
+      "rationale": "Applio's non-default Gradio port 6969 is itself a strong narrowing signal; combined with the Gradio marker it is already fairly specific"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"gradio\" http.html:\"Applio\"",
+      "rationale": "Project name / branding rendered in the Gradio header; disambiguates Applio from upstream RVC and OpenVoice"
+    },
+    {
+      "tier": "strict",
+      "query": "port:6969 http.html:\"gradio\" http.html:\"Applio\" http.html:\"Inference\"",
+      "rationale": "Applio branding on its signature port 6969 plus the Inference tab label; near-unique to an Applio WebUI"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"Applio\" http.html:\"Download Model\" http.html:\"index rate\"",
+      "rationale": "Applio's model-download tab plus RVC index-rate parameter labels; identifies Applio even when moved off port 6969"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"Applio\" http.html:\"3.\" http.html:\"gradio\"",
+      "rationale": "Applio 3.x version marker in the header for version-targeted enumeration; adjust the version token per campaign"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 6969,
+    "http_path": "/config",
+    "title_contains": "Applio",
+    "response_body_contains": [
+      "gradio",
+      "Applio",
+      "Inference",
+      "Download Model",
+      "index rate",
+      "RMVPE"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "GET /info",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "GET /file=",
+    "POST /component_server",
+    "POST /api",
+    "GET /api/docs"
+  ],
+  "known_vulns": [
+    "Gradio WebUI launched without auth= — unauthenticated inference, training-audio upload, and training-job control on port 6969",
+    "Client mode mounts a FastAPI app at /api with no auth key — additional unauthenticated REST surface (and /api/docs schema disclosure)",
+    "--share mode publishes a public *.gradio.live tunnel bypassing host/cloud firewalls",
+    "Built-in model-download tab fetches remote model URLs server-side — SSRF-style fetch and supply-chain (malicious model) risk",
+    "Gradio CVE-2023-51449 — /file path traversal (Gradio <4.11.0) leaks arbitrary host files and /proc/self/environ",
+    "Gradio CVE-2024-1561 — arbitrary local file read via /component_server (Gradio 4.3-4.12)",
+    "Gradio SSRF CVE-2024-4325 / CVE-2024-47167 — /queue/join save_url_to_cache fetches attacker-controlled URLs (internal-network / cloud-metadata pivot)",
+    "No rate limiting — GPU compute exhaustion via automated inference/training at operator cost",
+    "Uploaded audio and trained .pth/.index voice models are readable/downloadable through the UI file components with no access control"
+  ],
+  "default_creds": [],
+  "risk_notes": "Applio is RVC with the friction removed — an approachable UI for cloning a voice from short training data — so an open 6969 instance lowers the bar for abuse further than raw RVC. (1) Non-consensual voice cloning / biometric-identity theft — any visitor uploads a target's audio, trains a .pth model, and generates converted speech in that voice; the built-in TTS tab adds text-to-cloned-voice directly. (2) Fraud / vishing / disinformation — the ease-of-use focus makes turnkey impersonation audio trivial to produce at operator GPU cost. (3) Model-download tab as SSRF / supply-chain vector — it fetches remote model URLs server-side, reachable for internal-network probing and for loading attacker-supplied models. (4) Training-data & model exposure — uploaded audio and trained .pth/.index models (downloadable through the file components and via Gradio file-read CVE-2023-51449 / CVE-2024-1561) are ready-made clone assets, and the CVEs also leak /proc/self/environ secrets. (5) FastAPI /api client mode adds an unauthenticated REST surface with its own /api/docs schema. (6) --share tunnels put the whole UI on the public internet under a throwaway gradio.live host. Applio shares the Gradio + RVC-parameter fingerprint with upstream RVC — disambiguate on the Applio branding and the model-download tab; port 6969 is itself a strong tell.",
+  "deployment_notes": "Python or Docker on CUDA GPU hosts; a one-click Windows/macOS/Linux installer and Colab notebooks are the dominant paths, so many exposed instances are hobbyist and some use --share (public gradio.live URLs invisible to port scanners). Port 6969 is the Applio convention (distinct from upstream RVC's 7865 and Gradio's default 7860), which makes port 6969 + Gradio a useful narrowing filter — but the port is configurable via --port / DEFAULT_PORT, so confirm on branding. Client mode (--api) mounts a FastAPI server at /api. HuggingFace Spaces host Applio and Applio-derived demos, publicly indexed with no auth. Because Applio tracks the RVC pipeline, exposed instances are commonly on Gradio 4.x builds within the file-read/SSRF CVE range.",
+  "docker_images": [
+    "ghcr.io/iahispano/applio",
+    "iahispano/applio"
+  ],
+  "github_repos": [
+    "IAHispano/Applio",
+    "IAHispano/Applio-RVC-Fork"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

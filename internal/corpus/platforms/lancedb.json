@@ -1,0 +1,55 @@
+{
+  "platform": "lancedb",
+  "display_name": "LanceDB",
+  "category": "vector_db",
+  "default_ports": [
+    8080
+  ],
+  "api_paths": [
+    "/v1/table/",
+    "/v1/table/{name}/describe/",
+    "/v1/table/{name}/query/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "LANCEDB_URI"
+  ],
+  "default_creds": [],
+  "install_tell": "lanced --host 0.0.0.0 --port 8080 --uri /data",
+  "misconfig_patterns": [
+    "Embedded mode: no listener — exposure is object-storage ACL (S3/GCS/Azure), not a port",
+    "lanced server mode: no auth in default config",
+    "S3-backed deployments: ACL misconfiguration exposes raw Lance files"
+  ],
+  "fingerprint": {
+    "passive": [],
+    "active_probe": {
+      "path": "/v1/table/",
+      "method": "GET",
+      "response_markers": [
+        "\"tables\""
+      ],
+      "false_positive_check": "response must be JSON array of table names — LanceDB server has no distinct header marker"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "",
+    "strict": "",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Embedded mode: no network listener — only observable via object storage access logs",
+    "Server mode: GET /v1/table/ returns table list without auth",
+    "Lance file format detectable in S3 buckets by .lance extension"
+  ],
+  "pivot_paths": [
+    "GET /v1/table/ → table list without auth (server mode)",
+    "GET /v1/table/{name}/describe/ → schema including vector dimension",
+    "S3/GCS object listing → .lance files → direct file access"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://lancedb.github.io/lancedb/guides/server/",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

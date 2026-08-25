@@ -1,0 +1,65 @@
+{
+  "platform": "abnormal-security",
+  "display_name": "Abnormal Security (Abnormal AI -- email security / inbound behavioral AI)",
+  "category": "ai-email-guardrail",
+  "subcategory": "inbound-behavioral-detection",
+  "default_ports": [443],
+  "api_paths": ["/", "/v1", "/api"],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Enterprise SaaS only (abnormalsecurity.com). Behavioral AI for inbound email: account-takeover, BEC, phishing, vendor-fraud detection via the Abnormal Behavior Engine. No self-host. Customer portals at portal.abnormalsecurity.com; demo/eval tenants at api.portal-demo-* pattern. Marketed under the AI-SOC / email-security incumbent tier, not a startup guardrail.",
+  "misconfig_patterns": [
+    "Demo/eval tenant (api.portal-demo-*) hypothesized weaker than prod -- DISCONFIRMED 2026-06-23: demo tier is also auth-on-default",
+    "No observed unauthenticated surface across 64 cert-visible hosts (14 live)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"abnormalsecurity.com\"",
+      "cert-CN portal/api.abnormalsecurity.com",
+      "enterprise WAF/CDN edge (no raw origin)"
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 443,
+      "host_header": "portal.abnormalsecurity.com",
+      "response_markers": ["auth redirect / 401 / 403 on all API paths", "no JSON data without session"],
+      "false_positive_check": "treat 200 marketing/SPA root as non-finding; require authenticated JSON data read for any exposure claim"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"abnormalsecurity.com\"",
+    "strict": "ssl:\"abnormalsecurity.com\" http.status:200 -http.title:\"Just a moment\"",
+    "version": "ssl.cert.subject.cn:\"api.portal-demo\""
+  },
+  "deployment_tells": [
+    "Always behind enterprise CDN/WAF; no exposed origin in 64-host sweep",
+    "Demo tenants share the prod auth posture (no demo-tier-weaker gap)",
+    "Incumbent-scale fleet -- contrast with startup Cat-33 siblings"
+  ],
+  "pivot_paths": [
+    "Cert-CN pivot via abnormalsecurity.com for customer-tenant subdomains",
+    "api.portal-demo-* enumeration (verified auth-on-default, low yield)"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane A (inbound behavioral detection / ingest-side). Incumbent, not startup.",
+  "validation_status": {
+    "verdict": "CLEAN",
+    "depth": "shodan -> scanner -> aimap -> VERIFY (200-with-data not obtainable without auth; auth-on-default confirmed)",
+    "coverage": "64 cert-visible hosts -> 14 live -> all auth-on-default",
+    "date": "2026-06-23",
+    "note": "Disconfirming case for the demo-tier-weaker hypothesis. Serves as a verified negative in the Cat-33 set."
+  },
+  "competitive_lane": {
+    "lane": "Lane A (inbound)",
+    "differentiator": "Behavioral-AI inbound detection at enterprise incumbent scale; no agent-action-control surface",
+    "siblings_in_lane": ["Proofpoint", "Microsoft Defender for Office 365"],
+    "siblings_adjacent": ["AegisAI (mislabeled inbound; actually agent-side)"]
+  },
+  "sources": [
+    "Cat-33 validation 2026-06-23: shodan harvest 64 hosts, scanner liveness 14, aimap 0 services, VERIFY auth-on-default",
+    "findings-breakdown.txt (Cat-33 validation/)",
+    "COVERAGE-AUDIT.md G-matrix (Abnormal = CLEAN, fully verified)"
+  ]
+}

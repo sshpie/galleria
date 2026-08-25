@@ -1,0 +1,68 @@
+{
+  "platform": "hiddenlayer",
+  "display_name": "HiddenLayer AI Detection & Response (AIDR / Model Scanner)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "HiddenLayer Inc (Austin TX, Series B 2024 led by M12)",
+  "apex": {
+    "corporate": "hiddenlayer.com",
+    "product": "hiddenlayer.ai"
+  },
+  "default_ports": [443],
+  "api_paths": [
+    "/detection/v1/interactions",
+    "/oauth2/token"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "OAuth2 client_credentials (HTTPBasicAuth client_id:client_secret -> JWT bearer)",
+  "auth_config_env": ["HIDDENLAYER_CLIENT_ID", "HIDDENLAYER_CLIENT_SECRET", "HIDDENLAYER_API_BASE", "HIDDENLAYER_AUTH_URL"],
+  "default_creds": [],
+  "default_api_base": "https://api.hiddenlayer.ai",
+  "default_auth_url": "https://auth.hiddenlayer.ai",
+  "install_tell": "LiteLLM guardrail_hooks/hiddenlayer wires the AIDR detection API; clients POST scan payloads to /detection/v1/interactions with JWT minted from OAuth2 client_credentials at auth.hiddenlayer.ai",
+  "misconfig_patterns": [
+    "Client_id and client_secret hardcoded in SPA bundles or public repos: OAuth2 client_credentials grant gives detection quota without per-user attribution.",
+    "Self-hosted enterprise edition documented but population is dark to public Shodan; cert-pivot via hiddenlayer.ai on operator infrastructure required."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"hiddenlayer.ai\"",
+      "ssl.cert.subject.cn:\"api.hiddenlayer.ai\"",
+      "ssl.cert.subject.cn:\"auth.hiddenlayer.ai\""
+    ],
+    "active_probe": {
+      "path": "/oauth2/token",
+      "method": "POST",
+      "port": 443,
+      "notes": "Verify-only via auth domain banner; do not exercise client_credentials grant"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"hiddenlayer.ai\"",
+    "strict": "ssl.cert.subject.cn:\"api.hiddenlayer.ai\"",
+    "version": "ssl.cert.subject.cn:\"auth.hiddenlayer.ai\""
+  },
+  "deployment_tells": [
+    "api.hiddenlayer.ai resolves Cloudflare (104.18.26.19/27.19)",
+    "auth.hiddenlayer.ai OAuth2 token endpoint",
+    "Corporate email infra on hiddenlayer.com (Google Workspace, DMARC p=quarantine)",
+    "Product/API tenancy on hiddenlayer.ai (DMARC p=none, no MX -- product-only apex)"
+  ],
+  "dmarc": {
+    "hiddenlayer.com": "p=quarantine rua=dmarcian",
+    "hiddenlayer.ai": "p=none rua=dmarcian (PRODUCT APEX HAS WEAKEST DMARC)"
+  },
+  "mx_provider": {
+    "hiddenlayer.com": "Google Workspace",
+    "hiddenlayer.ai": "NO MX (product apex)"
+  },
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://hiddenlayer.com/.well-known/security.txt (verify)",
+    "channel_observed": "dmarcian aggregation"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py",
+    "DNS dig 2026-06-07"
+  ]
+}

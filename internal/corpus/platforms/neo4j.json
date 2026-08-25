@@ -1,0 +1,67 @@
+{
+  "platform": "neo4j",
+  "display_name": "Neo4j",
+  "category": "vector_feature",
+  "default_ports": [
+    7474,
+    7687
+  ],
+  "api_paths": [
+    "/",
+    "/db/neo4j/tx/commit",
+    "/db/data/transaction/commit"
+  ],
+  "auth_default": "required",
+  "auth_config_env": [
+    "NEO4J_AUTH",
+    "NEO4J_dbms_security_auth__enabled"
+  ],
+  "default_creds": [
+    {
+      "user": "neo4j",
+      "pass": "neo4j",
+      "context": "initial credentials — forced password change on first login"
+    }
+  ],
+  "install_tell": "docker run -p 7474:7474 -p 7687:7687 neo4j:latest",
+  "misconfig_patterns": [
+    "NEO4J_AUTH=none disables authentication entirely",
+    "Default neo4j:neo4j credentials before password change",
+    "Vector index (Neo4j 5.13+) detectable via SHOW INDEXES (partial — may need auth)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Neo4j Browser\" port:7474",
+      "port:7474 \"neo4j\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "\"neo4j_version\"",
+        "neo4j_edition"
+      ],
+      "false_positive_check": "response JSON must include neo4j_version field — uniquely identifies Neo4j HTTP API"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Neo4j Browser\" port:7474",
+    "strict": "http.title:\"Neo4j Browser\" port:7474",
+    "version": "port:7474 \"neo4j_version\""
+  },
+  "deployment_tells": [
+    "GET :7474/ returns JSON with neo4j_version and neo4j_edition",
+    "Neo4j Browser UI accessible at :7474",
+    "Bolt wire at :7687 — try neo4j:neo4j before password change"
+  ],
+  "pivot_paths": [
+    "GET :7474/ → neo4j_version for CVE matching",
+    "SHOW INDEXES YIELD * WHERE type='VECTOR' → confirm AI workload (if auth off)",
+    "Bolt :7687 → neo4j:neo4j → MATCH (n) RETURN n LIMIT 5"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://neo4j.com/docs",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

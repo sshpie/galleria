@@ -1,0 +1,198 @@
+{
+  "platform": "superagi",
+  "display_name": "SuperAGI",
+  "category": "agent_framework",
+  "default_ports": [3000, 80, 443],
+  "api_paths": [
+    "/api/agents/get/project/{project_id}",
+    "/api/agents/create",
+    "/api/agents/schedule",
+    "/api/agents/stop/schedule",
+    "/api/agents/edit/schedule",
+    "/api/agents/get/schedule_data/{agent_id}",
+    "/api/agents/delete/{agent_id}",
+    "/api/agentexecutions/",
+    "/api/agentexecutions/get/agent/{agent_id}",
+    "/api/toolkits/get/list",
+    "/api/toolkits/",
+    "/api/tools/",
+    "/api/configs/",
+    "/api/organisation/",
+    "/api/project/",
+    "/api/users/",
+    "/api/resources/",
+    "/api/marketplace/",
+    "/api/knowledges/",
+    "/api/vector_dbs/",
+    "/api/vector_db_indices/",
+    "/api/api_key/",
+    "/api/models/",
+    "/api/analytics/",
+    "/validate-access-token",
+    "/validate-llm-api-key",
+    "/get/github_client_id",
+    "/user"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "ENV",
+    "JWT_SECRET_KEY",
+    "expiry_time_hours",
+    "ENCRYPTION_KEY",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "FRONTEND_URL"
+  ],
+  "default_creds": [],
+  "install_tell": "nginx proxy on :3000/:80/:443 reverse-proxying FastAPI backend on :8001 and Next.js GUI on :3000; HTML title 'SuperAGI'; /api/ path prefix routes to FastAPI via nginx rewrite; docker-compose services named super__postgres / super__redis / super_network",
+  "misconfig_patterns": [
+    "ENV=DEV (config_template default) disables JWT enforcement -- all requests authenticated as super6@agi.com",
+    "JWT_SECRET_KEY='secret' (config_template default) -- predictable signing key; tokens forgeable in PROD",
+    "ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456 (config_template default) -- static at-rest key; tool API keys decryptable",
+    "POSTGRES_PASSWORD=password (docker-compose default) for superagi user on super__postgres",
+    "CORS: allow_origins=['*'], allow_methods=['*'], allow_headers=['*'] -- fully permissive in main.py",
+    "ENV variable absent/unset defaults to DEV mode (get_config second arg = 'DEV')",
+    "Registration open with no admin approval in DEV mode",
+    "API keys for all integrated tools (OpenAI, GitHub, Slack, Stability, Google, Jira, HuggingFace, Replicate) stored in postgres encrypted with static ENCRYPTION_KEY"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"SuperAGI\"",
+      "http.html:\"SuperAGI\"",
+      "Next.js SPA root; _next/static/ asset paths in HTML",
+      "nginx Server header on proxy tier; uvicorn on backend tier",
+      "nginx/default.conf: /api rewrites to FastAPI backend:8001"
+    ],
+    "active_probe": {
+      "path": "/api/toolkits/get/list",
+      "method": "GET",
+      "expected_status": 200,
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "body_contains", "value": "tools"},
+        {"type": "json_field", "field": "id"}
+      ],
+      "auth_bypass_tell": "200-with-data with no Authorization header = ENV=DEV mode confirmed; any 401 = PROD mode",
+      "notes": "check_auth() in superagi/helper/auth.py skips jwt_required() when ENV != 'PROD'. get_current_user() returns hardcoded super6@agi.com in DEV mode. Every authenticated endpoint becomes unauthenticated."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"SuperAGI\"",
+    "strict": "http.title:\"SuperAGI\" http.html:\"/api/\"",
+    "version": null
+  },
+  "deployment_tells": [
+    "Exclusively nginx-proxied -- no direct backend port in standard deploy (backend on :8001 container-internal only)",
+    "docker-compose network: super_network (bridge); services: backend, celery, gui, super__redis, super__postgres, proxy",
+    "Backend: uvicorn main:app --host 0.0.0.0 --port 8001 (comment in main.py)",
+    "Celery worker for async agent task execution (entrypoint_celery.sh)",
+    "Weaviate embedded vector store default (WEAVIATE_USE_EMBEDDED=true in config_template)",
+    "External resource dir mounted at /app/ext (default ./workspace); agent input/output at workspace/input|output/{agent_id}/",
+    "wait-for-it.sh on super__postgres:5432 before backend start"
+  ],
+  "pivot_paths": [
+    "/api/configs/ -- stored LLM/tool API keys (encrypted with ENCRYPTION_KEY; decryptable if default key)",
+    "/api/knowledges/ -- vector DB knowledge base contents",
+    "/api/vector_dbs/ -- configured vector DB endpoints and credentials",
+    "/api/resources/ -- agent workspace files (input/output per agent execution)",
+    "/api/agentexecutions/get/agent/{agent_id} -- full execution history with tool call outputs",
+    "/api/toolkits/get/list -- enumerate installed toolkits (shell, code, browser, email, etc.)",
+    "/api/api_key/ -- programmatic API keys for the SuperAGI external API",
+    "/api/models/ -- configured LLM model endpoints and API keys"
+  ],
+  "vulnerabilities": [
+    {
+      "id": "SUPERAGI-DEV-AUTH-BYPASS",
+      "title": "ENV=DEV default disables JWT -- all routes authenticated as super6@agi.com",
+      "severity": "critical",
+      "details": "check_auth() in superagi/helper/auth.py: 'env = get_config(\"ENV\", \"DEV\"); if env == \"PROD\": Authorize.jwt_required()'. config_template.yaml ships ENV='DEV'. Any deployment copying config_template without setting ENV=PROD has zero authentication. get_current_user() returns hardcoded User(email='super6@agi.com') in DEV mode.",
+      "source_path": "superagi/helper/auth.py, config_template.yaml"
+    },
+    {
+      "id": "SUPERAGI-STATIC-JWT-SECRET",
+      "title": "Static JWT signing key 'secret'",
+      "severity": "high",
+      "details": "config_template.yaml: JWT_SECRET_KEY='secret'. In PROD mode this is the signing key for all issued tokens. Known value = arbitrary token forgery.",
+      "source_path": "config_template.yaml"
+    },
+    {
+      "id": "SUPERAGI-STATIC-ENCRYPTION-KEY",
+      "title": "Static ENCRYPTION_KEY for at-rest tool API key storage",
+      "severity": "high",
+      "details": "config_template.yaml: ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456. All tool API keys (OpenAI, GitHub, Slack, Stability, Google, Jira, HuggingFace, Replicate) are encrypted with this key at rest in postgres. Default key = plaintext recovery without DB auth bypass.",
+      "source_path": "config_template.yaml"
+    },
+    {
+      "id": "SUPERAGI-DEFAULT-PG-CREDS",
+      "title": "Postgres default credentials superagi/password",
+      "severity": "medium",
+      "details": "docker-compose.yaml POSTGRES_USER=superagi / POSTGRES_PASSWORD=password / POSTGRES_DB=super_agi_main. Port 5432 commented out by default but frequently exposed in cloud deploys.",
+      "source_path": "docker-compose.yaml"
+    },
+    {
+      "id": "SUPERAGI-CORS-WILDCARD",
+      "title": "Wildcard CORS on FastAPI backend",
+      "severity": "medium",
+      "details": "main.py: CORSMiddleware allow_origins=['*'], allow_methods=['*'], allow_headers=['*']. Any origin can make cross-site requests to the API including in DEV-mode-bypass context.",
+      "source_path": "main.py"
+    }
+  ],
+  "auth_evidence": "superagi/helper/auth.py check_auth(): 'env = get_config(\"ENV\", \"DEV\"); if env == \"PROD\": Authorize.jwt_required()'. get_current_user(): 'if env == \"DEV\": email = \"super6@agi.com\"'. config_template.yaml: ENV='DEV'. Conclusion: default deploy = zero auth; all endpoints map to hardcoded user.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Stored LLM provider API keys (OpenAI, PaLM, Replicate, HuggingFace) -- encrypted with ENCRYPTION_KEY at rest in postgres",
+    "GitHub OAuth tokens and personal access tokens",
+    "Slack bot tokens",
+    "Stability AI API keys",
+    "Google API keys (Search, Gmail) and credentials",
+    "Jira API tokens and instance URLs",
+    "Agent execution history including shell/code/browser tool outputs",
+    "Workspace files at /app/ext -- per-agent input/output files",
+    "Weaviate embedded vector store (knowledge base embeddings and source docs)",
+    "PostgreSQL super_agi_main database -- agent configs, org/user records, all tool API keys",
+    "JWT tokens signed with default 'secret' key -- forgeable"
+  ],
+  "sources": [
+    {
+      "url": "https://github.com/TransformerOptimus/SuperAGI",
+      "type": "primary",
+      "status": "CONFIRMED"
+    },
+    {
+      "url": "https://github.com/TransformerOptimus/SuperAGI/blob/master/superagi/helper/auth.py",
+      "type": "auth_source",
+      "status": "CONFIRMED",
+      "notes": "check_auth() DEV-mode JWT bypass; get_current_user() hardcoded email super6@agi.com in DEV"
+    },
+    {
+      "url": "https://github.com/TransformerOptimus/SuperAGI/blob/master/config_template.yaml",
+      "type": "config_source",
+      "status": "CONFIRMED",
+      "notes": "ENV=DEV, JWT_SECRET_KEY=secret, ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456, POSTGRES_PASSWORD=password"
+    },
+    {
+      "url": "https://github.com/TransformerOptimus/SuperAGI/blob/master/docker-compose.yaml",
+      "type": "deploy_source",
+      "status": "CONFIRMED",
+      "notes": "nginx proxy :3000->:80; backend:8001 and gui:3000 container-internal; postgres/redis unexposed by default"
+    },
+    {
+      "url": "https://github.com/TransformerOptimus/SuperAGI/blob/master/nginx/default.conf",
+      "type": "deploy_source",
+      "status": "CONFIRMED",
+      "notes": "/ -> gui:3000; /api -> backend:8001 with rewrite stripping /api prefix"
+    },
+    {
+      "url": "https://github.com/TransformerOptimus/SuperAGI/blob/master/main.py",
+      "type": "source",
+      "status": "CONFIRMED",
+      "notes": "FastAPI app init, CORS wildcard, router mounts, uvicorn comment --port 8001"
+    },
+    {
+      "url": " cat-agent-platforms survey 2026-06-19",
+      "type": "survey",
+      "status": "CONFIRMED",
+      "notes": "15 hosts via http.title:SuperAGI; 2 unauth DEV-mode instances confirmed live at 13.211.151.148, 13.211.69.148; mostly :443 AWS reverse-proxied"
+    }
+  ]
+}

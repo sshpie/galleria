@@ -1,0 +1,60 @@
+{
+  "platform": "vearch",
+  "display_name": "Vearch (JD.com)",
+  "category": "vector_db",
+  "default_ports": [
+    8817,
+    9001
+  ],
+  "api_paths": [
+    "/dbs",
+    "/dbs/{db}/spaces/{space}",
+    "/dbs/{db}/spaces/{space}/search"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8817:8817 -p 9001:9001 vearch/vearch:latest all",
+  "misconfig_patterns": [
+    "skip_auth=true is the DEFAULT (auth bypassed) — /dbs and all data endpoints open when reachable; FIX is skip_auth=false. Confirmed against config.toml.example at HEAD and v3.2.7 tag.",
+    "GET /dbs returns success + all database names without credentials",
+    "JD.com origin — common in CN cloud deployments (Aliyun, Huawei Cloud)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:vearch",
+      "http.html:\"cluster_name\" http.html:vearch"
+    ],
+    "active_probe": {
+      "path": "/dbs",
+      "method": "GET",
+      "response_markers": [
+        "\"code\":0",
+        "\"msg\":\"success\"",
+        "\"data\""
+      ],
+      "false_positive_check": "response must include code:0, msg:success, and data array — unique to Vearch API format"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:vearch",
+    "strict": "http.html:vearch http.html:\"cluster_name\"",
+    "version": "http.html:vearch http.html:\"build_version\"",
+    "_note": "port:8817 \"vearch\" returns 0 on Shodan web UI (2026-06-27). Vearch is banner/port-dark: real deployments front it with nginx on :80/:443 and firewall native 8817/9001. http.html:vearch is the only working discovery path. Confirmed live: 47.89.253.233:80 (v3.2.7, AS45102 Alibaba) — cluster identity + version leak unauth, data ports firewalled."
+  },
+  "deployment_tells": [
+    "GET /dbs returns {code:0, msg:success, data:[...]} without auth",
+    "Port 8817 is Vearch-specific",
+    "Chinese operator pattern: Aliyun/Huawei/Tencent ASNs"
+  ],
+  "pivot_paths": [
+    "GET /dbs → all database names without auth",
+    "GET /dbs/{db}/spaces/{space} → space schema + vector field config",
+    "POST /dbs/{db}/spaces/{space}/search → vector search without auth"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://vearch.readthedocs.io",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

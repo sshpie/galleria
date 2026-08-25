@@ -1,0 +1,76 @@
+{
+    "platform": "redisinsight",
+    "display_name": "RedisInsight (Redis GUI / Management UI)",
+    "category": "database_admin_ui",
+    "default_ports": [
+        5540,
+        8001,
+        5000
+    ],
+    "api_paths": [
+        "/api/instance/",
+        "/api/databases",
+        "/api/databases/{id}/info",
+        "/api/databases/{id}/keys",
+        "/api/databases/{id}/keys/{key}",
+        "/api/databases/{id}/cli/send-command",
+        "/api/settings"
+    ],
+    "auth_default": "none",
+    "auth_config_env": [
+        "RI_AUTH",
+        "RITRUSTEDORIGINS"
+    ],
+    "default_creds": [],
+    "install_tell": "docker run -p 5540:5540 redis/redisinsight:latest  (v1.x/early v2.x: -p 8001:8001)",
+    "misconfig_patterns": [
+        "v1.x: NO authentication whatsoever — full Redis management interface exposed",
+        "v2.x < 2.50: no auth by default; optional password added later, not enforced",
+        "GET /api/databases returns connected Redis instances with plaintext AUTH passwords (Insight #61)",
+        "POST /api/databases/{id}/cli/send-command = arbitrary Redis command execution (CONFIG GET/SET, KEYS *, DUMP)",
+        "Pivots to connected Redis even when Redis :6379 itself is firewalled"
+    ],
+    "fingerprint": {
+        "passive": [
+            "http.title:\"RedisInsight\"",
+            "http.title:\"Redis Insight\""
+        ],
+        "active_probe": {
+            "path": "/api/instance/",
+            "method": "GET",
+            "response_markers": [
+                "\"version\"",
+                "RedisInsight"
+            ],
+            "false_positive_check": "title-substring 'Redis Insight' (space) is tokenized by Shodan and over-matches; require 200-with-data on /api/instance or /api/databases before labeling. Port alone is never sufficient (population spans 40+ ports)."
+        }
+    },
+    "shodan_dorks": {
+        "basic": "http.title:\"RedisInsight\"",
+        "strict": "http.title:\"Redis Insight\"",
+        "version": "http.title:\"Redis Insight\" \"version\""
+    },
+    "deployment_tells": [
+        "Title bucket split: 'RedisInsight' (no space, v1.x/v2.x) vs 'Redis Insight' (space, v3.x rebrand) — two distinct Shodan populations",
+        "v3.x builds serve title 'Redis Insight' (space); v2 Electron 'dark' population catchable via 'X-Powered-By: Express' + 'Content-Length: 761'",
+        "Population relocates heavily off default ports — observed on 80,81,443,3333,5540,5542,5543,5544,6380,7000,7001,8000-8013,8080-8082,8091,8888,9000,9001,9082,9096,9251,9999,10040,12340,13333,18001,18080,20000"
+    ],
+    "pivot_paths": [
+        "GET /api/databases → connected Redis hostnames/ports/plaintext passwords",
+        "GET /api/databases/{id}/info → Redis INFO (version, config, connected clients)",
+        "POST /api/databases/{id}/cli/send-command → arbitrary Redis command exec",
+        "GET /api/settings → application settings incl. stored credentials"
+    ],
+    "vulnerabilities": [
+        "CVE-2021-4398 (XSS, v1.x)",
+        "Unauth data access — design decision, not a CVE; widely observed at population scale"
+    ],
+    "harvest_notes": [
+        "Flat title dork caps at ~200 paginated results (total-results claims 842 for 'Redis Insight'); country-split (country:US, country:DE, ...) breaks the cap and paginates each sub-bucket fully.",
+        "facet=port and facet=country are credit-free and drive both the cap-break split and the scan-phase --ports."
+    ],
+    "sources": [
+        "https://redis.io/docs/latest/operate/redisinsight/",
+        "[CONFIRMED —  RedisInsight survey; 953-host live corpus observed 2026-07-20; 824 net-new via facet-split cap-break]"
+    ]
+}

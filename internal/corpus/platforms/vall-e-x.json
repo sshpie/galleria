@@ -1,0 +1,85 @@
+{
+  "name": "VALL-E-X",
+  "slug": "vall-e-x",
+  "category": "voice-tts-conversational",
+  "description": "Open-source implementation of Microsoft's VALL-E X zero-shot cross-lingual TTS and voice cloning (Plachtaa/VALL-E-X). Clones a voice from a 3-10s reference clip (with optional Whisper auto-transcription) and synthesizes English/Chinese/Japanese speech in that timbre. Self-hosted via a Gradio web UI launched with `python -X utf8 launch-ui.py`, default http://localhost:7860/. Archived upstream (read-only Nov 2025) at ~7.9k stars; HF-Space clones and forks run the identical Gradio surface.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in launch-ui.py — Gradio launch() is called without the auth= tuple, leaving the voice-cloning UI, reference-audio upload/recording, and prompt-preset management fully open on port 7860. No key gates synthesis. Operators must bind localhost or reverse-proxy; the README simply directs users to the local Gradio URL. Gradio share=True (gradio.live) tunnels are a common accidental public-exposure path for the demo.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio_config\"",
+      "rationale": "Gradio's inline window.gradio_config JSON blob is the http.html-visible signal past the SPA shell; broad Gradio-on-7860 net to narrow by VALL-E-X labels."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"VALL-E\"",
+      "rationale": "VALL-E / VALL-E-X app title or markdown header rendered into gradio_config on the index page; direct name match for unmodified deployments."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"make prompt\"",
+      "rationale": "'Make prompt' / 'make prompt from audio' is VALL-E-X's distinctive voice-prompt-creation tab label surfaced in gradio_config; separates it from generic Gradio TTS demos."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"infer from prompt\" http.html:\"accent\"",
+      "rationale": "'infer from prompt' plus the accent/language selector labels co-occur only in the VALL-E-X UI; very high precision."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"gradio_config\" http.html:\"VALL-E-X\" http.html:\"Whisper\"",
+      "rationale": "Whisper auto-transcription toggle presence indicates the full-featured build; use to segment complete deployments for targeted enumeration."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "VALL-E-X",
+    "response_body_contains": [
+      "gradio_config",
+      "VALL-E",
+      "make prompt",
+      "infer from prompt",
+      "accent"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /",
+    "GET /config",
+    "POST /api/predict",
+    "POST /run/predict",
+    "POST /queue/join",
+    "GET /queue/data",
+    "POST /upload",
+    "GET /info",
+    "GET /gradio_api/info"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated access to zero-shot voice cloning, reference-audio upload/recording, and synthesis on port 7860",
+    "Gradio file-component path-traversal / arbitrary-file-read CVEs (CVE-2024-1561 and related) apply to exposed launch-ui.py instances on vulnerable Gradio versions",
+    "Zero-shot cloning from a 3-10s clip — trivially low barrier to impersonation; open UI = turnkey deepfake generator",
+    "Unrestricted audio upload with no size/MIME validation — GPU/VRAM and disk DoS",
+    "Saved voice prompts (.npz) accumulate on the host; exposed customs/ directory disclosure leaks previously-cloned voices",
+    "share=True gradio.live tunnels publish the UI publicly with no auth",
+    "gradio_config / /config disclose component structure and referenced local model/prompt filenames"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Turnkey non-consensual voice cloning — a few seconds of a target's audio plus the open UI yields cross-lingual impersonation speech; a direct vishing/fraud, disinformation, and harassment surface. (2) Cloned-voice-prompt exfiltration — the customs/ prompt cache holds .npz voice embeddings of every voice the operator (or prior visitors) cloned; disclosure leaks reusable identity artifacts. (3) Compute theft — open GPU synthesis automatable via /run/predict at operator cost. (4) Gradio-version file read — chaining a Gradio path-traversal CVE yields arbitrary file read of weights, prompts, and adjacent secrets. (5) share-tunnel exposure bypasses network controls the operator assumed were in place.",
+  "deployment_notes": "CUDA GPU host (min ~6GB VRAM, Python 3.10). The single network surface is the launch-ui.py Gradio app on :7860. SHODAN VISIBILITY CAVEAT: Gradio SPA — rendered UI text is JS-only and http.html-blind; pivot on the inline window.gradio_config JSON blob (indexed by Shodan/Censys) plus VALL-E-X-specific tab labels ('make prompt', 'infer from prompt'). Censys services.http.response.html_title 'Gradio' + body substring match on gradio_config + 'VALL-E' is the reliable cross-source method. Upstream archived; HF-Space redeployments and forks constitute the live population.",
+  "docker_images": [],
+  "github_repos": [
+    "Plachtaa/VALL-E-X"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

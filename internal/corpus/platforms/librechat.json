@@ -1,0 +1,149 @@
+{
+  "platform": "librechat",
+  "display_name": "LibreChat",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    3080,
+    8000,
+    7700,
+    27017,
+    5432
+  ],
+  "api_paths": [
+    "/api/config",
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/endpoints",
+    "/api/models",
+    "/api/banner",
+    "/api/search/enable",
+    "/api/files",
+    "/api/agents",
+    "/api/presets",
+    "/api/convos"
+  ],
+  "auth_default": "configurable-default-on",
+  "auth_config_env": [
+    "ALLOW_REGISTRATION",
+    "ALLOW_EMAIL_LOGIN",
+    "ALLOW_SOCIAL_LOGIN",
+    "ALLOW_SOCIAL_REGISTRATION",
+    "ALLOW_UNVERIFIED_EMAIL_LOGIN",
+    "ALLOW_PASSWORD_RESET",
+    "JWT_SECRET",
+    "JWT_REFRESH_SECRET",
+    "CREDS_KEY",
+    "CREDS_IV",
+    "SESSION_EXPIRY",
+    "REFRESH_TOKEN_EXPIRY",
+    "LDAP_URL",
+    "OPENID_*",
+    "SAML_*"
+  ],
+  "default_creds": [
+    {
+      "user": "(none shipped)",
+      "pass": "(none shipped)",
+      "context": "No default admin account ships. The first self-registered user becomes admin (docs: 'the first user created becomes the admin'). Risk is the OPEN registration gate plus first-user-wins admin assignment, not a hardcoded credential."
+    },
+    {
+      "user": "JWT_SECRET",
+      "pass": "16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef",
+      "context": ".env.example ships this exact JWT signing secret (and JWT_REFRESH_SECRET eaa5191f..., CREDS_KEY f34be427..., CREDS_IV e2341419...). Operators who copy .env.example and never rotate run forgeable session tokens and repo-decryptable stored upstream API keys."
+    }
+  ],
+  "install_tell": "git clone https://github.com/danny-avila/LibreChat.git && cd LibreChat && cp .env.example .env && docker compose up -d   # then browse http://localhost:3080",
+  "misconfig_patterns": [
+    "ALLOW_REGISTRATION=true left at default on an internet-exposed port -> anyone self-registers; first registrant becomes admin if operator hasn't yet",
+    "JWT_SECRET/JWT_REFRESH_SECRET/CREDS_KEY/CREDS_IV left at the published .env.example values -> forgeable sessions + decryptable stored provider API keys",
+    "mongodb --noauth exposed to a shared/over-permissive network -> direct datastore read",
+    "rag_api / vectordb / meilisearch ports published to the host instead of kept on the internal compose network",
+    "MCP server / Actions / custom-endpoint features enabled without actions.allowedDomains or private-IP filtering -> SSRF + RCE chain",
+    "Outdated build (<= 0.8.3) exposed -> MCP env-var-injection root RCE reachable by any registered user"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"LibreChat\"",
+      "http.html:\"LibreChat - An open source chat application with support for multiple AI models\"",
+      "http.html:\"assets/favicon-32x32.png\""
+    ],
+    "active_probe": {
+      "path": "/api/config",
+      "method": "GET",
+      "response_markers": [
+        "\"appTitle\":\"LibreChat\"",
+        "\"registrationEnabled\":true",
+        "\"emailLoginEnabled\"",
+        "\"socialLogins\"",
+        "\"openidLoginEnabled\"",
+        "\"interface\"",
+        "\"buildInfo\"",
+        "\"modelSpecs\""
+      ],
+      "false_positive_check": "The HTML title \"LibreChat\" alone is weak (could collide with forks, mirrors, or pages that merely mention LibreChat). Confirm by GET /api/config (no auth needed) and require the JSON to contain the LibreChat-unique field cluster together: appTitle + registrationEnabled + emailLoginEnabled + socialLogins + openidLoginEnabled + buildInfo. That object shape is vendor-unique. A generic chat app or a reverse-proxy error page will not return this exact JSON schema. Also distinguish a true LibreChat backend from a static clone of the SPA: the clone serves index.html but /api/config returns 404/HTML, not the JSON object. registrationEnabled value (true/false) is the per-deployment posture read, not the fingerprint."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"LibreChat\"",
+    "strict": "http.title:\"LibreChat\" http.html:\"favicon-32x32.png\" port:3080",
+    "version": "http.title:\"LibreChat\" http.html:\"buildInfo\""
+  },
+  "deployment_tells": [
+    "Port 3080 serving HTML title 'LibreChat'",
+    "GET /api/config returns the LibreChat JSON field cluster (appTitle/registrationEnabled/buildInfo) with no auth",
+    "Companion containers from registry.librechat.ai: librechat-dev, librechat-rag-api-dev-lite",
+    "Sidecar services: meilisearch (getmeili/meilisearch, port 7700), pgvector vectordb (pgvector/pgvector, 5432), mongo:8.0 with --noauth (27017), rag_api on 8000",
+    "buildInfo.commit / buildInfo.branch in /api/config reveals the running build for CVE scoping",
+    "Fronting reverse proxy commonly maps 80/443 -> 3080 (nginx/traefik per docs deploy guides)"
+  ],
+  "pivot_paths": [
+    "GET /api/config (unauth) -> read appTitle, registrationEnabled, socialLogins, openid/saml/ldap flags, buildInfo (version for CVE scoping), and modelSpecs system prompts / internal endpoint names",
+    "GET /api/banner and /api/endpoints (read provider/endpoint config exposed pre-auth where applicable)",
+    "Read registrationEnabled:true to confirm the open-registration posture WITHOUT registering (names are the finding; do not create an account on a third-party host)",
+    "Favicon hash + buildInfo to cluster instances by operator/version across the harvested IP set",
+    "Cross-reference buildInfo.branch/commit against the GHSA list to scope which instances are pre-fix for the MCP-RCE / SSRF chain"
+  ],
+  "vulnerabilities": [
+    "CVE-2026-32625 / GHSA-cxhj-j78r-p88f (CVSS 9.8 Critical) — MCP stdio environment-variable injection -> authenticated RCE as root in the Docker container; any registerable user can reach it; affects <= 0.8.3",
+    "GHSA-4pcc-j6m6-wcwx (Critical) — Server secrets exfiltration via MCP server URL injection",
+    "CVE-2025-69222 / GHSA-rgjq-4q58-m3q8 (High SSRF) — Actions feature lacks domain restriction in default config; fixed 0.8.2-rc2 via actions.allowedDomains; affects 0.8.1-rc2",
+    "GHSA-gc9r-88c3-7qhq (High SSRF) — user-provided custom endpoint baseURL has no private-IP validation -> cloud metadata / internal reach",
+    "GHSA-gvpj-vm2f-2m23 (High) — missing resource-parameter validation in MCP OAuth flow",
+    "CVE-2026-44653 — agent permission bypass; CVE-2026-31942 — IDOR (access-control cluster with CVE-2026-32625)",
+    "GHSA-5ccx-4r3h-9qc7 — insufficient access control on agent permission queries",
+    "GHSA-6vqg-rgpm-qvf9 (Moderate) — shared MCP server view leaks decrypted admin secrets",
+    "GHSA-qrm5-r67f-6692 (Moderate) — arbitrary file write via execute_code artifact filename traversal",
+    "GHSA-g445-9wq6-jf3v — missing rate limiting (incomplete fix for CVE-2025-7105); GHSA-8892-xj8q-59xc — IDOR message deletion (incomplete fix for CVE-2024-41703); GHSA-52f6-fqwv-jccf — Multer missing file-size limits (incomplete fix for CVE-2024-11171)",
+    "CVE-2024-11173 — open registration enables unauthenticated attacker to create an account (the registration-gate exposure underpinning the authenticated-RCE chain)",
+    "GHSA-3phr-62qf-cxf3 (Moderate) — stored XSS via unescaped image alt text in markdown artifact preview",
+    "Info disclosure (issue #12688) — /api/config exposes modelSpecs/system-prompts to unauthenticated users (not yet a CVE)"
+  ],
+  "auth_evidence": "Default `.env.example` (the file the docs' quickstart copies verbatim: `cp .env.example .env`) ships `ALLOW_EMAIL_LOGIN=true` and `ALLOW_REGISTRATION=true` with `HOST=localhost PORT=3080`. The official docker quickstart docs state: \"you'll see the login page where you can register your account - the first user created becomes the admin.\" So authentication IS forced at the UI/chat layer (no anonymous chat; login required), which makes the base posture configurable-default-on. The load-bearing caveat: registration is OPEN by default and there is NO admin-approval gate and NO privileged first-run setup token. On a fresh internet-exposed instance the FIRST self-registered user becomes admin; if the operator has not yet registered, an attacker who reaches the port first claims admin. `.env.example` also ships SHARED, PUBLISHED-IN-REPO default JWT_SECRET / JWT_REFRESH_SECRET / CREDS_KEY / CREDS_IV values that many operators never rotate (forgeable sessions / decryptable stored API keys). docker-compose.yml runs mongodb with `mongod --noauth`, so the backing datastore is unauthenticated by container default (only network-isolated, not access-controlled).",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys (OpenAI/Anthropic/Azure/Google/etc.) stored encrypted with CREDS_KEY/CREDS_IV — repo-default key values are decryptable if operator never rotated .env.example",
+    "Unauthenticated /api/config leaks modelSpecs = full system prompts for every configured model, internal/custom endpoint names, and infrastructure config (GitHub issue #12688)",
+    "Ingested RAG documents and uploaded files (rag_api + pgvector vectordb) — business documents, potential PII",
+    "Conversation history and saved prompts/presets for all users once an account is obtained",
+    "Agent / MCP server definitions (decrypted admin secrets leak via shared MCP view, GHSA-6vqg-rgpm-qvf9; secrets exfil via MCP URL injection, GHSA-4pcc-j6m6-wcwx)",
+    "Mongodb runs --noauth — full conversation/user store readable to anyone with container/network reach",
+    "Forgeable user/admin sessions if default JWT_SECRET unrotated"
+  ],
+  "sources": [
+    "https://github.com/danny-avila/LibreChat/blob/main/.env.example",
+    "https://github.com/danny-avila/LibreChat/blob/main/docker-compose.yml",
+    "https://www.librechat.ai/docs/local/docker",
+    "https://github.com/danny-avila/LibreChat/blob/main/api/server/routes/config.js",
+    "https://github.com/danny-avila/LibreChat/security/advisories",
+    "https://github.com/danny-avila/LibreChat/security/advisories/GHSA-cxhj-j78r-p88f",
+    "https://github.com/danny-avila/LibreChat/security/advisories/GHSA-rgjq-4q58-m3q8",
+    "https://github.com/danny-avila/LibreChat/security/advisories/GHSA-5ccx-4r3h-9qc7",
+    "https://github.com/danny-avila/LibreChat/issues/12688",
+    "https://nvd.nist.gov/vuln/detail/CVE-2025-69222",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-11173",
+    "https://threat-modeling.com/librechat-mcp-access-control-vulnerabilities-cve-2026-32625/",
+    "https://www.sba-research.org/2026/01/08/sba-security-advisory-librechat-server-side-request-forgery-cve-2025-69222/",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

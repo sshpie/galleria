@@ -1,0 +1,107 @@
+{
+ "name": "Gorse",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "gorse-io (project lead: Zhenghao Zhang / GitHub @zhenghaoz)",
+  "backing": "OSS",
+  "status": "active",
+  "repo": "https://github.com/gorse-io/gorse",
+  "hq": "UNKNOWN (community project; lead historically China-based, Docker images under zhenghaoz/* on Docker Hub)",
+  "scale": "~9.7k GitHub stars, ~900 forks as of 2026-06; 52 releases, latest v0.5.10 (2026-06-19). Apache-2.0."
+ },
+ "ports": [
+  "8088 (master HTTP / Dashboard / Swagger, REST under /api/)",
+  "8086 (master gRPC, cluster control plane)",
+  "8087 (server REST recommendation API)",
+  "8089 (worker HTTP)",
+  "NOTE: 9094/9095 from the seed are NOT Gorse ports in any version verified"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "http.title:\"Gorse Dashboard\"",
+  "http.html:\"gorse-dashboard-theme\"",
+  "http.html:\"Gorse Dashboard\" http.html:\"data-theme\"",
+  "http.html:\"/apidocs/\" http.html:\"recommend\" port:8087",
+  "http.title:\"Gorse Dashboard\" port:8088"
+ ],
+ "verification_primitive": {
+  "probe": "GET http://TARGET:8088/api/dashboard/stats with no headers (read-only). Fallback fingerprint: GET http://TARGET:8088/ and check <title>Gorse Dashboard</title>; liveness: GET /api/health/ready.",
+  "success_signal": "HTTP 200 + JSON body containing numeric fields for user/item/feedback counts (e.g. num_users/num_items/positive feedback). A 401 'unauthorized' JSON means an api_key/admin_api_key IS set (surface open, access not exercised). 200 = auth is off and the data layer is readable.",
+  "impact_when_open": "Confirms the recommender's full data graph (user IDs, item catalog, behavioral feedback) is readable without credentials; /api/dump escalates to a complete database export and /api/purge to destructive write."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/ (master:8088)",
+   "returns": "Gorse Dashboard SPA. With default empty creds, checkLogin() returns true unconditionally - full UI, no login."
+  },
+  {
+   "method": "GET",
+   "path": "/api/dashboard/stats (master:8088)",
+   "returns": "Cluster-wide counts: users, items, feedback, valid positive/negative feedback. Unauth when api_key empty."
+  },
+  {
+   "method": "GET",
+   "path": "/api/dashboard/users (master:8088)",
+   "returns": "List of user IDs in the system (paged). Direct enumeration of the host app's user base."
+  },
+  {
+   "method": "GET",
+   "path": "/api/dashboard/user/{user-id} (master:8088)",
+   "returns": "Per-user record + labels; with /feedback/ subpath, that user's full interaction history."
+  },
+  {
+   "method": "GET",
+   "path": "/api/dashboard/config (master:8088)",
+   "returns": "Live running config (config/schema variant too) - reveals backend DSNs structure, recommenders, OIDC/openai settings presence."
+  },
+  {
+   "method": "GET",
+   "path": "/api/dashboard/cluster (master:8088)",
+   "returns": "Node inventory: node type, name, internal IP, API+metrics addresses - maps the rest of the deployment."
+  },
+  {
+   "method": "GET",
+   "path": "/api/item , /api/items (server:8087 or master)",
+   "returns": "Item catalog entries; /items paged. Item IDs, labels, comments, timestamps."
+  },
+  {
+   "method": "GET",
+   "path": "/api/recommend/{user-id} (server:8087)",
+   "returns": "Personalized recommendation list for any user-id - behavioral inference on individuals."
+  },
+  {
+   "method": "POST",
+   "path": "/api/feedback , /api/bulk/feedback , /api/dump | /api/restore | /api/purge (write)",
+   "returns": "Insert/overwrite feedback, bulk import users/items, full DB dump/restore/purge. WRITE + EXFIL surface when unauth."
+  },
+  {
+   "method": "GET",
+   "path": "/metrics , /apidocs/ , /debug/pprof/ (container-level)",
+   "returns": "Prometheus metrics, Swagger API spec, and Go pprof profiling endpoints - all mounted on the container, useful for fingerprint + version + intel."
+  },
+  {
+   "method": "GET",
+   "path": "/api/health/live , /api/health/ready",
+   "returns": "Liveness/readiness; explicitly exempt from the API-key filter (HasPrefix \"/api/health/\"). Reliable unauth liveness probe even when api_key IS set."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://github.com/gorse-io/gorse",
+  "https://raw.githubusercontent.com/gorse-io/gorse/master/README.md",
+  "https://raw.githubusercontent.com/gorse-io/gorse/master/config/config.toml",
+  "https://github.com/gorse-io/gorse/blob/master/config/config.go",
+  "https://github.com/gorse-io/gorse/blob/master/server/rest.go",
+  "https://github.com/gorse-io/gorse/blob/master/master/rest.go",
+  "https://raw.githubusercontent.com/gorse-io/gorse/master/docker-compose.yml",
+  "https://github.com/gorse-io/gorse/blob/v0.4.0/docker/docker-compose.yml",
+  "https://github.com/gorse-io/dashboard/blob/master/public/index.html",
+  "https://gorse.io/",
+  "https://gorse.io/docs/master/gorse-dashboard.html",
+  "https://github.com/gorse-io/gorse/security/advisories",
+  "https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=gorse",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

@@ -1,0 +1,125 @@
+{
+ "name": "Apache Solr (LTR / ConfigSet / scripting RCE class)",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "Apache Software Foundation (Apache Solr / Apache Lucene project; PMC-governed). Originally created at CNET (2004), donated to ASF 2006.",
+  "backing": "OSS",
+  "hq": "Apache Software Foundation, Wilmington, Delaware, USA (project is distributed/volunteer; major commercial backers include Lucidworks)",
+  "repo": "https://github.com/apache/solr",
+  "status": "active",
+  "scale": "Apache top-level project; github.com/apache/solr ~1.3k+ stars (mirror; primary dev on ASF infra/JIRA SOLR). One of the two dominant OSS search engines (alongside Elasticsearch/OpenSearch). Powers search at large enterprises; bundled in many CMS/data products (e.g. historically Drupal, Magento, DSpace, HBase/HDFS stacks, Lucidworks Fusion). Tens of thousands of internet-reachable instances historically observed on 8983."
+ },
+ "ports": [
+  "8983/tcp (Solr HTTP/HTTPS + Admin UI)",
+  "9983/tcp (SolrCloud embedded ZooKeeper)",
+  "18983/tcp (JMX/RMI when remote JMX enabled; SOLR_PORT_LISTEN+10000)"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "http.title:\"Solr Admin\" port:8983",
+  "http.html:\"ng-app=\\\"solrAdminApp\\\"\"",
+  "http.html:\"libs/solr/index.js\" http.html:\"solrAdminApp\"",
+  "http.html:\"solr-impl-version\"",
+  "product:\"Apache Solr\""
+ ],
+ "verification_primitive": {
+  "probe": "GET http://<host>:8983/solr/admin/info/system?wt=json  (read-only, unauthenticated). Fallback liveness: GET http://<host>:8983/solr/ for the Admin UI HTML.",
+  "success_signal": "HTTP 200 with JSON containing a 'lucene' object holding 'solr-spec-version'/'solr-impl-version' and a 'system' block (uptime, solr_home, OS/JVM). If auth is on you get HTTP 401 with a WWW-Authenticate header (Basic/Bearer) or a 403. 200-with-data = open; 401/403 = surface present, access not exercised.",
+  "impact_when_open": "Confirms unauthenticated read of full server/version metadata and the path to core/collection enumeration (/admin/cores?action=STATUS, /admin/collections?action=LIST) and document dumps (/<core>/select?q=*:*). Establishes exact version for CVE scoping (Velocity/ConfigSet/backup-restore/PKI-bypass RCE chains) without any write."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/solr/",
+   "returns": "Admin UI AngularJS SPA. HTML <title>Solr Admin</title>, header <span>Apache SOLR</span>, ng-app=\"solrAdminApp\". Strongest unauth fingerprint."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/admin/info/system",
+   "returns": "Unauth JSON: full Solr/Lucene spec+impl versions, JVM, OS, solr_home path, uptime, mode (cloud/standalone). Primary version + recon read."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/admin/info/properties",
+   "returns": "Java system properties. Historically leaked secrets (only props containing 'password' were masked; basicauth/aws.secretKey exposed) pre-9.3 / pre-8.11.2."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/admin/cores?action=STATUS",
+   "returns": "Lists all cores, their dataDir, index size, doc counts. Enumerates every dataset on the node, unauth."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/admin/collections?action=LIST",
+   "returns": "(SolrCloud) Lists all collections. Maps the indexed corpus."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/<core>/select?q=*:*",
+   "returns": "Dumps indexed documents (the actual data) when no auth. The data-exposure read."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/<core>/schema/feature-store",
+   "returns": "(LTR module enabled) Lists LTR feature stores; PUT uploads features. Reveals/controls ranking features."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/<core>/schema/model-store",
+   "returns": "(LTR) Lists ML ranking models; PUT uploads a model; DELETE removes one. Model-store write surface."
+  },
+  {
+   "method": "GET",
+   "path": "/solr/admin/zookeeper",
+   "returns": "(SolrCloud) Browses ZooKeeper tree incl. cluster config and (mis)stored security.json."
+  },
+  {
+   "method": "POST",
+   "path": "/solr/<core>/config",
+   "returns": "Config API: write solrconfig overlays (add request handlers, <lib> classpath, response writers). The config-write -> RCE pivot (CVE-2025-24814, CVE-2019-17558 class)."
+  }
+ ],
+ "cves": [
+  "CVE-2017-12629",
+  "CVE-2019-17558",
+  "CVE-2021-44228",
+  "CVE-2023-50386",
+  "CVE-2023-50298",
+  "CVE-2024-45216",
+  "CVE-2025-24814",
+  "CVE-2024-52012",
+  "CVE-2023-50292",
+  "CVE-2025-66516",
+  "CVE-2026-22022",
+  "CVE-2026-22444"
+ ],
+ "sources": [
+  "https://github.com/apache/solr",
+  "https://github.com/apache/solr/blob/main/README.md",
+  "https://github.com/apache/solr/blob/main/solr/bin/solr.in.sh",
+  "https://github.com/apache/solr/blob/main/solr/webapp/web/index.html",
+  "https://github.com/apache/solr-docker",
+  "https://github.com/apache/solr-docker/blob/main/9.9/Dockerfile",
+  "https://github.com/docker-solr/docker-solr/issues/318",
+  "https://solr.apache.org/security.html",
+  "https://solr.apache.org/security-news.html",
+  "https://solr.apache.org/guide/solr/latest/deployment-guide/securing-solr.html",
+  "https://solr.apache.org/guide/solr/latest/deployment-guide/authentication-and-authorization-plugins.html",
+  "https://solr.apache.org/guide/solr/latest/configuration-guide/system-info-handler.html",
+  "https://solr.apache.org/guide/solr/latest/query-guide/learning-to-rank.html",
+  "https://solr.apache.org/guide/solr/latest/deployment-guide/solr-control-script-reference.html",
+  "https://nvd.nist.gov/vuln/detail/CVE-2019-17558",
+  "https://nvd.nist.gov/vuln/detail/CVE-2025-24814",
+  "https://www.openwall.com/lists/oss-security/2025/01/26/1",
+  "https://www.rapid7.com/db/vulnerabilities/apache-solr-cve-2023-50386/",
+  "https://www.rapid7.com/db/vulnerabilities/apache-solr-cve-2019-17558/",
+  "https://www.cvedetails.com/cve/CVE-2017-12629/",
+  "https://blog.scrt.ch/2023/05/01/solr-rce-from-exposed-administration-interface/",
+  "https://github.com/veracode-research/solr-injection",
+  "https://www.tenable.com/plugins/nessus/158094",
+  "https://issues.apache.org/jira/browse/SOLR-16522",
+  "https://attackerkb.com/topics/108oFmoYe1/apache-solr-8-11-8-20-have-unauthenticated-jmx-server-enabled-in-default-config",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

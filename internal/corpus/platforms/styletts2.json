@@ -1,0 +1,99 @@
+{
+  "name": "StyleTTS2",
+  "slug": "styletts2",
+  "category": "voice-tts-conversational",
+  "description": "Human-level expressive TTS engine using style diffusion and adversarial training. Community server wrappers expose synthesis via Gradio (port 7860), FastAPI OpenAI-compat (port 8000), and bespoke REST APIs, uniformly without authentication by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in any default deployment across all known server implementations. Gradio offers an optional `auth=(\"user\",\"pass\")` kwarg but it is absent from every canonical deployment script found (Clore.ai guide, official HF space Dockerfile, lxe/tts-server). The ALERTua Ukrainian OpenAI-compat wrapper explicitly documents \"You can leave the API key empty, as the endpoint does not check for it.\" SaladTechnologies POST /generate exposes synthesis with zero auth. No rate limiting present in any self-hosted configuration.",
+  "default_ports": [
+    7860,
+    8000,
+    4321
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "http.title:\"StyleTTS 2\" port:7860",
+      "rationale": "Matches Gradio instances using the canonical page title from the official HF space and most community forks. Port 7860 is the Gradio default."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"styletts2\" port:7860",
+      "rationale": "Broader HTML body match on Gradio deployments that may customise the page title but retain the styletts2 string in page content or JS bundles."
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"StyleTTS 2\" product:\"gradio\"",
+      "rationale": "Conjunctive match: canonical title plus Gradio product fingerprint. Eliminates port-squatters and reduces FP rate vs title-only queries."
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"styletts2\" port:8000 http.status:200",
+      "rationale": "Targets FastAPI/uvicorn OpenAI-compat deployments (ALERTua and similar wrappers) that serve the synthesis API on port 8000 alongside or independently of the Gradio UI."
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"styletts2\" port:4321",
+      "rationale": "Targets SaladTechnologies styletts2-api containers which expose /generate on port 4321 — distinct from the Gradio or OpenAI-compat port space."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "title_contains": "StyleTTS 2",
+    "http_path": "/run/predict",
+    "response_body_contains": [
+      "styletts2",
+      "StyleTTS",
+      "synthesize"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/",
+    "/run/predict",
+    "/api/predict",
+    "/queue/join",
+    "/queue/status",
+    "/api",
+    "/gradio_api/openapi.json",
+    "/generate",
+    "/synthesize",
+    "/v1/audio/speech",
+    "/session/new",
+    "/tts",
+    "/info",
+    "/health"
+  ],
+  "known_vulns": [
+    "No CVEs assigned as of August 2026.",
+    "Structural: zero authentication on all default server implementations (Gradio, FastAPI, Flask, SaladTechnologies API).",
+    "styletts2 PyPI package (v0.1.6) flagged as inactive/unmaintained — dependency chain unpatched.",
+    "Gradio queue endpoints (/queue/join, /queue/status) unauthenticated and abusable for GPU DoS via job flooding.",
+    "Reference audio upload (voice cloning path) has no file-type validation in community wrappers — potential path traversal in file handling code."
+  ],
+  "default_creds": [],
+  "risk_notes": "Unauth synthesis = free GPU compute theft at operator cost (A100/RTX inference is not cheap). Voice cloning: any caller can POST a reference audio file and receive a cloned voice synthesis — enables deepfake audio for fraud, social engineering, and vishing at zero marginal cost to attacker. Gradio queue system is unauthenticated and unbounded; flooding /queue/join starves legitimate use and can OOM the GPU host. Reference audio upload path in community wrappers lacks MIME/extension validation — path traversal or SSRF via crafted filenames plausible depending on implementation. No rate limiting in any self-hosted deployment reviewed. The `--share` flag in Gradio creates a publicly accessible tunnel (*.gradio.app) that bypasses firewall rules, expanding the exposure surface beyond the host network.",
+  "deployment_notes": "Requires NVIDIA GPU (CUDA 11.8+). Canonical cloud deployment targets: Clore.ai GPU marketplace, Salad Technologies container engine, HuggingFace Spaces. Standard launch command `python3 app.py --share` (Clore.ai guide) exposes a public Gradio tunnel with no auth. Docker run maps port 7860 directly. The ALERTua Ukrainian OpenAI-compat stack runs two services: Gradio on port 7860 (GRADIO_PORT env) and uvicorn FastAPI on port 8000 (UVICORN_PORT env). SaladTechnologies image exposes port 4321. lxe/tts-server defaults to port 5000 via Flask with --host/--port flags. Model weights fetched from HuggingFace (yl4579/StyleTTS2-LibriTTS) at container start, not baked into image in most deployments.",
+  "docker_images": [
+    "saladtechnologies/styletts2",
+    "registry.hf.space/styletts2-styletts2:latest",
+    "gillesoldano/styletts2"
+  ],
+  "github_repos": [
+    "yl4579/StyleTTS2",
+    "SaladTechnologies/styletts2-api",
+    "lxe/tts-server",
+    "longtimegone/StyleTTS2-Sillytavern-api",
+    "ALERTua/styletts2-ukrainian-openai-tts-api",
+    "DerekParks/Docker4StyleTTS2",
+    "sidharthrajaram/StyleTTS2",
+    "cntseesharp/StyleTTS2_"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

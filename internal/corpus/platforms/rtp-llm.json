@@ -1,0 +1,162 @@
+{
+  "platform": "rtp-llm",
+  "display_name": "RTP-LLM",
+  "category": "inference_serving",
+  "default_ports": [8088, 8089, 8090, 8092],
+  "api_paths": [
+    "/",
+    "/health",
+    "/frontend_health",
+    "/health_check",
+    "/status",
+    "/v1/models",
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/v1/batch/chat/completions",
+    "/v1/chat/render",
+    "/chat/render",
+    "/v1/embeddings",
+    "/v1/embeddings/dense",
+    "/v1/embeddings/sparse",
+    "/v1/embeddings/colbert",
+    "/v1/embeddings/similarity",
+    "/v1/reranker",
+    "/v1/classifier",
+    "/tokenize",
+    "/tokenizer/encode",
+    "/batch_infer",
+    "/worker_status",
+    "/rtp_llm/worker_status",
+    "/cache_status",
+    "/rtp_llm/cache_status",
+    "/set_log_level",
+    "/start_profile",
+    "/rtp_llm/start_profile",
+    "/update_eplb_config",
+    "/update_scheduler_info",
+    "/GraphService/cm2_status",
+    "/SearchService/cm2_status"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "START_PORT",
+    "ROLE_TYPE",
+    "MODEL_TYPE",
+    "TOKENIZER_PATH",
+    "FRONTEND_SERVER_COUNT",
+    "OPENAI_API_KEY",
+    "DASHSCOPE_API_KEY",
+    "LMDEPLOY_USE_MODELSCOPE"
+  ],
+  "default_creds": [],
+  "install_tell": "registry.cn-hangzhou.aliyuncs.com/havenask/rtp_llm:cuda11 with START_PORT=8088 ROLE_TYPE=PDFUSION python -m rtp_llm.start_server",
+  "misconfig_patterns": [
+    "Only CORSMiddleware on FastAPI app — no AuthenticationMiddleware (frontend_app.py:166-175)",
+    "openai_api_key and dashscope_api_key default to literal string 'EMPTY' (py_config_modules.py:123-124) — these are upstream-call keys, not server auth",
+    "Port layout exposes 4 services per rank: server_port (HTTP), rpc_server_port (gRPC), cache_store_listen_port, cache_store_rdma_listen_port — START_PORT+1 grpc reachable if firewall too broad",
+    "/health, /status, /GraphService/cm2_status, /SearchService/cm2_status all alias to same health handler — broad surface to confirm liveness",
+    "/worker_status discloses dp_size, tp_size, role (prefill/decode/vit), running task list, cache utilization unauthenticated",
+    "/cache_status exposes available_kv_cache, total_kv_cache, block_size — directly maps GPU memory footprint",
+    "/set_log_level mutates server state from anonymous POST — INFERRED denial-of-service or log-flood vector",
+    "/update_scheduler_info and /update_eplb_config mutate scheduler from anonymous POST",
+    "/start_profile triggers profiler runs (resource exhaustion) anonymous",
+    "/tokenize and /v1/chat/render leak chat template and tokenizer behavior",
+    "/batch_infer accepts raw batch inference payloads"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8088 http.html:\"rtp-llm\"",
+      "port:8088 http.html:\"frontend_concurrency_limit\"",
+      "http.html:\"frontend_available_concurrency\"",
+      "http.html:\"GraphService/cm2_status\"",
+      "http.html:\"havenask\"",
+      "ssl.cert.subject.cn:\"havenask\""
+    ],
+    "active_probe": {
+      "path": "/worker_status",
+      "method": "GET",
+      "response_markers": [
+        "\"frontend_available_concurrency\"",
+        "\"frontend_concurrency_limit\"",
+        "\"dp_size\"",
+        "\"tp_size\"",
+        "\"available_kv_cache\""
+      ],
+      "false_positive_check": "JSON must contain BOTH frontend_available_concurrency (added by frontend layer) AND dp_size/tp_size (returned by backend gRPC) — combination is RTP-LLM unique; sglang and lmdeploy do not expose worker_status at all"
+    },
+    "secondary_probe": {
+      "path": "/GraphService/cm2_status",
+      "method": "GET",
+      "response_markers": ["ok"],
+      "discriminator": "200 OK with body 'ok' on a path named GraphService/cm2_status is a havenask service-mesh tell — confirms Alibaba search-stack lineage even without LLM-specific markers"
+    },
+    "tertiary_probe": {
+      "path": "/cache_status",
+      "method": "GET",
+      "response_markers": ["\"available_kv_cache\"", "\"block_size\"", "\"frontend_available_concurrency\""]
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8088 http.html:\"frontend_concurrency_limit\"",
+    "strict": "http.html:\"GraphService/cm2_status\" http.html:\"frontend_available_concurrency\"",
+    "version": "http.html:\"rtp_llm\" http.html:\"available_kv_cache\""
+  },
+  "censys_queries": {
+    "basic": "services.port:8088 and services.http.response.body:\"frontend_concurrency_limit\"",
+    "strict": "services.http.response.body:\"GraphService/cm2_status\" and services.http.response.body:\"available_kv_cache\"",
+    "image": "services.banner:\"havenask\" or services.tls.certificates.leaf_data.names:\"aliyuncs\""
+  },
+  "deployment_tells": [
+    "Default DEFAULT_START_PORT = 8088 (py_config_modules.py:36)",
+    "Port layout per rank: server_port = base+0 (HTTP), rpc_server_port = base+1 (gRPC), cache_store_listen_port = base+2, cache_store_rdma_listen_port = base+4 (worker_info.py)",
+    "Docker image registry.cn-hangzhou.aliyuncs.com/havenask/rtp_llm:cuda11 (Alibaba Cloud registry)",
+    "RoleType env: PDFUSION (monolith default), PREFILL, DECODE, VIT, FRONTEND — visible in worker_status response 'role' field",
+    "Aliased health routes /GraphService/cm2_status and /SearchService/cm2_status are havenask service-mesh tells (RTP-LLM is a sub-project of github.com/alibaba/havenask)",
+    "Sub-application namespace prefix /rtp_llm/* on duplicate health/cache/worker_status routes",
+    "FastAPI with ORJSONResponse default — body is compact JSON without whitespace",
+    "Server: uvicorn header (FastAPI default)",
+    "frontend_concurrency_limit and frontend_available_concurrency keys added by frontend layer to every cache_status/worker_status response",
+    "/v1/embeddings/colbert and /v1/embeddings/sparse routes — RTP-LLM is one of few inference servers exposing ColBERT and sparse embedding endpoints",
+    "VipServer master endpoint pattern in MODEL_SERVICE_CONFIG env (Alibaba internal service discovery)"
+  ],
+  "pivot_paths": [
+    "GET /worker_status -> dp_size + tp_size + GPU role distribution + running task IDs -> infer cluster scale and current workload",
+    "GET /cache_status -> available_kv_cache / total_kv_cache / block_size -> infer per-GPU VRAM allocated to KV cache + active model context length",
+    "GET /v1/models -> served model name (often Qwen/internal models) -> attribution to Taobao, Tmall, Aidge, OpenSearch, Cainiao, Amap, Ele.me, AE, Lazada per README",
+    "POST /v1/chat/render -> dumps rendered chat template — leaks system prompt and instruction formatting",
+    "POST /tokenize -> tokenizer probe — leaks tokenizer family (qwen, llama, internlm) before any inference call",
+    "POST /v1/embeddings/colbert -> ColBERT late-interaction embeddings — distinctive endpoint, confirms multimodal/retrieval deployment",
+    "POST /set_log_level with body {\"log_level\":\"DEBUG\"} -> mutates logging without auth (low-impact pivot, log-noise generation)",
+    "POST /start_profile -> triggers profiler — INFERRED resource exhaustion / availability vector",
+    "Port START_PORT+1 (default 8089) gRPC backend reachable if exposed -> direct model_rpc_service_pb2 RpcServiceServicer access bypasses any frontend rate-limiting",
+    "/GraphService/cm2_status returning 'ok' on a non-search target = high-confidence Alibaba havenask lineage attribution"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "github.com/alibaba/rtp-llm README.md @ sha b0c09a3440f7df0dce8d682ae4383d741809bb56",
+    "github.com/alibaba/rtp-llm rtp_llm/frontend/frontend_app.py (routes 195-385; CORSMiddleware only, no auth)",
+    "github.com/alibaba/rtp-llm rtp_llm/config/py_config_modules.py (DEFAULT_START_PORT=8088 line 36; openai_api_key='EMPTY' default line 123)",
+    "github.com/alibaba/rtp-llm rtp_llm/distribute/worker_info.py (port layout server/rpc/cache_store)",
+    "github.com/alibaba/rtp-llm rtp_llm/server/worker_status.py (WorkStatus + CacheStatus schemas)",
+    "github.com/alibaba/rtp-llm docs/backend/Frontend.md (RoleType, ROLE_TYPE env, frontend/backend separation)",
+    "github.com/alibaba/rtp-llm docker/create_container.sh (registry.cn-hangzhou.aliyuncs.com/havenask/rtp_llm:cuda11)"
+  ],
+  "registry_mentions": {
+    "discovery_dork": "\"rtp-llm\" / \"rtp_llm\" / \"havenask\"",
+    "namespace_pattern": "havenask/rtp_llm, rtp_llm/*",
+    "verification_method": "single-request GET /v2/_catalog, 200 + no Www-Authenticate",
+    "hosts": [
+      "115.191.10.126:443",
+      "124.163.255.214:5000",
+      "65.108.11.238:8804 (HA twin :8808)",
+      "46.62.204.42:80"
+    ],
+    "surveyed_at": "2026-06-09",
+    "survey_ref": "shodan/cat-syllabus-leads-2026-06-09/findings-breakdown.txt",
+    "insight_ref": "methodology/insight-95-oss-platform-name-as-registry-dork.md",
+    "note": "RTP-LLM was codified alongside aibrix and lmdeploy in the same Cat-Syllabus-Leads survey; the registry cohort is the same 4-host set surfaced by the parallel \"aibrix\" / \"LMDeploy\" string dorks. Direct \"rtp-llm\" / \"rtp_llm\" / \"havenask\" string-dork verification is pending — listed here for cohort-tracking and for the next-session re-probe queue. Platform itself NOT verified live at these IPs. Status stays CANDIDATE."
+  },
+  "status": "CANDIDATE",
+  "discovered_at": "2026-06-09",
+  "notes": "Auth-on-default OFF — FastAPI app receives only CORSMiddleware, no AuthenticationMiddleware in source. 1207 stars, less mainstream than vLLM/LMDeploy but production-deployed across Alibaba's commerce stack (Taobao, Tmall, Lazada, AE) per README. Discoverability gated by non-standard port 8088 (could be confused with admin panels, http-alt). havenask service-mesh route aliasing (/GraphService/cm2_status, /SearchService/cm2_status) is the single most distinctive tell — search-engine-stack DNA reused for LLM serving is rare and unique to Alibaba. INFERRED in misconfig section flagged for verify-stage."
+}

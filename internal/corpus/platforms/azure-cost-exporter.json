@@ -1,0 +1,46 @@
+{
+  "platform": "azure-cost-exporter",
+  "display_name": "electrolux-oss azure-cost-exporter",
+  "category": "cost-allocation",
+  "default_ports": [9090],
+  "api_paths": [
+    "/metrics"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"],
+  "default_creds": [],
+  "install_tell": "docker run -p 9090:9090 (electrolux-oss/azure-cost-exporter, Python prometheus_client)",
+  "misconfig_patterns": [
+    "Auth OFF on /metrics (Prometheus model)",
+    "Port 9090 collides with Prometheus",
+    "Exposes daily Azure spend per subscription/account"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:9090 http.html:\"azure_\""
+    ],
+    "active_probe": {
+      "path": "/metrics",
+      "method": "GET",
+      "response_markers": ["azure_"],
+      "false_positive_check": "Prometheus text with azure_* daily-cost metrics per subscription (currency + USD); distinct from webdevops/azure-metrics-exporter"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"azure_daily\"",
+    "strict": "port:9090 http.html:\"azure_daily\"",
+    "version": "http.html:\"azure_\""
+  },
+  "deployment_tells": [
+    "Python prometheus_client",
+    "daily Azure spend per subscription, billing currency + USD",
+    "port 9090 generic; do not confuse with azure-metrics-exporter :9276/:9092"
+  ],
+  "pivot_paths": [
+    "GET /metrics -> per-subscription daily Azure spend -> multi-account Azure org structure"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "name": "IndexTTS",
+  "slug": "indextts",
+  "category": "voice-tts-conversational",
+  "description": "Bilibili's autoregressive zero-shot TTS engine (IndexTTS / IndexTTS2) with voice cloning, duration control, and emotion/speaker disentanglement. Self-hosted via a Gradio web UI (webui.py, default port 7860). No authentication by default. The core inference path (indextts/infer_v2.py) is a library/CLI with no listener; the Gradio UI is the only network surface.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The Gradio web UI (webui.py) ships with no authentication. Gradio only enforces credentials when auth= is passed in code or GRADIO_USERNAME/GRADIO_PASSWORD env vars are set; neither is set by default. The UI binds 127.0.0.1 by default and becomes internet-visible only when launched with GRADIO_SERVER_NAME=0.0.0.0, server_name=\"0.0.0.0\", or share=True (which mints a public *.gradio.live tunnel). Any externally-bound instance is fully unauthenticated. No token, no basic auth, no rate limiting in the default configuration.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"gradio\"",
+      "rationale": "IndexTTS serves a Gradio SPA; the static HTML shell contains the gradio-app mount div and gradio asset references but NOT the project name. This catches the Gradio surface on the canonical port; combine with liveness/config confirmation to isolate IndexTTS."
+    },
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"IndexTTS\"",
+      "rationale": "Name match is only reachable when the Gradio version inlines window.gradio_config (with the gr.Markdown banner) into the served HTML body; on versions that lazy-fetch /config this is Shodan-blind. Included as the high-precision variant where the config is inlined."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"gradio-app\" http.html:\"IndexTTS\"",
+      "rationale": "Conjunctive: the gradio-app mount plus the inlined project name eliminates non-IndexTTS Gradio apps. High precision when config is inlined; use the Censys /config-fetch route or aimap deep-enum when the name is not in the raw body."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"IndexTTS2\"",
+      "rationale": "IndexTTS2 model identifier distinguishes the current emotion/duration-control release from the original IndexTTS; surfaced in inlined config banner text on v2 deployments."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/config",
+    "title_contains": "Gradio",
+    "response_body_contains": [
+      "gradio-app",
+      "gradio_config",
+      "IndexTTS",
+      "infer",
+      "prompt_audio"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/config",
+    "/info",
+    "/heartbeat/{hash}",
+    "/queue/join",
+    "/queue/data",
+    "/run/predict",
+    "/api/predict",
+    "/gradio_api/info",
+    "/gradio_api/queue/join",
+    "/file=",
+    "/"
+  ],
+  "known_vulns": [
+    "No built-in auth on the Gradio UI - unauthenticated voice cloning via the reference-audio upload when bound to 0.0.0.0",
+    "Gradio CVE-2024-1561 - arbitrary local file read via component routes on unpatched Gradio pins",
+    "Gradio CVE-2023-51449 - path traversal via the /file= endpoint on Gradio 3.x < 3.47.0",
+    "Gradio CVE-2024-1727 - CSRF chain against /file and upload routes on Gradio 4.x pre-patch",
+    "SSRF via /queue/join upload proxy in the 2024 Gradio 4.x security batch",
+    "Unauthenticated GPU compute consumption - no rate limiting on the inference queue by default",
+    "share=True tunnel exposure - public *.gradio.live URL bypasses all local network controls"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary vectors on an externally-bound instance: (1) Unlimited zero-shot voice cloning - attacker uploads any short reference clip and synthesizes arbitrary speech in that voice (deepfake/vishing/fraud), with IndexTTS2's emotion and duration control raising the fidelity of the forgery; (2) GPU compute theft - autoregressive TTS is GPU-intensive and the inference queue has no auth or rate limit; (3) File-read/traversal - an IndexTTS instance pinned to a vulnerable Gradio version inherits CVE-2024-1561 / CVE-2023-51449, letting an attacker read server-side files (model paths, uploaded reference audio, adjacent secrets) via /file= or component routes; (4) Reference-audio PII - uploaded voice samples are voice biometrics stored server-side with no access control; (5) share=True tunnels publish the whole UI to the internet with zero gating. Shodan http.html is largely blind to the IndexTTS name because the served page is a JS SPA (title 'Gradio', mount div id='gradio-app'); the project identity lives in the /config JSON, so confirmation requires a config fetch or aimap deep-enum rather than a body-string match.",
+  "deployment_notes": "Deployed via 'uv run webui.py' or a Python venv on a CUDA GPU host; the git history was reset 2025-09-08 for the IndexTTS2 release (same repo). No first-party Docker image in the docs, though community images exist on Docker Hub. Launch flags --fp16 --accel --torch_compile tune performance but do not touch auth. Default bind is 127.0.0.1:7860; exposure occurs when operators set GRADIO_SERVER_NAME=0.0.0.0 or pass share=True. Server header is 'uvicorn' (Gradio runs on Starlette/uvicorn). Shodan indexes only the SPA shell, so the project name is generally NOT in http.html - pivot on the /config JSON endpoint, the gradio-app mount div, title 'Gradio', and the uvicorn server header; Censys with a config-fetch or aimap deep-enum resolves the true identity. HuggingFace Spaces demos of IndexTTS are public by design.",
+  "docker_images": [],
+  "github_repos": [
+    "index-tts/index-tts"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

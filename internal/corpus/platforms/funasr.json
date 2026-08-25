@@ -1,0 +1,74 @@
+{
+  "name": "FunASR Runtime",
+  "slug": "funasr",
+  "category": "voice-tts-conversational",
+  "description": "Alibaba DAMO Academy / ModelScope's industrial speech recognition toolkit whose runtime SDK (funasr-runtime) ships a self-hosted streaming/offline ASR server built on Paraformer, SenseVoice, and FSMN-VAD models. The canonical exposed surface is a WebSocket-Secure (wss) server on port 10095; a newer OpenAI-compatible HTTP server (funasr-server) exists on port 8000. No built-in authentication by default. The wss transport is Shodan http.html-blind and routes to Censys/active-probe fingerprinting.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the funasr-runtime SDK servers. The primary runtime (funasr_wss_server.py / funasr-wss-server C++) binds port 10095 speaking a custom JSON-over-WebSocket-Secure protocol (client sends mode/chunk config, streams PCM, receives partial+final transcripts). It serves no HTML page, so Shodan http.html/http.title markers return 0 — fingerprint by port + wss handshake (Censys/active-probe). Self-signed TLS is auto-generated, so wss is on but certificate trust is meaningless. The newer OpenAI-compatible funasr-server (HTTP :8000, /v1/audio/transcriptions) is FastAPI-based and more http.html-visible where deployed. Neither server ships credential enforcement; guidance defers auth to the operator.",
+  "default_ports": [
+    10095,
+    10096,
+    8000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:10095 ssl",
+      "rationale": "Port-based: funasr-runtime binds wss on 10095 with auto-generated self-signed TLS. FunASR serves no HTML on this port so http.html dorks return 0 — port + ssl/TLS presence is the reachable Shodan signal"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"funasr\"",
+      "rationale": "Newer OpenAI-compatible funasr-server (HTTP :8000) renders the FunASR name into Swagger UI/JSON; catches the http.html-visible HTTP variant"
+    },
+    {
+      "tier": "strict",
+      "query": "port:10095 ssl.cert.subject.cn:\"funasr\"",
+      "rationale": "The auto-generated self-signed cert on the 10095 wss runtime frequently carries a FunASR/localhost-style CN; cert-subject match on the runtime port is high precision. Best confirmed via Censys cert enumeration since Shodan does not capture the wss body"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 10095,
+    "http_path": "/",
+    "title_contains": "",
+    "response_body_contains": [
+      "Sec-WebSocket-Accept",
+      "Upgrade: websocket",
+      "funasr"
+    ],
+    "http_header": "upgrade: websocket"
+  },
+  "api_paths": [
+    "WSS :10095 (JSON handshake: mode=offline|online|2pass, chunk_size, wav_name; streams PCM; returns partial/final text)",
+    "WSS :10096 (alternate/secondary runtime port)",
+    "POST /v1/audio/transcriptions (funasr-server HTTP :8000, OpenAI-compatible)",
+    "GET /docs (funasr-server FastAPI Swagger, :8000)"
+  ],
+  "known_vulns": [
+    "No built-in auth — any wss client completing the JSON handshake on 10095 gets unlimited ASR (offline/streaming/2-pass) at operator cost",
+    "Auto-generated self-signed TLS provides encryption but zero identity assurance — trivially MITM-able and no client authentication",
+    "GPU/CPU compute theft — no rate limiting on the runtime; continuous transcription jobs are automatable with the bundled funasr_wss_client",
+    "Audio PII exfiltration — Chinese/English/multilingual speech (call-center, medical, meeting audio typical of industrial FunASR use) transcribed with no consent or audit logging",
+    "Client-selectable mode/model in the handshake enables resource-selection DoS",
+    "funasr-server HTTP :8000 variant exposes FastAPI /docs and unauthenticated /v1/audio/transcriptions with unrestricted file upload"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — an open 10095 wss runtime or 8000 HTTP server is free industrial-grade ASR, scriptable with the shipped clients. (2) Audio PII exfiltration — FunASR is heavily deployed in Chinese enterprise/call-center/telephony contexts; open endpoints process sensitive customer and voice-print audio without auth. (3) MITM via meaningless self-signed TLS — the wss cert authenticates nothing, so an on-path attacker can intercept or impersonate. (4) Shodan-blindness on 10095 favors operator obscurity; Censys cert/handshake enumeration and active wss probing surface these hosts where http.html dorks miss them. (5) The HTTP variant adds the standard FastAPI unauth-upload and schema-disclosure surface.",
+  "deployment_notes": "Docker-first via the funasr-runtime SDK images (registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-*). Two server families: (a) the classic C++/Python wss runtime on 10095 (offline, online, and 2-pass SDK images) — serves NO HTML, Shodan http.html-blind, fingerprint via port+wss handshake or self-signed cert (Censys route); (b) the newer OpenAI-compatible funasr-server on HTTP :8000 with FastAPI /docs — http.html-visible. Auto-generated self-signed TLS on the wss port. A GGUF/llama.cpp single-binary edge runtime also exists (CPU/Vulkan/CUDA) but is not a network server. Common on Alibaba Cloud and Chinese GPU hosts; industrial/call-center deployments frequently expose 10095 directly. No auth by default on any variant.",
+  "docker_images": [
+    "registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12",
+    "registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-cpu-0.4.6",
+    "registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-gpu-0.2.0"
+  ],
+  "github_repos": [
+    "modelscope/FunASR",
+    "alibaba-damo-academy/FunASR"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

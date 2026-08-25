@@ -1,0 +1,47 @@
+{
+  "name": "OpenLLM",
+  "category": "llm-serving",
+  "github": "https://github.com/bentoml/OpenLLM",
+  "description": "LLM serving platform. BentoML-based OpenAI-compatible API + WebUI.",
+  "default_ports": [3000, 80, 443],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "inference-unauth",
+  "tls_default": false,
+  "fingerprint_status": "present",
+  "fingerprint_note": "BentoML OpenAPI schema at /docs.json exposes /v1/chat/completions route. Auth none by default.",
+  "dorks": {
+    "basic": "\"/v1/chat/completions\"",
+    "strict": "http.status:200 AND \"openapi\" AND \"/v1/chat/completions\"",
+    "version": "\"openapi\":\"3"
+  },
+  "dork_notes": "/v1/chat/completions is present in many OpenAI-compat services (vLLM, LiteLLM, Ollama). BentoML /docs.json is more specific. FP risk: 5-10%.",
+  "nuclei_template": true,
+  "nuclei_template_name": "openllm-panel",
+  "nuclei_template_path": "/home/cowboy/nuclei-templates/http/exposed-panels/openllm-panel.yaml",
+  "nuclei_template_note": "ISSUE: template uses http.title regex (NOT available in Shodan Freelancer tier). Should anchor to /docs.json instead.",
+  "aimap_status": "present",
+  "aimap_status_version": "v1.9.17+",
+  "aimap_fingerprint_name": "OpenLLM",
+  "aimap_ports": [3000, 80, 443],
+  "aimap_probes": [
+    {
+      "path": "/docs.json",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "json_field", "field": "openapi"},
+        {"type": "body_contains", "value": "/v1/chat/completions"}
+      ]
+    }
+  ],
+  "severity": "high",
+  "severity_note": "Inherits BentoML CVE-2025-27520 (CVSS 9.8 unauth RCE) + CVE-2025-32375 (runner pickle RCE). Unauth inference + model upload = host RCE.",
+  "exposure_data": "arbitrary model execution, model weights, inference logs, config data",
+  "cves": ["CVE-2025-27520", "CVE-2025-32375"],
+  "research_date": "2026-06-05",
+  "sources": [
+    "https://github.com/bentoml/OpenLLM",
+    "github.com/sshpie/aimap line 4292-4302",
+    "/home/cowboy/nuclei-templates/http/exposed-panels/openllm-panel.yaml"
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "name": "OpenTTS",
+  "slug": "opentts",
+  "category": "voice-tts-conversational",
+  "description": "Unified HTTP TTS server (synesthesiam/opentts) fronting many open-source engines (espeak, flite, festival, nanotts, MaryTTS, and others) behind one REST/Swagger API and web UI on port 5500. Quart/Hypercorn ASGI, no authentication, archived read-only Oct 2025. Server-rendered index makes it partially Shodan http.html-visible.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication on any endpoint. OpenTTS is a Quart (async) app behind the Hypercorn ASGI server; every route (/api/tts, /api/voices, /api/languages, /openapi, MaryTTS-compat /process) is public. Default port 5500. No API key, token, or basic auth documented. The project is archived read-only (Oct 6, 2025) so no security patches will be issued.",
+  "default_ports": [
+    5500
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:5500 http.html:\"Unifies access to multiple open source text to speech\"",
+      "rationale": "The server-rendered index.html contains this exact description string in the body; direct high-signal match on the canonical port."
+    },
+    {
+      "tier": "basic",
+      "query": "port:5500 http.html:\"openapi\"",
+      "rationale": "OpenTTS serves Swagger at /openapi/ and references it from the index; the openapi marker on port 5500 with the hypercorn stack catches instances whose title string varies by build."
+    },
+    {
+      "tier": "strict",
+      "query": "port:5500 http.html:\"OpenTTS\" http.html:\"voices\"",
+      "rationale": "Conjunctive: the OpenTTS name in the rendered index plus the voices reference (from /api/voices UI wiring) isolates OpenTTS from other Quart/Hypercorn TTS servers on 5500."
+    },
+    {
+      "tier": "version",
+      "query": "port:5500 http.html:\"OpenTTS\" http.html:\"SSML\"",
+      "rationale": "The multi-voice SSML capability description is present in the index body; pair with an /api/voices read (returns tts_name per voice) to scope engine set and build."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 5500,
+    "http_path": "/",
+    "title_contains": "OpenTTS",
+    "response_body_contains": [
+      "Unifies access to multiple open source text to speech",
+      "OpenTTS",
+      "openapi",
+      "voices",
+      "SSML"
+    ],
+    "http_header": "server: hypercorn-h11"
+  },
+  "api_paths": [
+    "/api/tts",
+    "/api/voices",
+    "/api/languages",
+    "/openapi/",
+    "/process",
+    "/voices",
+    "/version",
+    "/"
+  ],
+  "known_vulns": [
+    "No authentication - unauthenticated synthesis via /api/tts and full voice enumeration via /api/voices",
+    "Archived read-only Oct 2025 - no patches will ever be issued for any future finding",
+    "Multi-engine subprocess backends (espeak, flite, festival, nanotts, MaryTTS) - broad input/command surface depending on per-engine wrapping; SSML processor is an unaudited parser surface",
+    "/openapi/ Swagger UI publicly documents the entire API unauthenticated, aiding automated enumeration",
+    "MaryTTS-compatible /process endpoint makes it a drop-in for Home Assistant integrations that may leave it internet-exposed"
+  ],
+  "default_creds": [],
+  "risk_notes": "Vectors on an exposed instance: (1) Unauthenticated synthesis / compute theft via /api/tts across whichever engines are installed; (2) Full metadata read via /api/voices - returns rich JSON per voice (id, name, gender, language, locale, tts_name), a clean unauth enumeration of the deployment's engine and voice inventory; (3) Multi-engine subprocess surface - OpenTTS shells out to espeak/flite/festival/nanotts/MaryTTS, so the SSML and text input path is a broad, per-engine-dependent injection/parser surface worth verifying; (4) Archived project - any issue found is permanent, no upstream fix. OpenTTS is partially Shodan http.html-visible: the index is server-rendered (Jinja, not a pure SPA) and carries the 'Unifies access to multiple open source text to speech systems' description and OpenTTS name in the body, so a body-string dork harvests it. Server header is 'hypercorn-h11' - identical to Mimic3, so disambiguate by port (5500 vs 59125) and the index strings.",
+  "deployment_notes": "Quart async app behind Hypercorn ASGI on port 5500 (--port default 5500). Distributed as per-language Docker images synesthesiam/opentts:<LANG> on Docker Hub (tags en, de, fr, es, ja, zh, and ~20 more), each bundling the voices for that language. Server header is 'hypercorn-h11'. The index renders server-side so the OpenTTS name and description are in http.html; the /openapi/ Swagger UI and /api/voices JSON are the confirmation reads. Shares the Quart/Hypercorn stack (and thus the Server header) with Mimic3 - distinguish on port and body strings. Archived read-only Oct 6, 2025 (~1.1k stars, MIT). Commonly deployed as a Home Assistant TTS backend via the MaryTTS-compatible /process route, which is how some instances end up internet-reachable.",
+  "docker_images": [
+    "synesthesiam/opentts"
+  ],
+  "github_repos": [
+    "synesthesiam/opentts"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

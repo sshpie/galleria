@@ -1,0 +1,49 @@
+{
+  "platform": "hostinger-agentic-mail",
+  "display_name": "Hostinger Agentic Mail (substrate)",
+  "category": "ai_email_guardrails",
+  "subcategory": "agentic-mail substrate (no content guardrail)",
+  "default_ports": [
+    443
+  ],
+  "api_paths": [],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "Webhook-first agentic mailbox bundled in Hostinger Premium Business Email. Allow/block lists. Launched 2026-06-03. Incumbent host moving into the agent-mail substrate lane.",
+  "misconfig_patterns": [
+    "Substrate-only: allow/block lists are the extent of safety; no outbound LLM-content guardrail. Punts content safety upstream."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"Agentic Mail\" http.html:\"Hostinger\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": [
+        "Agentic Mail",
+        "Hostinger"
+      ],
+      "false_positive_check": "Require both 'Agentic Mail' and 'Hostinger' \u2014 feature lives under hostinger.com, not a standalone domain."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"Hostinger\" http.html:\"Agentic Mail\""
+  },
+  "deployment_tells": [
+    "Bundled in Hostinger Premium Business Email; webhook-first."
+  ],
+  "pivot_paths": [
+    "Substrate-only classification; the rails outbound guardrails would attach to, not a guardrail itself."
+  ],
+  "vulnerabilities": [],
+  "competitive_lane": {
+    "lane": "C substrate (agent mailbox); NO outbound guardrail",
+    "differentiator": "Incumbent web host entering the agent-mail substrate lane; safety = allow/block lists only."
+  },
+  "sources": [
+    "https://www.hostinger.com/agentic-mail (PRIMARY) [CONFIRMED launch 2026-06-03]",
+    "OSINT Platoon sweep 2026-06-23 (substrate lane)"
+  ]
+}

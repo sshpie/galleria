@@ -1,0 +1,69 @@
+{
+  "name": "WhisperLive",
+  "slug": "whisperlive",
+  "category": "voice-tts-conversational",
+  "description": "Collabora's real-time speech-to-text server built on OpenAI Whisper with faster-whisper, TensorRT-LLM, and OpenVINO backends. Streams live microphone or file audio over a WebSocket protocol and returns incremental transcripts. Ships GPU/CPU Docker images. No built-in authentication by default; the listening surface is a raw WebSocket, so it is largely Shodan http.html-blind and routes to Censys/active-probe fingerprinting.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the default server (python3 run_server.py). Access control is limited to an optional --cors-origins flag (browser CORS restriction only, not server-side auth) and does not gate non-browser WebSocket clients. The service speaks a custom JSON-over-WebSocket handshake (client sends uid/language/model/task config, server streams segment updates) on port 9090 with no HTML landing page served, so name/title markers do NOT appear in Shodan http.html — fingerprinting relies on port + WebSocket handshake behavior (Censys/active-probe route). A newer OpenAI-compatible REST interface exists but the canonical exposed surface is the 9090 WebSocket.",
+  "default_ports": [
+    9090
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:9090 product:\"WebSocket\"",
+      "rationale": "Port-based: WhisperLive binds 9090 for its WebSocket server; combine with WebSocket product tag to narrow. WhisperLive serves no HTML so http.html dorks return 0 — port + protocol is the reachable signal"
+    },
+    {
+      "tier": "basic",
+      "query": "port:9090 \"HTTP/1.1 426\" \"Upgrade\"",
+      "rationale": "A bare HTTP GET to a WebSocket-only endpoint returns 426 Upgrade Required / connection-upgrade headers; on port 9090 this is a strong WhisperLive handshake indicator distinct from generic web servers"
+    },
+    {
+      "tier": "strict",
+      "query": "port:9090 \"Sec-WebSocket\" \"whisper\"",
+      "rationale": "WebSocket upgrade headers on 9090 co-occurring with a whisper marker (banner or error body) tightens to WhisperLive vs other 9090 WebSocket services; low volume, high precision. May require Censys/active handshake as Shodan rarely captures the WS body"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 9090,
+    "http_path": "/",
+    "title_contains": "",
+    "response_body_contains": [
+      "Sec-WebSocket-Accept",
+      "Upgrade: websocket",
+      "426 Upgrade Required"
+    ],
+    "http_header": "upgrade: websocket"
+  },
+  "api_paths": [
+    "WS / (JSON config handshake: uid, language, task, model, use_vad)",
+    "WS streaming: binary PCM audio in / JSON segment transcripts out",
+    "GET / (426 Upgrade Required on plain HTTP)"
+  ],
+  "known_vulns": [
+    "No built-in auth — any WebSocket client that completes the JSON config handshake gets unlimited real-time transcription",
+    "GPU compute theft — unauthenticated streaming ASR runs continuously at operator GPU cost with no rate limiting",
+    "Audio PII interception surface — live audio streamed to an open endpoint is processed with no consent, auth, or audit logging",
+    "--cors-origins provides browser-only protection and does not restrict native/scripted WebSocket clients (false sense of access control)",
+    "Model/backend selectable by the client in the handshake (model size, TensorRT/OpenVINO) — client-driven resource selection enables VRAM-exhaustion DoS by requesting the largest model repeatedly",
+    "No TLS by default on the WebSocket (ws:// not wss://) — plaintext audio and transcripts on the wire"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — an open 9090 WebSocket is free real-time GPU transcription, scriptable with the bundled TranscriptionClient. (2) Live audio surveillance/exfil — the endpoint accepts and transcribes streamed audio with no auth; a passive on-path observer also sees plaintext ws:// audio and text. (3) VRAM-exhaustion DoS — the client picks the model size in the handshake, so an attacker forces large-model loads to starve the GPU. (4) Shodan-blindness aids the operator's obscurity but not security — Censys/active WebSocket handshake probing enumerates these hosts where http.html dorks miss them entirely.",
+  "deployment_notes": "Docker-first: ghcr.io/collabora/whisperlive-gpu (faster-whisper + TensorRT + OpenVINO + ROCm) and ghcr.io/collabora/whisperlive-cpu. Default bind 0.0.0.0:9090, ws:// (no TLS). Backend engine selectable (faster_whisper default, TensorRT-LLM, OpenVINO). Serves NO HTML landing page — Shodan http.html/http.title dorks return 0; this is a Shodan-blind / Censys-and-active-probe platform. Fingerprint by hitting 9090 with a WebSocket upgrade and observing the JSON config handshake, or by the 426 response to a plain HTTP GET. Frequently paired with the WhisperLive browser extension or the collabora/WhisperFusion conversational stack. Common on GPU-as-a-service (Vast.ai, RunPod). No auth means an exposed 9090 is directly usable.",
+  "docker_images": [
+    "ghcr.io/collabora/whisperlive-gpu:latest",
+    "ghcr.io/collabora/whisperlive-cpu:latest"
+  ],
+  "github_repos": [
+    "collabora/WhisperLive"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "name": "Moshi (Kyutai)",
+  "slug": "moshi",
+  "category": "voice-tts-conversational",
+  "description": "Real-time full-duplex spoken dialogue LLM by Kyutai. Uses Mimi neural audio codec. Sub-200ms latency. Three backends: Python/PyTorch (primary self-hosted path), Rust (moshi-backend), and MLX (Apple Silicon). WebSocket-driven binary audio protocol on port 8998. No authentication in the default self-hosted configuration. Open-source under CC BY 4.0.",
+  "auth_tier": "A",
+  "default_auth": "none",
+  "auth_notes": "Python (PyTorch) and MLX servers: zero authentication. GET /api/chat WebSocket endpoint accepts arbitrary connections with no credentials, tokens, or keys. No middleware, no rate limiting, no session isolation. The Rust moshi-backend includes an optional header-based mechanism (header: kyutai-api-key, query fallback: auth_id, config key: authorized_ids HashSet) but this is unconfigured by default — if authorized_ids is empty the enforcement path is not triggered. Self-signed TLS cert (CN=localhost) is auto-generated on first Rust server start; provides transport encryption only, not authentication. SSH tunnel (ssh -L 8998:localhost:8998) is the developer-documented workaround for remote access, not a security control. The Gradio tunnel (--gradio-tunnel) creates an unauthenticated public endpoint accessible globally; --gradio-tunnel-token is optional and rarely set. Docker-compose ships a Cloudflare tunnel service pointed at the unauthenticated :8998 backend.",
+  "default_ports": [
+    8998,
+    8088,
+    8008
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8998",
+      "rationale": "Default port for all three Moshi backends (PyTorch, MLX, Rust standalone). High noise from non-Moshi services but captures full population."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8998 http.html:\"kyutai\"",
+      "rationale": "The web UI static bundle references kyutai in markup and JS. Conjunctive filter on port + body token significantly reduces false positives."
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"Moshi\" port:8998",
+      "rationale": "The served index.html carries a Moshi page title. Combines title and port for high-precision targeting of exposed instances."
+    },
+    {
+      "tier": "version",
+      "query": "port:8998 ssl.cert.subject.cn:\"localhost\"",
+      "rationale": "Rust moshi-server auto-generates a self-signed cert with CN=localhost on first run. This is a strong fingerprint for unconfigured Rust-backend deployments."
+    },
+    {
+      "tier": "strict",
+      "query": "port:8998 http.html:\"moshi\" http.html:\"mimi\"",
+      "rationale": "Mimi is the Kyutai neural audio codec bundled in every Moshi deployment. Co-occurrence of moshi+mimi in body is highly specific to this platform."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8998,
+    "http_path": "/api/chat",
+    "title_contains": "Moshi",
+    "response_body_contains": [
+      "kyutai",
+      "Moshi",
+      "mimi"
+    ],
+    "http_header": "Upgrade: websocket"
+  },
+  "api_paths": [
+    "/api/chat",
+    "/",
+    "/*",
+    "/api/build_info",
+    "/api/modules_info",
+    "/metrics"
+  ],
+  "known_vulns": [],
+  "default_creds": [],
+  "risk_notes": "1. Compute theft: any internet-reachable instance gives free GPU inference to arbitrary clients. No rate limiting, no session cap, no quota enforcement. A100/H100 GPU time consumed at attacker will. 2. Audio eavesdropping: full-duplex voice sessions are unencrypted on HTTP deployments (PyTorch/MLX default). Even on TLS deployments, server-side session content is accessible to anyone who can connect. 3. Voice cloning surface: Moshi generates high-quality speech audio. Attacker with access can capture synthesized voice output and use it as training material for voice cloning. 4. No session isolation: the WebSocket binary protocol (0x00 handshake, 0x01 Opus audio, 0x02 text token) has no per-user identity. Concurrent connections share the same model context; session bleed is plausible depending on concurrency implementation. 5. Path traversal in static file serving: standalone.rs serves static files from configured directory; no explicit path traversal protection confirmed in source. 6. Gradio tunnel misconfiguration: --gradio-tunnel without --gradio-tunnel-token creates an ephemeral but publicly routable URL; operators often share this URL without realizing the endpoint is fully open. 7. DoS via resource exhaustion: no request throttling; a single client can saturate GPU compute, denying service to legitimate users.",
+  "deployment_notes": "Three backend paths with different default ports: Python/PyTorch on 8998 (most common self-hosted path), Rust moshi-backend on 8998 (standalone mode), MLX on 8998 (Apple Silicon). MoshiVis variants use 8088 (PyTorch/Rust) and 8008 (MLX). MoshiRAG adds reference encoder on 8001 and retrieval LLM on 8002. Official docker-compose.yml exposes 8998/tcp and bundles cloudflare/cloudflared to tunnel the unauthenticated service to the internet. HuggingFace model refs: kyutai/moshiko-pytorch-bf16 (male voice), kyutai/moshika-pytorch-bf16 (female voice). Minimum 24GB VRAM GPU required. Common cloud pattern: single GPU instance (A100/H100), port 8998 bound to 0.0.0.0 by accident or via Cloudflare tunnel, no reverse proxy with auth in front. PyPI package: moshi (PyTorch), moshi-mlx (Apple). Rust crate: moshi-server, moshi-cli on crates.io.",
+  "docker_images": [
+    "lintoai/kyutai-moshi-stt-server-cuda",
+    "lintoai/kyutai-moshi-stt-server-cpu",
+    "mmaudet/moshi-tts-api"
+  ],
+  "github_repos": [
+    "kyutai-labs/moshi",
+    "kyutai-labs/moshi-rag",
+    "kyutai-labs/moshivis",
+    "kyutai-labs/moshi-finetune",
+    "kyutai-labs/delayed-streams-modeling"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

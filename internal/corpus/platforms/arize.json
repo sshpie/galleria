@@ -1,0 +1,57 @@
+{
+  "platform": "arize",
+  "display_name": "Arize AX (Enterprise ML Observability)",
+  "category": "observability",
+  "default_ports": [443],
+  "api_paths": ["/v1", "/api/v1", "/graphql"],
+  "auth_default": "on",
+  "auth_config_env": [
+    "ARIZE_API_KEY",
+    "ARIZE_SPACE_ID",
+    "ARIZE_SPACE_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "Kubernetes/Helm via Terraform on GCP/AWS/Azure; ingress host arize-app.<org-domain>",
+  "misconfig_patterns": [
+    "ARIZE_API_KEY or ARIZE_SPACE_KEY committed to source repos or environment files",
+    "Self-hosted ingress misconfigured without TLS — gRPC OTLP endpoint exposed plaintext",
+    "Overly permissive Kubernetes RBAC on arize namespace allows lateral movement to trace data",
+    "Single-endpoint mode exposes all services (UI, OTLP, Flight) at one hostname without path-level ACL"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Arize\" ssl.cert.subject.cn:\"arize-app\"",
+      "ssl.cert.subject.cn:\"arize-app.*\""
+    ],
+    "active_probe": {
+      "path": "/v1",
+      "method": "GET",
+      "response_markers": ["Arize", "arize", "space_id"],
+      "false_positive_check": "Requires TLS cert CN containing 'arize-app' — generic /v1 endpoint is not sufficient"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"arize-app\"",
+    "strict": "ssl.cert.subject.cn:\"arize-app\" http.status:200",
+    "version": "ssl.cert.subject.cn:\"arize-app\" http.html:\"arize\""
+  },
+  "deployment_tells": [
+    "TLS cert CN contains 'arize-app.<org-domain>'",
+    "Kubernetes namespace 'arize' with services internalendpoints-app, arize-otlp, arize-flight",
+    "Helm chart deployment via Terraform in customer AWS/GCP/Azure environment",
+    "gRPC endpoints for OTLP trace ingestion and Arrow Flight for feature store queries"
+  ],
+  "pivot_paths": [
+    "ARIZE_API_KEY + ARIZE_SPACE_ID -> programmatic access to all model monitoring data, embeddings, production traces",
+    "Arrow Flight endpoint -> bulk export of embedding vectors and prediction logs",
+    "OTLP gRPC endpoint -> LLM span data including input/output tokens",
+    "Kubernetes misconfigured RBAC -> lateral movement to trace storage (PostgreSQL/S3)"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://arize.com/docs/ax/selfhosting/info/on-premise-overview",
+    "https://arize.com/docs/ax/selfhosting/info/on-premise-installation/configuring-ingress-endpoints",
+    "https://arize.com/docs/ax/selfhosting/on-premise-sdk-usage",
+    "https://arize.com/docs/ax/selfhosting/info/on-premise-installation/configuring-saml"
+  ]
+}

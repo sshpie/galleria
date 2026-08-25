@@ -1,0 +1,108 @@
+{
+  "name": "Botpress",
+  "slug": "botpress",
+  "category": "agent-platform",
+  "description": "Self-hosted open-source conversational AI platform (v12 and cloud). Provides bot building studio, NLU engine, messaging API, and admin panel. Stores full conversation history, workflow definitions, and embedded API keys/credentials. v12 is the primary self-hosted OSS branch.",
+  "auth_tier": "B",
+  "default_auth": "jwt",
+  "auth_notes": "Admin panel (/admin) requires JWT bearer token auth; user creates own admin account via first-run registration wizard (no hardcoded default credentials). However, the public Converse API endpoint (/api/v1/bots/{botId}/converse/{userId}) is unauthenticated by design — any unauthenticated actor can interact with any deployed bot and extract conversation data. This was flagged as a security problem in GitHub issue botpress/v12#1345 with a feature request to add a config switch to disable it. No HTTPS by default — server runs plain HTTP on port 3000, requiring a reverse proxy for TLS. JWT token expiry defaults to 6 hours. Auth bypass surface: unauthenticated converse endpoint + no TLS = credential interception and unrestricted bot access.",
+  "default_ports": [
+    3000,
+    3001,
+    80,
+    443
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "http.title:\"Botpress\" port:3000",
+      "rationale": "Matches default-port Botpress instances by page title; covers both admin and studio landing pages"
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"Botpress Admin\" port:3000 http.status:200",
+      "rationale": "Targets the admin panel specifically on the default port with a confirmed 200 response; high precision"
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"botpress\" http.html:\"bp-web-widget\" port:3000",
+      "rationale": "Conjunctive HTML body match on Botpress JS bundle identifiers; catches instances where title is customized"
+    },
+    {
+      "tier": "version",
+      "query": "http.title:\"Botpress\" http.html:\"v12_\" port:3000",
+      "rationale": "Version-tier dork using v12 bundle version strings embedded in the HTML response"
+    },
+    {
+      "tier": "basic",
+      "query": "http.title:\"Botpress\" port:3001",
+      "rationale": "Alternate port (3001) used in common docker-compose deployments that map host:3001->container:3000"
+    }
+  ],
+  "fingerprint_markers": {
+    "http_path": "/api/v1/admin/bots",
+    "title_contains": "Botpress",
+    "response_body_contains": [
+      "botpress",
+      "bp-web-widget",
+      "botpress-studio",
+      "Botpress Admin"
+    ],
+    "port": 3000
+  },
+  "api_paths": [
+    "/admin",
+    "/studio/{botId}",
+    "/api/v1/admin/bots",
+    "/api/v1/admin/bots/{botId}",
+    "/api/v1/admin/bots/{botId}/export",
+    "/api/v1/admin/users",
+    "/api/v1/admin/auth/login/basic",
+    "/api/v1/admin/versioning/export",
+    "/api/v1/admin/versioning/changes",
+    "/api/v1/admin/versioning/update",
+    "/api/v1/bots/{botId}/converse/{userId}",
+    "/api/v1/bots/{botId}/content/elements",
+    "/api/v1/bots/{botId}/logs",
+    "/api/v1/bots/{botId}/events",
+    "/api/v1/bots/{botId}/media",
+    "/api/v1/bots/{botId}/flows",
+    "/api/v1/bots/{botId}/nlu/train",
+    "/api/v2/messaging/webhooks",
+    "/webhooks/{botId}/{integrationId}",
+    "/api/v1/media"
+  ],
+  "known_vulns": [
+    "CVE-2026-4984 (CVSS 8.2/CVSSv4 9.3) — Credential Disclosure via Twilio Webhook Handler. Twilio integration does not validate X-Twilio-Signature header; attacker forges a webhook payload with MediaUrlN pointing to attacker-controlled server; Botpress fetches the URL with the Twilio accountSID+authToken in the Authorization header as base64 Basic Auth, exposing full Twilio account credentials unauthenticated. Discovered by Tenable (TRA-2026-22).",
+    "SNYK-JS-BOTPRESSCHANNELWEB-466988 — Stored XSS in @botpress/channel-web <12.1.4. Unsanitized user HTTP input in web chat allowed attackers to overwrite bot-scoped configurations. Remotely exploitable across the internet.",
+    "Unauth Converse API (no CVE — design flaw) — /api/v1/bots/{botId}/converse/{userId} is publicly accessible without any token by default. Allows unauthenticated extraction of bot conversation data and interaction with all deployed bots. Disclosed in botpress/v12 GitHub issue #1345.",
+    "No TLS by default — server runs plain HTTP; credentials and conversation data transmitted in cleartext unless operator configures reverse proxy."
+  ],
+  "default_creds": [
+    "No hardcoded defaults — first-run wizard forces admin account creation",
+    "Converse API endpoint is unauthenticated (no credentials required)"
+  ],
+  "risk_notes": "Primary attack surface: unauthenticated /api/v1/bots/{botId}/converse/{userId} endpoint exposes all deployed bots to interaction and data extraction without credentials. An attacker with Shodan-discovered botId values (often predictable slugs) can pull full conversation history including PII, user inputs, and any data passed through bot workflows. Admin panel compromise (via weak first-run password over plain HTTP) yields: full workflow definition export containing embedded API keys and third-party service credentials, NLU training data, all conversation logs, and the ability to deploy malicious bot flows. CVE-2026-4984 enables unauthenticated Twilio credential theft purely via a forged POST — no interaction required from an operator. Compute theft vector: bots with LLM integrations (OpenAI, Anthropic keys stored as config vars) can be abused via the public converse endpoint to burn API quota and exfiltrate key material from workflow definitions once admin access is obtained. No voice/audio native to v12 (cloud product has voice features), but PII in conversation logs is the primary data-exfil risk on self-hosted instances.",
+  "deployment_notes": "Primary self-hosted path: docker run -p 3000:3000 botpress/server:v12_31_10. Data persisted at /botpress/data inside container; operators mount a volume there. Common docker-compose maps host:3001->container:3000. SQLite by default; PostgreSQL supported via DATABASE_URL env var. Key env vars: BP_PRODUCTION=true (production logging mode), BP_CONFIG_HTTPSERVER_HOST=0.0.0.0 (bind all interfaces), EXTERNAL_URL (public URL for webhook callbacks), BPFS_STORAGE (filesystem vs DB). Botpress v12 is officially sunset by Botpress Inc. but widely deployed — existing self-hosted instances will not receive security updates. Railway template available for one-click cloud deploy. No HTTPS in-process; operators expected to front with NGINX/Caddy.",
+  "docker_images": [
+    "botpress/server:v12_31_10",
+    "botpress/server:v12_30_8",
+    "botpress/server:v12_25_0",
+    "ghcr.io/botpress/botpress/server:v12_31_10",
+    "jtdoepke/botpress"
+  ],
+  "github_repos": [
+    "botpress/v12",
+    "botpress/botpress",
+    "botpress/messaging",
+    "botpress/documentation-v12",
+    "botpress/botpress-cicd-example",
+    "jtdoepke/docker-botpress"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

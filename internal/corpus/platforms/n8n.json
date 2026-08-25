@@ -1,0 +1,57 @@
+{
+  "platform": "n8n",
+  "display_name": "n8n",
+  "category": "orchestration",
+  "default_ports": [5678],
+  "api_paths": ["/api/v1", "/", "/webhook", "/rest/admin/diagnostics"],
+  "auth_default": "none",
+  "auth_config_env": [
+    "N8N_BASIC_AUTH_ACTIVE",
+    "N8N_BASIC_AUTH_USER",
+    "N8N_BASIC_AUTH_PASSWORD",
+    "N8N_ENCRYPTION_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 5678:5678 n8nio/n8n",
+  "misconfig_patterns": [
+    "N8N_BASIC_AUTH_ACTIVE not set — auth disabled entirely",
+    "Credentials stored in workflow JSON in plaintext",
+    "Webhook endpoints reachable without authentication",
+    "N8N_ENCRYPTION_KEY left at default or in Docker logs",
+    "Default password 'changeme' when N8N_BASIC_AUTH_ACTIVE=true — not rotated on first deploy"
+  ],
+  "fingerprint": {
+    "passive": [
+      "product:n8n",
+      "http.title:\"n8n\"",
+      "port:5678",
+      "port:5678 http.html:\"n8n\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["n8n", "workflow"],
+      "false_positive_check": "HTML response must include n8n branding in title or footer"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"n8n\" port:5678",
+    "strict": "http.title:\"n8n\" port:5678",
+    "version": "http.title:\"n8n\" port:5678 http.html:\"n8n@\""
+  },
+  "deployment_tells": [
+    "http.title:n8n — highly distinctive",
+    "/api/v1 returns workflow list when auth disabled",
+    "PostgreSQL or SQLite backend referenced in diagnostics"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/workflows → workflow JSON → extract embedded service credentials",
+    "Webhook endpoints → trigger arbitrary workflow execution without auth",
+    "GET /rest/admin/diagnostics → stack version info via 401 header leakage"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Agentic AI for Offensive Cybersecurity (9781806114474) ch03",
+    "AI-Native LLM Security (9781836203759) ch04"
+  ]
+}

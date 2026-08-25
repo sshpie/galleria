@@ -1,0 +1,90 @@
+{
+  "name": "F5-TTS",
+  "slug": "f5-tts",
+  "category": "voice-tts-conversational",
+  "description": "Flow-matching zero-shot voice-cloning TTS (SWivid/F5-TTS, 'A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching'). Self-hosted almost universally via its bundled Gradio web UI (f5-tts_infer-gradio) on port 7860, which clones any voice from a short reference-audio + reference-text pair. Gradio also exposes a programmatic API. No authentication by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in the F5-TTS Gradio app or its API. The upstream launch command (f5-tts_infer-gradio) binds 0.0.0.0:7860 with no auth; Gradio's built-in auth (auth= tuple) is off unless the operator adds it, which the F5-TTS launcher does not. --share creates a public gradio.live tunnel that is also unauthenticated. Because voice cloning only needs a reference clip, an open F5-TTS instance is a turnkey impersonation service for anyone who can reach 7860.",
+  "default_ports": [
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"F5-TTS\"",
+      "rationale": "The Gradio UI title/markdown contains 'F5-TTS'; HTML-body match on the SPA shell or config. High precision for this platform. Volume moderate."
+    },
+    {
+      "tier": "basic",
+      "query": "http.title:\"Gradio\" port:7860 http.html:\"F5-TTS\"",
+      "rationale": "Anchors on the generic Gradio SPA title then narrows with the F5-TTS string to strip other Gradio TTS apps (Bark, Parler, XTTS) sharing port 7860."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"F5-TTS\" http.html:\"Reference Audio\"",
+      "rationale": "'Reference Audio' + 'Reference Text' are F5-TTS UI labels for the voice-clone reference pair; combined with the model name this is near-unique and confirms the clone workflow is live. FP-risk: E2-TTS shares this UI (same repo/space) — treat E2/F5 as one family."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"f5-tts\" http.html:\"config\"",
+      "rationale": "Gradio serves a /config JSON that embeds the app title and component tree; matching f5-tts inside the rendered config disambiguates from a bare Gradio placeholder. Some signals here are JSON-body — verify via /config fetch (Censys-route if Shodan HTML misses)."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"gradio\" http.html:\"version\" http.html:\"F5-TTS\"",
+      "rationale": "Gradio embeds its own framework version in the page/config (drives Gradio-CVE scoping, see known_vulns); pair with F5-TTS to version-scope this platform specifically. The Gradio version, not the F5-TTS version, is the exploit-relevant number."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "F5-TTS",
+    "response_body_contains": [
+      "F5-TTS",
+      "Reference Audio",
+      "Reference Text",
+      "gradio",
+      "flow matching"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET / (Gradio SPA)",
+    "GET /config (Gradio app config JSON — title, components, version)",
+    "POST /api/predict (Gradio inference)",
+    "POST /run/predict",
+    "POST /queue/join (Gradio queued inference / websocket)",
+    "GET /queue/data",
+    "POST /gradio_api/call/... (Gradio 4.x/5.x API)",
+    "POST /component_server (Gradio internal — CVE-2024-1561 surface)",
+    "GET /file= (Gradio file route — CVE-2023-51449 surface)",
+    "GET /info (Gradio API schema)"
+  ],
+  "known_vulns": [
+    "No authentication — unauthenticated voice cloning from any reference clip; turnkey impersonation-as-a-service on an open port",
+    "Gradio CVE-2024-1561: arbitrary local file read via /component_server method invocation (move_resource_to_block_cache) on Gradio 3.47-4.12 — reads /etc/passwd, /proc/self/environ, API keys from env",
+    "Gradio CVE-2023-51449: /file route path traversal / SSRF on Gradio 4.0-4.10 — arbitrary file read incl. /proc/self/environ secret exfiltration; patched 4.11.0",
+    "Gradio CVE-2024-1728: local file inclusion via UploadButton /queue/join on Gradio <4.19.2 — read private SSH keys and arbitrary files",
+    "Gradio CVE-2024-1727: CSRF / lack of same-origin enforcement on Gradio <4.19.2 — cross-site request abuse of the inference API",
+    "Reference-audio upload surface accepts arbitrary audio and is passed to ffmpeg/torchaudio — DoS via malformed/oversized files exhausts GPU VRAM; no size/MIME limits",
+    "No rate limiting — GPU compute-theft; F5-TTS is GPU-heavy so abuse is directly costly to the operator",
+    "HuggingFace Spaces / gradio.live --share tunnels publicly index open F5-TTS instances with no usage controls"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Voice-cloning impersonation — F5-TTS clones a target voice from a few seconds of reference audio with no auth; an open instance is a ready-made fraud/vishing/deepfake tool (executive impersonation, family-emergency scams, KYC-voice bypass). This is the dominant risk and materially higher than for non-cloning TTS. (2) Reference-audio exposure — operators' own uploaded reference clips (often real people's voices, sometimes without consent) may be recoverable from the Gradio file cache / /file route, itself a privacy and biometric-data leak. (3) Gradio file-read chain — CVE-2024-1561 / CVE-2023-51449 / CVE-2024-1728 turn an exposed 7860 into /proc/self/environ secret exfiltration (HF tokens, cloud creds) when the framework is unpatched. (4) GPU compute-theft — flow-matching inference is GPU-costly; unauth + no rate limit = free GPU at operator expense. (5) Disinformation audio at scale. The exploit-relevant version is the Gradio framework version (from /config), not the F5-TTS model version.",
+  "deployment_notes": "Standard deployment is the bundled Gradio app launched with 'f5-tts_infer-gradio --host 0.0.0.0 --port 7860' (also settable via GRADIO_SERVER_PORT). The official swivid/f5-tts:main Docker image ships this entrypoint on 7860. '--api' exposes the programmatic Gradio client API; '--share' opens a public gradio.live tunnel. Heavily deployed on RunPod / Vast.ai / Lambda GPU rentals and as HuggingFace Spaces (parler-tts and mrfakename/E2-F5-TTS spaces are canonical demos). The same UI serves the E2-TTS sibling model — fingerprint F5 and E2 as one family. GPU strongly recommended; CPU inference is impractically slow. Gradio framework version drives the CVE surface and is recoverable from GET /config.",
+  "docker_images": [
+    "ghcr.io/swivid/f5-tts:main",
+    "swivid/f5-tts:main"
+  ],
+  "github_repos": [
+    "SWivid/F5-TTS"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

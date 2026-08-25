@@ -1,0 +1,34 @@
+{
+  "name": "LangGraph Server",
+  "category": "agent-platform",
+  "github": "https://github.com/langchain-ai/langgraph",
+  "description": "REST server hosting compiled LangGraph agents (assistants, threads, runs, persistent state, store), Postgres + Redis.",
+  "default_ports": [2024, 8123, 8000],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "api-unauth",
+  "tls_default": false,
+  "fingerprint_status": "candidate",
+  "fingerprint_note": "GET /ok returns {\"ok\":true}; GET /info present; POST /assistants/search + /threads/search + /store/items are LangGraph-unique. Auth is opt-in (@auth.authenticate); Studio-origin requests bypass even configured auth. dev=2024 binds 127.0.0.1.",
+  "dorks": {
+    "basic": "langgraph",
+    "strict": "http.html:\"/assistants/search\" http.html:\"/threads/search\"",
+    "version": null
+  },
+  "dork_notes": "Shodan-BANNER-dark by construction (confirmed 2026-06-19 round-2, primary-source markers): port:8123 \"langgraph_py_version\"=0, \"search_assistants_assistants_search_post\" (openapi operationId)=0 — Shodan crawls / and never fetches /info or /openapi.json where the discriminating markers live. http.html:\"LangGraph\"=590 but pure freetext collision (Galent/NewRelic/PaellaDoc product+marketing pages embed the framework name; real servers return {\"ok\":true} JSON at /, not HTML). dev=2024 binds 127.0.0.1 (lo-dark); docker `langgraph up` publishes host 8123->container 8000 on 0.0.0.0 (reachable but banner-dark). Engine route: Censys / active-probe, NOT Shodan HTML dorking.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "aimap_ports": null,
+  "aimap_probes": null,
+  "severity": "high",
+  "severity_note": "Unauth = provider + LANGSMITH keys (worker env), graph/tool defs, full agent memory (threads state/history, store/items, often PII), code-exec via POST /runs against custom-node assistants.",
+  "exposure_data": "provider+LANGSMITH keys, graph/tool definitions, thread state/history (PII), store items, run code-exec",
+  "research_date": "2026-06-19",
+  "sources": [
+    "https://github.com/langchain-ai/langgraph",
+    "CANDIDATE:  cat-agent-platforms survey 2026-06-19. Round-1: 14 freetext candidates 0/14 verified (catch-all SPAs). Round-2: primary-source markers (langgraph_py_version, search_assistants operationId) all 0 — Shodan-BANNER-dark by construction (markers in /info & /openapi.json, never crawled). Not Shodan-selectable; route to Censys/active-probe. Agent surfaced candidate CVE IDs (unverified, not codified)."
+  ]
+}

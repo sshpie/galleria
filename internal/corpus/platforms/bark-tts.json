@@ -1,0 +1,91 @@
+{
+  "name": "Bark TTS",
+  "slug": "bark-tts",
+  "category": "voice-tts-conversational",
+  "description": "Transformer-based generative audio model from Suno (suno-ai/bark) that produces speech, music, sound effects, laughter and nonverbal cues from text, using history-prompt speaker presets (e.g. v2/en_speaker_6). Bark is primarily a Python library with no official server; it is exposed via third-party wrappers — a Gradio web UI (C0untFloyd/bark-gui, port 7860) or a Flask/FastAPI micro-API (artificialcitizens/bark-tts-api, port 5000, POST /bark-inference). No authentication in any wrapper.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication. Bark core is a library (no network listener). The common exposure wrappers add none: bark-gui launches a plain Gradio app on 7860 with no auth tuple; bark-tts-api serves Flask on 0.0.0.0:5000 with an open POST /bark-inference. Gradio --share opens an unauthenticated public tunnel. Any wrapper that binds a public interface is fully open unless the operator adds a reverse proxy.",
+  "default_ports": [
+    7860,
+    5000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7860 http.html:\"Bark\" http.html:\"gradio\"",
+      "rationale": "bark-gui Gradio UI title/markdown references Bark; HTML-body match anchored on the Gradio SPA. FP-risk: 'Bark' is a common English word — pair with gradio and a Bark-specific token (below) to cut noise."
+    },
+    {
+      "tier": "basic",
+      "query": "port:5000 http.html:\"bark-inference\"",
+      "rationale": "The bark-tts-api micro-service exposes POST /bark-inference; the path in a docs page or error body is near-unique. Low volume (this wrapper is niche) but high precision."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"en_speaker\" http.html:\"gradio\"",
+      "rationale": "Bark's history-prompt speaker presets (v2/en_speaker_0..9, plus de/es/fr/... speakers) appear as dropdown values in the bark-gui config; 'en_speaker' is a strong Bark discriminator versus other Gradio TTS apps. Some of this is JSON-body (/config) -> verify via /config fetch."
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.html:\"bark\" http.html:\"history prompt\"",
+      "rationale": "'history prompt' / 'voice preset' are Bark-specific generation-parameter labels distinguishing it from cloning (F5) or fixed-speaker (Melo/Piper) TTS UIs. Confirms a live Bark generator."
+    },
+    {
+      "tier": "version",
+      "query": "port:7860 http.html:\"bark\" http.html:\"gradio\" http.html:\"version\"",
+      "rationale": "Gradio framework version from the page/config drives the Gradio-CVE surface for bark-gui; pair with bark to scope this platform. The Gradio version is the exploit-relevant number, not the Bark commit."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7860,
+    "http_path": "/",
+    "title_contains": "Bark",
+    "response_body_contains": [
+      "bark",
+      "en_speaker",
+      "history prompt",
+      "gradio",
+      "generate audio"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET / (bark-gui Gradio SPA)",
+    "GET /config (Gradio app config JSON)",
+    "POST /api/predict (Gradio inference)",
+    "POST /run/predict",
+    "POST /queue/join (Gradio queued inference)",
+    "POST /component_server (Gradio internal — CVE-2024-1561 surface)",
+    "GET /file= (Gradio file route — CVE-2023-51449 surface)",
+    "POST /bark-inference (bark-tts-api Flask micro-service, port 5000)"
+  ],
+  "known_vulns": [
+    "No authentication — unauthenticated generative audio synthesis; open backend for speech + sound + music generation",
+    "Gradio CVE-2024-1561 (bark-gui): arbitrary local file read via /component_server on Gradio 3.47-4.12 — /etc/passwd, /proc/self/environ, env secrets",
+    "Gradio CVE-2023-51449 (bark-gui): /file path traversal / SSRF on Gradio 4.0-4.10 — arbitrary file read / secret exfiltration",
+    "Gradio CVE-2024-1728 / CVE-2024-1727 (bark-gui): UploadButton LFI and CSRF on Gradio <4.19.2",
+    "No rate limiting — Bark is GPU-heavy (full model ~5.5GB VRAM); unauth + no limit = high-cost GPU compute-theft",
+    "Long/looping generation and prompt-controlled output length enable DoS via VRAM/compute exhaustion",
+    "No content filtering — generates convincing nonverbal/emotional speech and can be steered toward impersonation and disinformation audio",
+    "bark-tts-api open POST /bark-inference on 0.0.0.0:5000 with no auth or input bounds"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) GPU compute-theft — Bark loads a ~5.5GB transformer stack and is markedly GPU-costly per generation; an open no-auth wrapper is expensive free compute at operator expense, the highest-cost abuse among these six for the operator. (2) TTS/audio-abuse — Bark's realistic nonverbals (laughter, hesitation, emotion) and music/SFX generation make it attractive for high-realism scam audio, fake ambient/'evidence' audio, and disinformation; no content controls. (3) Gradio file-read chain (bark-gui) — CVE-2024-1561 / 2023-51449 / 2024-1728 escalate an exposed 7860 into env-secret exfiltration when the framework is unpatched. (4) DoS — prompt-controlled generation length exhausts VRAM. Note Bark ships no official server, so exposed instances are third-party wrappers whose framework (Gradio/Flask) version — not Bark itself — sets the CVE surface. Data-sensitivity is low (no user-audio ingest, no cloning of arbitrary targets), so this is an abuse-of-compute / abuse-of-voice risk rather than PII exfiltration.",
+  "deployment_notes": "Bark itself is a library (import bark / from bark import generate_audio) with no listener — there is NO canonical Bark server, so every exposed instance is a third-party wrapper. Dominant wrappers: C0untFloyd/bark-gui (Gradio web UI on 7860, Windows-focused but cross-platform) and artificialcitizens/bark-tts-api (Flask micro-service, POST /bark-inference on 5000). Bark is also integrated into coqui-tts, and served on Replicate/HF Spaces. Full model ~5.5GB VRAM (bark-small ~2.25GB); GPU strongly preferred. SUNO_OFFLOAD_CPU / SUNO_USE_SMALL_MODELS env vars tune resource use. Because the server is always a wrapper, fingerprint on the wrapper (Gradio bark-gui title + en_speaker presets, or the /bark-inference path) and scope CVEs against the wrapper's framework version.",
+  "docker_images": [
+    "C0untFloyd/bark-gui (Dockerfile in repo)",
+    "artificialcitizens/bark-tts-api (docker-compose in repo)"
+  ],
+  "github_repos": [
+    "suno-ai/bark",
+    "C0untFloyd/bark-gui",
+    "artificialcitizens/bark-tts-api"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+ "name": "django-river-ml",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "Vanessa Sochat (vsoch / @vsoch), independent maintainer; active in the U.S. Research Software Engineering community (former Stanford Research Computing / LLNL)",
+  "backing": "OSS",
+  "status": "active",
+  "repo": "https://github.com/vsoch/django-river-ml",
+  "hq": "USA (individual maintainer)",
+  "scale": "Small/niche. Single-maintainer research project, BSD-3 license. ~10 GitHub releases, latest v0.0.21 (2023-12-25). Self-described in repo header as 'under-development'. Low star count, no organizational backing. On PyPI as django-river-ml. Companion client: github.com/vsoch/riverapi (riverapi on PyPI)."
+ },
+ "ports": [
+  "8000/tcp (Django runserver default; URL_PREFIX 'api' -> /api/)",
+  "6379/tcp (Redis, only if STORAGE_BACKEND='redis'; adjacent, not on the app port)"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "http.html:\"Django River ML Endpoint\"",
+  "http.html:\"django_river_ml\"",
+  "http.html:\"django_river_ml\" http.html:\"river_version\"",
+  "http.html:\"Django River ML Endpoint\" http.html:\"https://vsoch.github.io/django-river-ml\"",
+  "http.html:\"id\":\"django_river_ml\" http.html:\"river_version\" http.html:\"version\"",
+  "http.html:\"Django River ML Endpoint\" http.html:\"storage\""
+ ],
+ "verification_primitive": {
+  "probe": "HTTP GET http://<host>:8000/api/ (or /<URL_PREFIX>/ if customized). Single unauthenticated GET, no body, no mutation.",
+  "success_signal": "HTTP 200 with JSON containing \"name\":\"Django River ML Endpoint\" and \"id\":\"django_river_ml\". Confirms a live django-river-ml instance with the always-unauth service-info view reachable. To confirm the data plane is open, GET /api/models/ returning 200 JSON list (not 401/403) proves DISABLE_AUTHENTICATION is in effect / the view is ungated.",
+  "impact_when_open": "Read-only confirmation that an online-ML model server is exposed and unauthenticated, with model inventory and version metadata disclosed. The probe alters nothing."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/api/",
+   "returns": "ServiceInfo JSON, unauthenticated unconditionally (permission_classes=[], no is_authenticated call). Body: {\"id\":\"django_river_ml\",\"status\":\"running\",\"name\":\"Django River ML Endpoint\",\"description\":\"This service provides an api for models\",\"documentationUrl\":\"https://vsoch.github.io/django-river-ml\",\"storage\":<backend>,\"river_version\":<ver>,\"version\":<pkg ver>}. Primary fingerprint."
+  },
+  {
+   "method": "GET",
+   "path": "/api/models/",
+   "returns": "JSON list of all registered model names. NOT in AUTHENTICATED_VIEWS, reachable even when auth enabled; trivially open when DISABLE_AUTHENTICATION=True (default)."
+  },
+  {
+   "method": "GET",
+   "path": "/api/model/<name>/",
+   "returns": "JSON dict of model structure/params (model_to_dict). Gated only by AUTHENTICATED_VIEWS when auth on; open by default."
+  },
+  {
+   "method": "GET",
+   "path": "/api/model/download/<name>/",
+   "returns": "Raw dill-pickled River model object as application/octet-stream. NOT in AUTHENTICATED_VIEWS. Loading it with dill/pickle = arbitrary code execution on the consumer; also leaks the full model and learned parameters."
+  },
+  {
+   "method": "POST",
+   "path": "/api/model/<flavor>/<name>/",
+   "returns": "Server runs dill.loads(request.body) to register a model = untrusted pickle deserialization SERVER-SIDE. With default auth OFF this is an unauthenticated deserialization sink (potential host RCE)."
+  },
+  {
+   "method": "POST",
+   "path": "/api/learn/",
+   "returns": "201 with learn result; mutates the named model with attacker-supplied features/ground_truth (online model poisoning). In AUTHENTICATED_VIEWS but open by default."
+  },
+  {
+   "method": "POST",
+   "path": "/api/predict/",
+   "returns": "200/201 with prediction + generated identifier; exercises the model. In AUTHENTICATED_VIEWS but open by default."
+  },
+  {
+   "method": "GET",
+   "path": "/api/stats/",
+   "returns": "JSON per-model timing stats (learn_mean/predict_mean/EWM). NOT in AUTHENTICATED_VIEWS - open even when auth on."
+  },
+  {
+   "method": "GET",
+   "path": "/api/metrics/",
+   "returns": "JSON model metrics (model name in body required). In AUTHENTICATED_VIEWS."
+  },
+  {
+   "method": "GET",
+   "path": "/api/stream/metrics/",
+   "returns": "SSE text/event-stream of live metrics."
+  },
+  {
+   "method": "GET",
+   "path": "/api/stream/events/",
+   "returns": "SSE text/event-stream of live learn/predict events (can leak feature payloads in transit)."
+  },
+  {
+   "method": "GET",
+   "path": "/api/auth/token/",
+   "returns": "GetAuthToken; issues a JWT when valid credentials are presented (only meaningful when auth enabled)."
+  }
+ ],
+ "cves": [],
+ "sources": [
+  "https://github.com/vsoch/django-river-ml",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/settings.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/auth.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/urls.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/middleware.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/views/base.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/views/model.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/views/metrics.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/views/learn.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/django_river_ml/views/predict.py",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/tests/settings.py",
+  "https://vsoch.github.io/django-river-ml/",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/docs/getting_started/user-guide.rst",
+  "https://raw.githubusercontent.com/vsoch/django-river-ml/main/docs/getting_started/installation.rst",
+  "https://github.com/vsoch/riverapi",
+  "https://vsoch.github.io/riverapi/getting_started/user-guide.html",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

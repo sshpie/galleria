@@ -1,0 +1,101 @@
+{
+  "platform": "lightdash",
+  "display_name": "Lightdash",
+  "category": "bi_dashboard_ai_wired",
+  "default_ports": [
+    8080
+  ],
+  "api_paths": [
+    "/api/v1/health",
+    "/api/v1/org",
+    "/api/v1/user",
+    "/api/v1/projects",
+    "/login",
+    "/register"
+  ],
+  "auth_default": "auth-mandatory-multiuser",
+  "auth_config_env": [
+    "LIGHTDASH_SECRET",
+    "AUTH_DISABLE_PASSWORD_AUTHENTICATION",
+    "ALLOW_MULTIPLE_ORGS",
+    "SECURE_COOKIES",
+    "TRUST_PROXY",
+    "AUTH_GOOGLE_OAUTH2_CLIENT_ID",
+    "AUTH_GOOGLE_OAUTH2_CLIENT_SECRET",
+    "AUTH_OKTA_OAUTH_CLIENT_ID",
+    "AUTH_AZURE_AD_OAUTH_CLIENT_ID",
+    "AUTH_OIDC_CLIENT_ID"
+  ],
+  "default_creds": [],
+  "install_tell": "git clone https://github.com/lightdash/lightdash && cd lightdash && cp .env.development.local.example .env && docker compose -f docker-compose.yml up (publishes ${PORT:-8080}:${PORT:-8080}); production self-host requires LIGHTDASH_SECRET, SITE_URL, PGCONNECTIONURI set",
+  "misconfig_patterns": [
+    "Pre-setup race: a fresh instance with zero orgs returns health.results.requiresOrgRegistration=true; the first visitor to /register creates the organization and becomes its admin. Internet-exposed un-set-up instance = claimable admin (read-only confirm via /api/v1/health, no register POST).",
+    "LIGHTDASH_SECRET copied from .env.development ('not very secret') into production => known token-signing secret; session/token forgery surface. Operators who lift the dev env file inherit it.",
+    "SECURE_COOKIES=false + TRUST_PROXY=false (dev defaults) behind an HTTPS reverse proxy => session cookie not flagged Secure; docs explicitly say flip both to true in prod.",
+    "ALLOW_MULTIPLE_ORGS=true lets any registrant spin up their own org on a shared instance (separate-tenant self-registration); default false keeps the instance invite-only after first org exists.",
+    "No whole-app unauth mode exists. Unlike Superset (admin/admin) or Redash, every data/AI path is behind a session by default => high-depth low-breadth posture; the only standing open door is the pre-setup window."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Lightdash\"",
+      "http.html:\"<div id=\\\"root\\\"></div>\" http.title:\"Lightdash\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/health",
+      "method": "GET",
+      "response_markers": [
+        "HTTP 200 unauthenticated (no auth gate on /api/v1/health)",
+        "JSON results.version = real instance version (not in HTML)",
+        "JSON results.requiresOrgRegistration <bool> = !hasOrgs() ; true => claimable admin",
+        "JSON results.isAuthenticated=false for an anonymous probe (first-class field)",
+        "JSON results.auth.disablePasswordAuthentication key present (Lightdash-unique field set)",
+        "JSON results.ai.isAmbientAiEnabled <bool> = AI-agents-wired discriminator",
+        "JSON results.siteUrl = operator hostname (attribution leak)"
+      ],
+      "false_positive_check": "The word 'Lightdash' appears on www.lightdash.com and doc/blog mirrors and on dashboards a user titled 'Lightdash' inside another BI tool. To avoid the ~50% title-only false positive, confirm the unauth JSON contract: GET /api/v1/health must return HTTP 200 with a JSON object whose results carry BOTH a `version` string AND a `requiresOrgRegistration` key AND `auth.disablePasswordAuthentication`. No other product emits that field set; a marketing page or doc mirror 404s the route. Distinguish a claimable-admin pre-setup instance (results.requiresOrgRegistration=true) from a normal locked instance (false, isAuthenticated=false, data routes 401). Surface fingerprinted != access exercised: /health open does NOT mean data is open; /api/v1/org returning 401/403 confirms the session gate holds."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Lightdash\"",
+    "strict": "http.html:\"<div id=\\\"root\\\"></div>\" http.title:\"Lightdash\"",
+    "version": "http.title:\"Lightdash\" port:8080"
+  },
+  "deployment_tells": [
+    "Backend listens on PORT=8080; docker-compose publishes ${PORT:-8080}:${PORT:-8080}; almost always reverse-proxied to 80/443 with a hostname",
+    "React SPA: <title>Lightdash</title>, <div id=\"root\"></div>, theme-color #394b59",
+    "/favicon.ico (+ /apple-touch-icon.png, /manifest.json)",
+    "GET /api/v1/health = near-zero-cost unauth liveness + identity + state + AI-wired + attribution in one blob",
+    "Sidecar ports: PGPORT 5432 (metadata Postgres, not the warehouse), HEADLESS_BROWSER_PORT 3000 (export puppeteer), LIGHTDASH_PROMETHEUS_PORT 9090 (off by default)",
+    "Session cookie connect.sid (express-session default; CANDIDATE, may be overridden)"
+  ],
+  "pivot_paths": [
+    "Read /api/v1/health unauth for version (CVE scoping), claimable-admin state (requiresOrgRegistration), AI-on (ai.isAmbientAiEnabled), warehouse class (auth.snowflake/databricks.enabled), and operator hostname (siteUrl) - all pre-auth, read-only",
+    "If requiresOrgRegistration=true: instance is un-set-up; the next /register creates org admin. CONFIRM read-only via health only; do NOT POST /register against survey hosts (names ARE the finding)",
+    "Cert-CN attribution sweep ssl.cert.subject.cn:lightdash for operator self-host clusters",
+    "Post-auth (out of recon scope): AI agents answer over dbt semantic layer + warehouse; MCP server (Claude/Cursor) gives write access to the analytics layer; CVE-2024-6585 XSS / CVE-2024-6586 SSRF need editor/admin"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-6585 / GHSA-6529-6jv3-66q2 - stored XSS in markdown dashboards + dashboard comments (High, CVSS 8.7); auth required (Admin/Editor); affects 0.1024.6; fixed 0.1042.2",
+    "CVE-2024-6586 / GHSA-4h7x-6vxh-7hjf - SSRF session-takeover via dashboard export, exporting user leaks session token (High, CVSS 7.3); auth required; affects 0.1024.6; fixed 0.1027.2",
+    "No pre-auth RCE / authz-bypass CVE found. Primary misconfig class is non-CVE: requiresOrgRegistration=true claimable-admin pre-setup window + copied dev LIGHTDASH_SECRET + SECURE_COOKIES=false behind a proxy"
+  ],
+  "auth_evidence": "PRIMARY SOURCE: HealthService.ts sets `const isAuthenticated = !!user?.userUuid` and `const requiresOrgRegistration = !(await this.organizationModel.hasOrgs())`; an anonymous probe is a first-class case (isAuthenticated:false) on a 200 /api/v1/health, but every data/project/AI route sits behind the session. .env.development ships AUTH_DISABLE_PASSWORD_AUTHENTICATION=false (password login on) and all OIDC providers enabled:false. There is NO ALLOW_SELF_REGISTRATION flag and NO whole-app unauth mode. Registration = first-user-claims-org-admin, then invite-only (ALLOW_MULTIPLE_ORGS=false default). Therefore Lightdash is auth-mandatory-multiuser: data is never default-open; the only standing exposure is a transient un-set-up instance. This CONFIRMS Insight #40 (auth-on-default shifts rightward in newer OSS): Lightdash is materially more locked down than Superset (admin/admin) or Redash.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "(pre-auth, via /api/v1/health) instance version, claimable-admin state, AI-agents-enabled flag, warehouse class, operator hostname (siteUrl)",
+    "(post-auth, out of recon scope) dbt semantic-layer model + metric definitions, project/warehouse connection config, chart/dashboard data over BigQuery/Snowflake/Postgres/Databricks, AI agent prompts/threads, warehouse credentials, embedded-analytics secrets, MCP write surface"
+  ],
+  "sources": [
+    "https://github.com/lightdash/lightdash",
+    "https://github.com/lightdash/lightdash/blob/main/packages/backend/src/services/HealthService/HealthService.ts",
+    "https://github.com/lightdash/lightdash/blob/main/packages/frontend/src/testing/__mocks__/api/healthResponse.mock.ts",
+    "https://github.com/lightdash/lightdash/blob/main/packages/frontend/index.html",
+    "https://github.com/lightdash/lightdash/blob/main/docker-compose.yml",
+    "https://github.com/lightdash/lightdash/blob/main/.env.development",
+    "https://docs.lightdash.com/self-host/customize-deployment/environment-variables",
+    "https://www.lightdash.com/agentic-bi",
+    "https://github.com/google/security-research/security/advisories/GHSA-6529-6jv3-66q2",
+    "https://github.com/google/security-research/security/advisories/GHSA-4h7x-6vxh-7hjf",
+    "[CANDIDATE -  Cat-16 BI-Dashboards Stage -1 OSINT 2026-06-28; software-default characterization, no live host probed yet]"
+  ]
+}

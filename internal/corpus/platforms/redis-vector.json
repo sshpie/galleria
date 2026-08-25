@@ -1,0 +1,63 @@
+{
+  "platform": "redis-vector",
+  "display_name": "Redis Vector (RedisSearch / RediStack)",
+  "category": "vector_db",
+  "default_ports": [
+    6379,
+    8001
+  ],
+  "api_paths": [
+    "/api/instance/",
+    "/api/databases",
+    "/api/databases/{id}/keys"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "REDIS_PASSWORD",
+    "REDIS_AUTH"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 6379:6379 -p 8001:8001 redis/redis-stack:latest",
+  "misconfig_patterns": [
+    "No requirepass in default Redis config — TCP :6379 fully open",
+    "RedisInsight UI at :8001 exposes full database browser without auth",
+    "FT._LIST enumerates all vector indexes without credentials",
+    "RedisInsight /api/databases returns Redis AUTH passwords in plaintext (Insight #61)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"RedisInsight\" port:8001",
+      "port:6379"
+    ],
+    "active_probe": {
+      "path": "/api/instance/",
+      "method": "GET",
+      "response_markers": [
+        "\"RedisInsight\""
+      ],
+      "false_positive_check": "RedisInsight API response must include RedisInsight in body — port 8001 alone is not sufficient"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"RedisInsight\" port:8001",
+    "strict": "http.html:\"RedisInsight\" port:8001",
+    "version": "http.html:\"RedisInsight\" port:8001 \"version\""
+  },
+  "deployment_tells": [
+    "TCP :6379 responds +PONG to PING — confirms Redis (high FP, not specific to vector)",
+    "RedisInsight UI at :8001 — full key browser without auth",
+    "GET :8001/api/databases returns connected Redis instances with plaintext passwords"
+  ],
+  "pivot_paths": [
+    "TCP :6379 COMMAND FT._LIST → vector index names without auth",
+    "TCP :6379 FT.INFO {index} → num_docs, vector dimensions, algorithm",
+    "GET :8001/api/databases → Redis connection strings with plaintext passwords (Insight #61)"
+  ],
+  "vulnerabilities": [
+    "CVE-2025-49844 (RediShell, CVSS 10.0): Redis core pre-auth RCE"
+  ],
+  "sources": [
+    "https://redis.io/docs/stack/search/",
+    "[CONFIRMED —  Cat-02 survey 2026-06-05; live population observed]"
+  ]
+}

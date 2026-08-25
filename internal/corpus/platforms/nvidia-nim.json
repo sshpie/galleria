@@ -1,0 +1,48 @@
+{
+  "platform": "nvidia-nim",
+  "display_name": "NVIDIA NIM",
+  "category": "inference_serving",
+  "default_ports": [8000],
+  "api_paths": ["/v1/completions", "/v1/chat/completions", "/v1/models"],
+  "auth_default": "none",
+  "auth_config_env": ["NGC_API_KEY", "NIM_CACHE_PATH"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8000:8000 nvcr.io/nim/meta/llama3-8b-instruct:latest",
+  "misconfig_patterns": [
+    "OpenAI-compat container exposes without auth by default",
+    "NGC_API_KEY present in container environment — grants NVIDIA cloud registry access",
+    "PersistentVolume model cache world-readable in Kubernetes"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8000 http.html:\"nvidia\"",
+      "http.html:\"nvcr.io\"",
+      "http.html:\"nvidia-nim\""
+    ],
+    "active_probe": {
+      "path": "/v1/models",
+      "method": "GET",
+      "response_markers": ["\"nvcr.io\""],
+      "false_positive_check": "model id field must follow NVIDIA NIM format e.g. meta/llama3-8b-instruct; nvcr.io may appear in image references in response"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"nim\" port:8000",
+    "strict": "port:8000 http.html:\"nvidia\" http.html:\"nim\"",
+    "version": "port:8000 http.html:\"nvcr.io\""
+  },
+  "deployment_tells": [
+    "NIM container images sourced from nvcr.io registry",
+    "PersistentVolume model cache in Kubernetes pod spec",
+    "NGC_API_KEY in pod environment"
+  ],
+  "pivot_paths": [
+    "GET /v1/models → NIM model ID → identify NVIDIA catalog offering and version",
+    "NGC_API_KEY exposure → NVIDIA cloud registry pivot → private model access",
+    "nvcr.io image tag → identify exact model family and optimization profile"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01"
+  ]
+}

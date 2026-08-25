@@ -1,0 +1,43 @@
+{
+  "platform": "kafka-ui-provectus",
+  "display_name": "Kafka UI (provectus)",
+  "category": "event_streaming_webui",
+  "default_ports": [8080],
+  "api_paths": ["/", "/api/clusters"],
+  "auth_default": "none",
+  "auth_config_env": ["AUTH_TYPE"],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:8080 provectuslabs/kafka-ui — AUTH_TYPE defaults to DISABLED, must be explicitly set to LOGIN_FORM/OAUTH2/LDAP to enable",
+  "misconfig_patterns": [
+    "AUTH_TYPE env var not set (shipped default DISABLED)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"UI for Apache Kafka\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["React SPA title: UI for Apache Kafka"],
+      "false_positive_check": "distinctive title string, low FP; likely highest-population wrapper in this category as of 2026 (successor to Kafdrop/AKHQ mindshare)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"UI for Apache Kafka\"",
+    "strict": "http.title:\"UI for Apache Kafka\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "multi-cluster config in one UI — one exposed instance can bridge to several backend Kafka clusters at once"
+  ],
+  "pivot_paths": [
+    "topic messages read+produce, consumer groups",
+    "Schema Registry subjects, Kafka Connect connectors, ksqlDB query execution surface when connected",
+    "multi-cluster connection configs may embed broker creds"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.kafka-ui.provectus.io/configuration/authentication",
+    "[CANDIDATE —  cat-event-streaming Stage -1, 2026-07-14]"
+  ]
+}

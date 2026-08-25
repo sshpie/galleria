@@ -1,0 +1,101 @@
+{
+  "platform": "timescaledb",
+  "display_name": "TimescaleDB (self-hosted extension) / Tiger Cloud (formerly Timescale Cloud)",
+  "category": "time_series_db",
+  "default_ports": [5432, 11111],
+  "default_port_notes": {
+    "5432": "PRIMARY — standard Postgres wire protocol, self-hosted/Docker default. Extension rides the same port as vanilla Postgres; port alone is NOT a fingerprint.",
+    "11111": "Tiger Cloud direct-connection service port (non-standard, cloud-managed only) — UNVERIFIED exact value, needs direct doc-fetch confirmation, see research_questions."
+  },
+  "api_paths": [],
+  "auth_default": "INHERITED FROM POSTGRES — zero bundled auth layer. Extension adds no authentication logic of its own; hooks into the Postgres executor/planner only. Self-hosted Docker image (timescale/timescaledb*): if POSTGRES_PASSWORD is unset at container init, password checks are disabled for ALL users (trust-equivalent) — inherited from the postgres:latest base image behavior, not TimescaleDB-specific. Tiger Cloud (managed) defaults to scram-sha-256 + TLS-required.",
+  "auth_config_env": [
+    "POSTGRES_USER — superuser name (default postgres)",
+    "POSTGRES_PASSWORD — superuser password (unset = auth disabled)",
+    "POSTGRES_DB — default database name",
+    "PGDATA — data directory (affects pg_hba.conf persistence across restarts if bind-mounted)",
+    "TIMESCALEDB_TELEMETRY — telemetry on/off (relevant to CVE-2023-25149 trigger surface, not an auth control)"
+  ],
+  "default_creds": [
+    "postgres:postgres (anecdotal, unverified — common Docker-Compose footgun pattern, not a vendor default)",
+    "postgres:<blank> (trust-auth case when POSTGRES_PASSWORD unset)"
+  ],
+  "install_tell": "docker run -p 5432:5432 timescale/timescaledb:latest-pg16 (or -ha variant); presence of shared_preload_libraries = 'timescaledb' in postgresql.conf if readable",
+  "misconfig_patterns": [
+    "Docker container run without POSTGRES_PASSWORD set -> full trust auth, any TCP client with network reach gets superuser",
+    "-p 5432:5432 bound to 0.0.0.0 instead of 127.0.0.1 in compose files -> direct internet exposure, inherited verbatim from postgres:latest",
+    "CVE-2023-25149 / CVE-2026-29089 class: telemetry job or extension-upgrade running with unlocked search_path -> low-priv authenticated user who can CREATE FUNCTION on a privileged job's search_path rides it to superuser-context execution",
+    "timescaledb_information.jobs enumeration reveals continuous-aggregate/compression job owners and proc_schema -> check for user-writable schemas on any privileged job's search_path"
+  ],
+  "fingerprint": {
+    "passive": [
+      "No pre-auth banner tell exists — Postgres wire protocol gives no extension manifest before authentication succeeds",
+      "Docker-image-layer tell (registry/compose scrape only): image name timescale/timescaledb* or timescale/timescaledb-ha:pg<N>"
+    ],
+    "active_probe": {
+      "path": "N/A — requires authenticated Postgres connection",
+      "method": "SQL query post-auth",
+      "response_markers": [
+        "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb'",
+        "SELECT * FROM timescaledb_information.hypertables (v2.x; v1.x uses singular timescaledb_information.hypertable)"
+      ],
+      "false_positive_check": "Try both singular (v1.x) and plural (v2.x) timescaledb_information table names to bracket major-version detection."
+    },
+    "version_router": {
+      "pre_auth": "Not possible — hard blocker distinguishing TimescaleDB from HTTP-native platforms that leak version/schema pre-auth.",
+      "post_auth": "pg_extension.extversion gives exact TimescaleDB version once connected."
+    }
+  },
+  "shodan_dorks": {
+    "basic_all_lines": "product:PostgreSQL (0% precision alone — matches entire Postgres population, cannot distinguish TimescaleDB)",
+    "cloud_speculative": "product:PostgreSQL port:11111 (UNVERIFIED — Tiger Cloud port value not confirmed via direct doc-fetch)",
+    "cloud_hostname": "hostname:\"tsdb.cloud.timescale.com\" (cert/hostname-field match, not http.html — test against Shodan web UI per Step 0 mechanism)"
+  },
+  "engine_routing": {
+    "shodan_visible": "None — no HTTP body exists to banner. Structural limiter vs HTTP-native AI/vector-DB targets.",
+    "censys_only": "Same limiter applies; Censys TLS cert SAN indexing may catch *.tsdb.cloud.timescale.com hostnames where Shodan misses them."
+  },
+  "deployment_tells": [
+    "Docker image name pattern timescale/timescaledb[-ha]:*-pg<14|15|16|17|18> in any exposed compose/Dockerfile/CI config",
+    "Cloud-managed: hostname suffix *.tsdb.cloud.timescale.com, non-standard ports (11111 / pooler ranges — unverified exact values)",
+    "shared_preload_libraries = 'timescaledb' in postgresql.conf if config file readable via misconfigured backup/volume exposure",
+    "Presence of timescaledb_information, _timescaledb_internal, _timescaledb_catalog schemas visible post-auth via \\dn"
+  ],
+  "pivot_paths": [
+    "timescaledb_information.hypertables -> full enumeration of time-series tables, dimension columns, chunk intervals (schema-only, no row read)",
+    "timescaledb_information.continuous_aggregates -> pre-computed rollup names often descriptive (daily_revenue_agg, hourly_sensor_avg) — names ARE the finding",
+    "timescaledb_information.jobs + job_stats -> background job introspection, potential search_path-hijack pivot",
+    "_timescaledb_catalog.hypertable / dimension -> lower-level catalog internals for cross-major-version fingerprinting",
+    "Standard Postgres pivots apply unchanged: pg_roles, information_schema.tables, pg_stat_activity, dblink/postgres_fdw if installed"
+  ],
+  "vulnerabilities": [
+    "CVE-2023-25149 (GHSA / Snyk SNYK-UNMANAGED-TIMESCALETIMESCALEDB-3319678): privilege escalation via unlocked search_path in built-in telemetry collection job. Affects 2.8.0-2.9.2. Low-priv user plants function the telemetry job executes, escalating to job's elevated privilege. Fixed 2.9.3.",
+    "CVE-2026-29089 (GHSA-vgp2-jj5c-828m): arbitrary code execution via search_path manipulation shadowing built-in Postgres functions during extension upgrade. Affects 2.23.0-2.25.1. CVSS 8.8 (High/Critical). Low-priv user -> superuser. Fixed 2.25.2.",
+    "PATTERN INSIGHT: both extension-specific CVEs are the same vulnerability class — untrusted/unlocked search_path during a privileged background operation (telemetry job / extension upgrade). Any TimescaleDB instance where non-superuser roles can CREATE FUNCTION in a schema on a privileged job's search_path is a live escalation path independent of the specific CVE/version boundary."
+  ],
+  "auth_default_thesis": "REFUTES the category thesis for managed cloud, CONFIRMS it for unhardened self-hosted. TimescaleDB inherits Postgres's auth model wholesale — no bundled auth layer of its own — so auth-off-default holds exactly to the degree the underlying Postgres deployment does. Self-hosted Docker images carry the well-documented POSTGRES_PASSWORD-unset-means-trust-auth footgun, making auth-off-default a real and common state there. Tiger Cloud (managed) diverges and defaults to hardened scram-sha-256+TLS — the thesis is refuted for the managed variant. Structurally distinct from the rest of the category: no pre-auth HTTP fingerprint exists at all, which caps this platform's contribution to population-scale Shodan/Censys harvest regardless of auth posture.",
+  "research_questions": [
+    "Confirm exact Tiger Cloud port values — direct-fetch tigerdata.com/docs/use-timescale/latest/integrations/find-connection-details and .../services/connection-pooling/ to nail down whether 11111 and ~29303/30133 pooler ports are stable per-tier values or per-service-random",
+    "Does Shodan actually fingerprint the *.tsdb.cloud.timescale.com hostname or cert SAN pattern? Untested — run against Step 0 web UI hostname: filter",
+    "Full CVE list reconciliation — cvedetails.com shows more entries than the two GHSA-confirmed ones; walk the full list and classify extension-specific vs inherited-Postgres to avoid double-counting",
+    "Default-creds field has no vendor-documented default password; postgres:postgres/postgres:timescale patterns are anecdotal only",
+    "pg_hba.conf default across non-Docker install paths (apt/yum, timescaledb-single/timescaledb-multinode Helm charts) — this brief only pinned down Docker image behavior; package-manager installs default pg_hba.conf differently (peer-auth for local, not trust)",
+    "Job-owner privilege model for CVE-class misconfig needs empirical verification (Step 3v) — does a default install leave any schema on a privileged job's search_path writable by non-superuser roles out of the box, or does that require additional misconfiguration"
+  ],
+  "anti_markers": [
+    "EXCLUDES vanilla Postgres population at the wire-protocol layer — port 5432 alone cannot distinguish TimescaleDB from any other Postgres deployment; only post-auth pg_extension query or Docker-image-layer scrape confirms presence"
+  ],
+  "sources": [
+    "[CANDIDATE —  Cat Time-Series-DB OSINT Platoon build 2026-07-28; doc-grounded, host-unverified]",
+    "https://www.tigerdata.com/docs/self-hosted/latest/install/installation-docker (redirected from docs.timescale.com)",
+    "https://www.tigerdata.com/docs/use-timescale/latest/hypertables",
+    "https://github.com/timescale/timescaledb-docker",
+    "https://github.com/timescale/timescaledb/security/advisories/GHSA-vgp2-jj5c-828m",
+    "https://www.tenable.com/cve/CVE-2026-29089",
+    "https://nvd.nist.gov/vuln/detail/CVE-2026-29089",
+    "https://vulert.com/vuln-db/CVE-2023-25149",
+    "https://security.snyk.io/vuln/SNYK-UNMANAGED-TIMESCALETIMESCALEDB-3319678",
+    "https://www.tigerdata.com/docs/get-started/quickstart/rest-api",
+    "https://www.cvedetails.com/product/111330/Timescale-Timescaledb.html (unverified secondary aggregator, not individually confirmed per-CVE)"
+  ]
+}

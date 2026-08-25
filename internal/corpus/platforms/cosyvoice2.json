@@ -1,0 +1,124 @@
+{
+  "name": "CosyVoice 2",
+  "slug": "cosyvoice2",
+  "category": "voice-tts-conversational",
+  "description": "Alibaba FunAudioLLM multilingual zero-shot TTS server with real-time voice cloning. Accepts 3-5s reference audio to synthesize arbitrary speech in a cloned voice. Self-hosted via FastAPI (canonical) or gRPC; no authentication in any self-hosted deployment variant. CORS wildcard, 0.0.0.0 binding, GPU-backed inference.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "Zero authentication in all self-hosted deployment variants. FastAPI server starts with CORS allow_origins=[\"*\"], allow_credentials=True, allow_methods=[\"*\"], allow_headers=[\"*\"]. Production uvicorn mode binds to 0.0.0.0 by default. No API key, no token, no basic auth documented anywhere in canonical repo or any community fork. The managed Alibaba Cloud PAI-EAS service requires Bearer token auth, but that is the cloud control plane, not the self-hosted server process. No rate limiting, no request quotas, no IP allowlisting in default config.",
+  "default_ports": [
+    50000,
+    8000,
+    9880,
+    8012,
+    8188
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:50000 http.title:\"CosyVoice\"",
+      "rationale": "Catches Gradio WebUI instances running on canonical port 50000 with default page title"
+    },
+    {
+      "tier": "strict",
+      "query": "port:50000 http.html:\"inference_zero_shot\"",
+      "rationale": "Conjunctive: canonical port plus route name that appears in FastAPI /docs Swagger schema - high precision, low false-positive rate"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"CosyVoice2-0.5B\"",
+      "rationale": "Model identifier string surfaced in Swagger docs, API responses, and /openapi.json on CosyVoice2 deployments specifically; distinguishes v2 from v1"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"CosyVoice\"",
+      "rationale": "Catches Triton inference server deployments (ports 8000-8002) and community forks on port 8000"
+    },
+    {
+      "tier": "basic",
+      "query": "port:9880 http.html:\"CosyVoice\"",
+      "rationale": "Community wrappers and SillyTavern/GPT-SoVITS-style integrations that front CosyVoice on port 9880 - the GPT-SoVITS default API port frequently reused in CosyVoice community stacks"
+    }
+  ],
+  "fingerprint_markers": {
+    "http_path": "/docs",
+    "response_body_contains": [
+      "inference_zero_shot",
+      "inference_sft",
+      "CosyVoice",
+      "tts_text",
+      "prompt_wav"
+    ],
+    "title_contains": "CosyVoice",
+    "port": 50000
+  },
+  "api_paths": [
+    "/inference_zero_shot",
+    "/inference_sft",
+    "/inference_cross_lingual",
+    "/inference_instruct",
+    "/inference_instruct2",
+    "/inference",
+    "/speakers",
+    "/docs",
+    "/openapi.json",
+    "/",
+    "/health",
+    "/text-tts",
+    "/upload_prompt_audio",
+    "/audio_templates",
+    "/sft_spk",
+    "/v1/audio/speech",
+    "/v1/voices/create",
+    "/v1/voices/custom",
+    "/v1/voices/{id}",
+    "/v1/models",
+    "/api/v1/audio/speech",
+    "/api/v1/audio/reference_audio",
+    "/api/v3/voices/",
+    "/api/v3/cross-lingual/with-audio",
+    "/api/v3/cross-lingual/with-cache",
+    "/api/v3/cross-lingual/instruct",
+    "/api/v3/cross-lingual/capabilities",
+    "/api/v3/cross-lingual/task",
+    "/api/v3/cross-lingual/task/{task_id}",
+    "/api/v3/streaming/cross-lingual",
+    "/api/v3/streaming/cross-lingual/sse",
+    "/api/v3/ws/stream",
+    "/api-ws/v1/audio/speech"
+  ],
+  "known_vulns": [
+    "No registered CVEs as of 2026-08-04. Auth-by-design absent across all self-hosted variants - this is the primary systemic risk, not a discrete CVE. Multipart audio upload parsing in /inference_zero_shot and /upload_prompt_audio is an unaudited attack surface (malformed WAV/MP3 could trigger ffmpeg/soundfile parser bugs). No input size limits documented on audio uploads. FastAPI auto-generated /docs and /openapi.json expose full API schema unauthenticated."
+  ],
+  "default_creds": [],
+  "risk_notes": "Critical unauth impact: Any exposed instance allows unauthenticated voice cloning via POST /inference_zero_shot with a 3-5 second WAV reference. Attacker provides arbitrary TTS text and a target speaker audio file; server returns synthesized clone. No logging, no consent mechanism, no watermarking in default config. GPU compute theft: no rate limiting means unlimited GPU inference against operator hardware at attacker direction. PII exposure: uploaded reference audio files (voice biometrics) may be stored server-side in predictable paths with no access controls. CORS wildcard enables cross-site request forgery-style abuse from malicious web pages running in victim browsers on the same network. Multipart audio upload endpoint (/inference_zero_shot, /upload_prompt_audio) is an unreviewed parser attack surface. Gradio WebUI queue (4 requests, 2 concurrent) provides minimal DoS resistance but no auth gating. gRPC port equally unauthenticated - accessible to any client with protobuf definitions (published in repo). Realistic attacker chains: (1) enumerate open port 50000, verify /docs returns 200, POST synthesized CFO voice audio for vishing; (2) script bulk inference for TTS-as-a-service abuse against operator GPU; (3) exfiltrate previously uploaded reference audio files from server filesystem if path traversal present in audio handling.",
+  "deployment_notes": "Canonical stack: Python FastAPI + uvicorn on port 50000, or gRPC server on same port, or Gradio WebUI on 50000. GPU (NVIDIA CUDA) required for production; Docker images use --runtime=nvidia. Model loaded from ModelScope (iic/CosyVoice2-0.5B, iic/CosyVoice-300M) or HuggingFace (FunAudioLLM/CosyVoice2-0.5B) on first run. TensorRT-LLM/Triton variant (soar97/triton-cosyvoice) uses ports 8000 (HTTP), 8001 (gRPC), 8002 (metrics). Community wrappers add OpenAI-compat /v1/audio/speech endpoints on varied ports (8012, 8188, 9880). Some community stacks (neosun/cosyvoice-docker v3.4.0) expose Swagger UI at /docs. Port 9880 seen in SillyTavern integrations and community deployments that mirror GPT-SoVITS API layout. No TLS in default configuration - all traffic plaintext HTTP. Jetson/ARM deployments (uglybaa/cosyvoice) use --network=host, eliminating port isolation.",
+  "docker_images": [
+    "uglybaa/cosyvoice",
+    "podwide/cosyvoice",
+    "neosun/cosyvoice",
+    "hariag/cosyvoice",
+    "harryliu888/cosyvoice",
+    "lucferreira/cosyvoice",
+    "eureka6688/cosyvoice",
+    "caubequay00/cosyvoice",
+    "soar97/triton-cosyvoice"
+  ],
+  "github_repos": [
+    "github.com/FunAudioLLM/CosyVoice",
+    "github.com/QwenAudio/CosyVoice",
+    "github.com/sin-tag/CosyVoice2-API",
+    "github.com/neosun100/cosyvoice-docker",
+    "github.com/diudiu62/CosyVoice-api",
+    "github.com/colin4k/CosyVoiceWithApi",
+    "github.com/lenML/Speech-AI-Forge",
+    "github.com/Render-AI-Team/CosyVoice2",
+    "github.com/catcto/CosyVoiceDocker"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

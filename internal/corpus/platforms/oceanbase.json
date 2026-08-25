@@ -1,0 +1,66 @@
+{
+  "platform": "oceanbase",
+  "display_name": "OceanBase",
+  "category": "vector_db",
+  "default_ports": [
+    2881,
+    2886
+  ],
+  "api_paths": [
+    "/api/v1/status",
+    "/api/v1/servers"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "OB_ROOT_PASSWD"
+  ],
+  "default_creds": [
+    {
+      "user": "root@sys",
+      "pass": "",
+      "context": "community edition default"
+    }
+  ],
+  "install_tell": "docker run -p 2881:2881 -p 2886:2886 oceanbase/oceanbase-ce:latest",
+  "misconfig_patterns": [
+    "root@sys with empty password in community edition default",
+    "MySQL wire at :2881 — connects with root and empty password",
+    "obshell REST API at :2886 exposes cluster status without auth",
+    "VECTOR type support added in OceanBase 4.3 — detectable via SHOW CREATE TABLE"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:2881 \"OceanBase\"",
+      "port:2886 \"oceanbase\""
+    ],
+    "active_probe": {
+      "path": "/api/v1/status",
+      "method": "GET",
+      "response_markers": [
+        "oceanbase",
+        "OceanBase"
+      ],
+      "false_positive_check": "obshell API at :2886 must return OceanBase-specific fields"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:2881 \"OceanBase\"",
+    "strict": "port:2881 \"OceanBase\"",
+    "version": "port:2886 \"oceanbase\""
+  },
+  "deployment_tells": [
+    "MySQL :2881 banner includes OceanBase version string",
+    "obshell :2886 REST API — GET /api/v1/status returns cluster state",
+    "SELECT @@version_comment reveals OceanBase vendor string"
+  ],
+  "pivot_paths": [
+    "MySQL :2881 → mysql -h host -P 2881 -u root (empty password in community edition)",
+    "SELECT @@version_comment → confirm OceanBase vs MySQL",
+    "SHOW VECTOR INDEXES (4.3+) → detect AI workload"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://oceanbase.com/docs",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

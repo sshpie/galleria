@@ -1,0 +1,52 @@
+{
+  "name": "AutoGen",
+  "category": "agent-platform",
+  "github": "https://github.com/microsoft/autogen",
+  "description": "Microsoft multi-agent framework. Python library + optional Studio IDE (FastAPI backend).",
+  "default_ports": [8081, 8001, 8000, 80, 443],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "api-unauth",
+  "tls_default": false,
+  "fingerprint_status": "present",
+  "fingerprint_note": "AutoGen Studio IDE returns unique service messages on /api/version and /api/health endpoints.",
+  "dorks": {
+    "basic": "\"version retrieved successfully\"",
+    "strict": "http.status:200 AND (\"version retrieved successfully\" OR \"service is healthy\")",
+    "version": "\"version\":\""
+  },
+  "dork_notes": "Both messages are hardcoded in AutoGen Studio source. FP risk: 2-4%. Low collision risk. Round-2 web-UI harvest (2026-06-19): default bind 127.0.0.1:8081 (localhost-dark); the internet-visible population is the container fleet baked with --host 0.0.0.0. http.html:\"AutoGen Studio\"=1 (the React/Gatsby SPA root carries the brand, which is why AutoGen surfaces on Shodan while the JSON-API agent platforms LangGraph/Letta/Goose are banner-dark). http.html:\"AutoGen Studio API\"=0 (that string is the openapi title, absent from SPA root HTML).",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "present",
+  "aimap_status_version": "v1.9.17+",
+  "aimap_fingerprint_name": "AutoGen Studio",
+  "aimap_ports": [8081, 8001, 8000, 80, 443],
+  "aimap_probes": [
+    {
+      "path": "/api/version",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "body_contains", "value": "version retrieved successfully"},
+        {"type": "json_field", "field": "data"}
+      ]
+    },
+    {
+      "path": "/api/health",
+      "conditions": [
+        {"type": "status_code", "value": "200"},
+        {"type": "body_contains", "value": "service is healthy"},
+        {"type": "json_field", "field": "status"}
+      ]
+    }
+  ],
+  "severity": "critical",
+  "severity_note": "Agent IDE with multi-agent execution context. Exposure: arbitrary agent code execution, inter-agent data access.",
+  "exposure_data": "agent definitions, execution logs, inter-agent messages, tool output",
+  "research_date": "2026-06-05",
+  "sources": [
+    "https://github.com/microsoft/autogen",
+    "github.com/sshpie/aimap line 2538-2553",
+    "CONFIRMED live unauth: 47.109.195.240:8081 AutoGen Studio 0.4.2.2, /api auth-off (422-missing-param-not-401-token contract proof), honeypot-refuted, MITM-clean, operator ai.tmianyang.com (O=TMianyang, Sichuan) —  cat-agent-platforms survey 2026-06-19 round-2, rung A1"
+  ]
+}

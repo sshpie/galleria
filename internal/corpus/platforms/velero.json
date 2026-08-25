@@ -1,0 +1,80 @@
+{
+  "platform": "velero",
+  "display_name": "Velero (Kubernetes Cluster Backup)",
+  "category": "backup_snapshot",
+  "default_ports": [8085, 6060],
+  "api_paths": [
+    "/metrics",
+    "/debug/pprof/",
+    "/api/v1/backups"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["VELERO_NAMESPACE", "AWS_SHARED_CREDENTIALS_FILE", "AZURE_CREDENTIALS_FILE", "GOOGLE_APPLICATION_CREDENTIALS"],
+  "default_creds": [],
+  "install_tell": "velero install --provider aws --bucket <bucket> --secret-file ./credentials-velero --backup-location-config region=<region>",
+  "misconfig_patterns": [
+    "/metrics on port 8085 served without auth by default — velero_backup_* gauges leak every backup and schedule name plus counts/last-status/last-successful-timestamp",
+    "/debug/pprof/ on 6060 exposed when --profiler-address enabled — leaks goroutines/heap incl. in-flight bucket paths and credential env",
+    "World-readable BackupStorageLocation S3/Azure/GCS bucket reproduces Velero's own /backups/ folder listing for an anonymous reader",
+    "AI-scope discriminator: backups in scope only when velero-backup.json spec.includedNamespaces / resource-list.json.gz name AI/ML namespaces (kubeflow, mlflow, kserve, ray, seldon, triton) or backed-up CRD kinds (notebooks.kubeflow.org, inferenceservices.serving.kserve.io, rayclusters.ray.io) or vector-store PVC names (qdrant-, milvus-, weaviate-, chromadb-, pgvector); the kopia/<namespace>/ prefix names the namespace without reading a blob; generic substrate (plain Postgres/etcd, system namespaces) is OUT of scope",
+    "Restraint: names and manifests are the finding; reading /metrics labels and velero-backup.json/resource-list manifests is metadata; downloading contents.tar.gz, restic/kopia repo blobs, or PV snapshots is exfiltration of a whole-cluster image incl. secrets and is forbidden; POSTing a Velero Restore CR or any bucket write is a write/destructive primitive and forbidden"
+  ],
+  "fingerprint": {
+    "passive": [
+      "\"velero_backup_total\"",
+      "\"velero_backup_last_successful_timestamp\" \"velero_backup_attempt_total\"",
+      "\"velero_backup_last_status\" \"go_info\" version"
+    ],
+    "active_probe": {
+      "path": "/metrics",
+      "method": "GET",
+      "response_markers": [
+        "velero_backup_total",
+        "velero_backup_attempt_total{schedule=",
+        "velero_backup_last_status{schedule=",
+        "velero_backup_last_successful_timestamp{schedule=",
+        "velero_backup_deletion_attempt_total",
+        "velero_csi_snapshot_attempt_total{backupName=",
+        "velero_volume_snapshot_attempt_total",
+        "velero_backup_warning_total",
+        "# HELP velero_backup_total Current number of existent backups",
+        "podVolume_ prefix on node-agent /metrics (restic/kopia file-system backup)"
+      ],
+      "false_positive_check": "Any Prometheus /metrics exposes go_*/process_* counters which do NOT confirm Velero. Require at least one velero_-prefixed series (velero_backup_total or a velero_backup_*{schedule=} label) and the literal velero_backup_total HELP line / native velero_ namespace, NOT a kube_customresource_* wrapper from kube-state-metrics, NOT http.title:Velero (matches seriohub/otwld dashboards + marketing pages with no velero_ series), NOT a bare 200 on generic port 8085 (Spring Boot etc). An open S3/Azure/GCS bucket with a backups/ prefix is only Velero if a velero-backup.json object sits inside backups/<name>/."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"velero_backup_total\"",
+    "strict": "\"velero_backup_last_successful_timestamp\" \"velero_backup_attempt_total\"",
+    "version": "\"velero_backup_last_status\" \"go_info\" version"
+  },
+  "deployment_tells": [
+    "/metrics on 8085 returns velero_backup_* gauges with {schedule=...} and {backupName=...} labels naming every backup",
+    "/debug/pprof/ on 6060 present only when --profiler-address is enabled (pprof metadata-leak sibling)",
+    "Third-party UIs (otwld velero-ui /api/v1/backups, seriohub VUI) expose HTTP/WebSocket backup-listing if deployed without their auth layer"
+  ],
+  "pivot_paths": [
+    "GET /metrics | grep '^velero_backup' — read velero_backup_total (count of existing backups) and harvest backup/schedule names from {schedule=...} and {backupName=...} labels. NAMES ONLY.",
+    "velero_backup_last_status (1/0) + velero_backup_last_successful_timestamp{schedule=...} reveal which schedules exist and their last success time — operator/freshness profiling without touching the store",
+    "Pivot to snapshot store ONLY if the BackupStorageLocation bucket is independently world-readable: list keys under backups/ (S3 ?prefix=backups/ or az/gsutil ls) to enumerate backup folder names — mirrors Velero's own folder-listing, metadata layer only",
+    "For each backup of interest read the small metadata objects backups/<name>/velero-backup.json and resource-list.json.gz to learn includedNamespaces and captured CRD kinds — apply AI-scope discriminator here",
+    "List (do not fetch) restic/ and kopia/<namespace>/ prefixes to confirm which namespaces have PV-level data captured; the namespace appears in the path itself",
+    "STOP at the manifest. contents.tar.gz, the kopia repo blobs, any *.tar.gz is the actual cluster snapshot — exfil, out of bounds"
+  ],
+  "vulnerabilities": [
+    "CVE-2020-3996: Velero restore package improperly manages volume identifiers, causing information leakage to unauthorized users; fixed 1.4.3 / 1.5.2",
+    "CVE-2025-58181: vulnerability affecting velero and velero-restore-helper (restore-time handling); fixed in 1.17.1-r2 image build",
+    "CVE-2024-45338: golang.org/x/net (vendored into velero-plugin-for-aws) non-linear parse complexity DoS; transitive image CVE",
+    "CVE-2024-34158: go/build/constraint stack-exhaustion in velero-plugin-for-csi image (transitive Go stdlib); image-level"
+  ],
+  "sources": [
+    "https://velero.io/docs/v1.12/troubleshooting/",
+    "https://github.com/vmware-tanzu/velero/blob/main/pkg/metrics/metrics.go",
+    "https://velero.io/docs/v1.9/locations/",
+    "https://security.snyk.io/vuln/SNYK-GOLANG-GITHUBCOMVMWARETANZUVELEROPKGRESTORE-1021233",
+    "https://oneuptime.com/blog/post/2026-02-09-velero-monitoring-prometheus/view",
+    "https://github.com/otwld/velero-ui",
+    "https://github.com/seriohub/vui-ui",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (CONFIRMED)"
+  ]
+}

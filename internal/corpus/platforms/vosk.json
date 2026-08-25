@@ -1,0 +1,85 @@
+{
+  "name": "Vosk Server (WebSocket)",
+  "slug": "vosk",
+  "category": "voice-tts-conversational",
+  "description": "alphacep/vosk-server — the network-server family around the Vosk/Kaldi offline speech-recognition toolkit. The flagship is a RAW WebSocket ASR server (websockets library, default port 2700) that streams PCM audio in and returns Kaldi-style JSON results out. Sibling servers in the same repo speak gRPC, WebRTC (aiohttp/aiortc), and MQTT. The core transcript JSON uses Vosk/Kaldi field names: text, partial, and (with words enabled) a result[] array of {word, start, end, conf}. Because the primary server is a bare WebSocket endpoint, it emits NO HTTP body — this is a Shodan http.html signal-gap that routes to Censys / active WS probing.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication in any vosk-server variant. The WebSocket server (websocket/asr_server.py) calls websockets.serve(recognize, interface, port) with no auth handshake — any client that can open a WS connection can stream audio and issue a {\"config\": {...}} control message (including 'model' to switch the loaded model path, 'phrase_list', 'sample_rate', 'words', 'max_alternatives'). Port and interface come from VOSK_SERVER_PORT / VOSK_SERVER_INTERFACE env vars (default 0.0.0.0:2700 in the Docker images) — i.e. the images bind all interfaces by default, so a published container is internet-exposed with no gate.",
+  "default_ports": [
+    2700
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:2700",
+      "rationale": "SIGNAL-GAP PLATFORM. The WebSocket server sends no HTTP banner and no HTML body, so there is no vendor-unique http.html / http.title string for Shodan's web-UI search. Port 2700 is the only passive Shodan handle and it is noisy (any service could sit there). Treat as a candidate-generation dork only; MUST be confirmed by an active WebSocket handshake (send a {\"config\":{\"sample_rate\":16000}} frame, expect a Kaldi-style {\"partial\":\"\"} / {\"text\":\"\"} JSON reply). Prefer Censys for TLS/ALPN and cross-population."
+    },
+    {
+      "tier": "basic",
+      "query": "port:2700 \"websocket\"",
+      "rationale": "The Python websockets library answers a plain (non-Upgrade) HTTP GET with a 426/400 that can mention websocket; weak and inconsistent across versions. Low-confidence body handle; still requires active WS confirmation."
+    },
+    {
+      "tier": "strict",
+      "query": "port:2700 \"Server: Python\"",
+      "rationale": "When probed with a non-WS HTTP request, the websockets library may surface a Python/asyncio server banner. Combined with 2700 this narrows candidates, but Vosk cannot be positively fingerprinted passively — the definitive marker (Kaldi JSON: partial/text/result[].conf) only appears AFTER a WebSocket audio exchange, so route strict verification to an active probe, not Shodan body."
+    },
+    {
+      "tier": "strict",
+      "query": "services.port: 2700 and services.service_name: {UNKNOWN, WEBSOCKET}",
+      "rationale": "CENSYS-ROUTE (not Shodan). Censys sometimes classifies the WS listener and captures TLS certs on wss deployments; use Censys services + CT-log pivot to cross-populate 2700 listeners that Shodan under-indexes. Still confirm with active WS handshake."
+    },
+    {
+      "tier": "version",
+      "query": "port:2700",
+      "rationale": "VERSION SIGNAL GAP. Vosk emits no version string over the wire — neither the model version nor the vosk-api build is disclosed passively. Version/model attribution requires an active {\"config\":{\"model\":...}} interaction or inference of the model from the container image tag (e.g. alphacep/kaldi-en:<ver>). No passive version dork exists."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 2700,
+    "http_path": "",
+    "title_contains": "",
+    "response_body_contains": [
+      "partial",
+      "text",
+      "result",
+      "conf"
+    ],
+    "http_header": ""
+  },
+  "api_paths": [
+    "WS / (raw WebSocket, no path routing)",
+    "WS control frame: {\"config\": {\"sample_rate\": <float>}}",
+    "WS control frame: {\"config\": {\"phrase_list\": [...]}}",
+    "WS control frame: {\"config\": {\"model\": \"<path>\"}}",
+    "WS control frame: {\"config\": {\"words\": true, \"max_alternatives\": <int>}}",
+    "WS control frame: {\"eof\": 1}"
+  ],
+  "known_vulns": [
+    "No auth on the WebSocket — any client streams audio and receives transcripts (compute theft + audio PII)",
+    "Client-controlled {\"config\":{\"model\":\"<path>\"}} lets a caller request loading of an arbitrary server-side model path — model-swap / local-path reference and DoS surface where dynamic model loading is enabled",
+    "No upload/stream size or duration cap by default — a long or high-rate audio stream ties up the recognizer (CPU exhaustion / DoS), no rate limiting",
+    "phrase_list / grammar injection: attacker-supplied grammar constrains or manipulates recognition output where the operator relies on it downstream",
+    "Passive-fingerprint blind spot works both ways — operators cannot easily inventory their own exposed 2700 listeners either, so shadow deployments persist"
+  ],
+  "default_creds": [],
+  "risk_notes": "Attack vectors: (1) Compute theft + audio PII — an open 2700 WebSocket is free offline ASR; medical/legal/call-center audio streamed and transcribed with no auth or logging. (2) Model-path control — the {\"config\":{\"model\"}} frame is the sharpest primitive where the server permits dynamic model switching: a remote caller can point at server-side paths (recon / DoS). (3) DoS via unbounded streams and no rate limit. (4) The real operational risk multiplier is the FINGERPRINT GAP: because Vosk WS listeners are near-invisible to Shodan's HTML search, exposed instances are systematically undercounted and under-remediated; discovery requires active WS probing or Censys cross-population, so many stay open indefinitely. Vosk is heavily used in call-center, IVR, and transcription pipelines where the audio is high-value PII.",
+  "deployment_notes": "Docker-first. Prebuilt language images: alphacep/kaldi-en (English), alphacep/kaldi-<lang> for others, and the generic vosk-server images — all default to 0.0.0.0:2700 for the WebSocket server (websocket/asr_server.py). Repo also ships grpc/ (gRPC server), webrtc/ (aiohttp + aiortc, browser mic demos, HTTP-fronted), and mqtt/ variants; the WebRTC/aiohttp variant DOES serve an HTTP page and is separately fingerprintable, but the dominant exposed footprint is the raw WS on 2700. CPU-only is viable (Kaldi/Vosk is CPU-friendly), so these appear on cheap VPS and edge/IoT boxes, not just GPU hosts — widening the exposure surface. Port relocates via VOSK_SERVER_PORT but 2700 is the near-universal default.",
+  "docker_images": [
+    "alphacep/kaldi-en",
+    "alphacep/kaldi-ru",
+    "alphacep/kaldi-de",
+    "alphacep/vosk-server"
+  ],
+  "github_repos": [
+    "alphacep/vosk-server",
+    "alphacep/vosk-api"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

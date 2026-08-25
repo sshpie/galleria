@@ -1,0 +1,46 @@
+{
+  "platform": "sglang",
+  "display_name": "SGLang",
+  "category": "inference_serving",
+  "default_ports": [30000],
+  "api_paths": ["/v1/completions", "/v1/chat/completions", "/v1/models", "/get_model_info"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "python -m sglang.launch_server --model-path meta-llama/Meta-Llama-3-8B-Instruct --port 30000",
+  "misconfig_patterns": [
+    "OpenAI-compat API on public interface without auth",
+    "RadixAttention state accessible via timing side-channel"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:30000 http.html:\"sglang\"",
+      "http.html:\"sglang.launch_server\""
+    ],
+    "active_probe": {
+      "path": "/get_model_info",
+      "method": "GET",
+      "response_markers": ["\"is_generation\"", "\"preferred_sampling_params\""],
+      "false_positive_check": "response must include SGLang-specific fields: is_generation (bool) and preferred_sampling_params (object)"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"sglang\" port:30000",
+    "strict": "port:30000 http.html:\"sglang\"",
+    "version": "port:30000 http.html:\"sglang\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "RadixAttention prefix caching in startup logs",
+    "sglang.launch_server process name",
+    "/get_model_info endpoint returns SGLang-specific sampling params"
+  ],
+  "pivot_paths": [
+    "GET /v1/models → model name → identify org's model selection",
+    "RadixAttention cache timing → infer prior request content",
+    "GET /get_model_info → context_len → estimate inference capacity"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Generative AI on Kubernetes (9781098171919) ch01"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "platform": "microsoft-purview",
+  "display_name": "Microsoft Purview DLP (via Graph API)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "Microsoft Corporation",
+  "apex": "microsoft.com",
+  "default_ports": [443],
+  "api_paths": [
+    "/v1.0/users/{user_id}",
+    "/{tenant_id}/oauth2/v2.0/token"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "OAuth2 client_credentials against login.microsoftonline.com -> Bearer token to graph.microsoft.com/.default scope",
+  "auth_config_env": ["MICROSOFT_PURVIEW_CLIENT_ID", "MICROSOFT_PURVIEW_CLIENT_SECRET", "MICROSOFT_PURVIEW_TENANT_ID"],
+  "default_creds": [],
+  "default_api_base": "https://graph.microsoft.com/v1.0",
+  "install_tell": "LiteLLM guardrail_hooks/microsoft_purview uses Graph API user-resolve + Purview DLP policy evaluation; tenant_id, client_id, client_secret are mandatory; user-id resolution chain (LiteLLM user_id -> end_user_id -> metadata) is the impersonation-risk surface called out in source comments",
+  "misconfig_patterns": [
+    "Caller-influenceable user_id resolution (end_user_id, metadata user_api_key_*) is impersonation surface; trusted-id mode strips caller-supplied keys but operator must opt in.",
+    "Service principal client_secret leakage hands attacker Graph API access scoped to the Purview application registration; scope of damage depends on Graph permissions granted at consent time."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"graph.microsoft.com\"",
+      "ssl:\"login.microsoftonline.com\"",
+      "ssl.cert.subject.cn:\"graph.microsoft.com\""
+    ],
+    "active_probe": {
+      "path": "/v1.0/users/me",
+      "method": "GET",
+      "port": 443,
+      "notes": "Microsoft public Graph endpoint; identity-fingerprint only"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"graph.microsoft.com\"",
+    "strict": "ssl.cert.subject.cn:\"graph.microsoft.com\"",
+    "version": "ssl.cert.subject.cn:\"login.microsoftonline.com\""
+  },
+  "deployment_tells": [
+    "Purview DLP runs in customer Azure tenant; only public surface is graph.microsoft.com (same as all M365)",
+    "Tenant-specific OAuth endpoints at login.microsoftonline.com/{tenant_id}",
+    "No vendor-specific Shodan surface; cert-pivot covers all Graph API consumers, not Purview specifically"
+  ],
+  "dmarc": "p=reject pct=100 rua=itex-rua@microsoft.com",
+  "mx_provider": "Microsoft Exchange Online Protection (microsoft-com.mail.protection.outlook.com)",
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.microsoft.com/.well-known/security.txt",
+    "msrc": "MSRC (https://msrc.microsoft.com)"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py",
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py",
+    "DNS dig 2026-06-07"
+  ]
+}

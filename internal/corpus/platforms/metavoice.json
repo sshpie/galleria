@@ -1,0 +1,78 @@
+{
+  "name": "MetaVoice",
+  "slug": "metavoice",
+  "category": "voice-tts-conversational",
+  "description": "MetaVoice-1B, a 1.2B-parameter zero-shot voice-cloning TTS model (metavoiceio/metavoice-src). Ships two self-hosted listeners: a FastAPI server (serving.py) exposing POST /tts and GET /health on the distinctive port 58003 (binds 0.0.0.0, CORS *), and a Gradio UI (app.py) on port 7861. No authentication. Project is effectively frozen (company wound down).",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No authentication on either service. The FastAPI server (serving.py) binds 0.0.0.0:58003 with CORSMiddleware allow_origins=[\"*\"] and no token/key check on POST /tts. The Gradio UI (app.py) binds 0.0.0.0:7861 (note: 7861, not the Gradio default 7860) with no auth= argument. docker-compose maps 7861:7861 (container metavoice-ui) and a server service for serving.py. No rate limiting on either. The project is effectively inactive (MetaVoice the company wound down), so no auth will be added.",
+  "default_ports": [
+    58003,
+    7861
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:58003 http.html:\"/tts\"",
+      "rationale": "Port 58003 is a near-unique, non-standard port used almost exclusively by the MetaVoice FastAPI server; the /tts path surfaces via the FastAPI /docs and /openapi.json. The port itself is the strongest discriminator."
+    },
+    {
+      "tier": "basic",
+      "query": "port:58003 http.html:\"FastAPI\"",
+      "rationale": "The FastAPI /docs Swagger UI (title 'FastAPI - Swagger UI') is served on 58003; combined with the distinctive port this reliably isolates MetaVoice servers whose root returns JSON."
+    },
+    {
+      "tier": "strict",
+      "query": "port:58003 http.html:\"/tts\" http.html:\"/health\"",
+      "rationale": "Conjunctive: the co-occurrence of the MetaVoice-specific /tts and /health routes (GET /health returns {\"status\":\"ok\"}) in the openapi schema on port 58003 pins MetaVoice specifically and excludes generic FastAPI apps."
+    },
+    {
+      "tier": "version",
+      "query": "port:7861 http.html:\"gradio-app\"",
+      "rationale": "The MetaVoice Gradio UI runs on the non-standard port 7861 (not 7860); the gradio-app mount on that port is the SPA-blind route to the UI surface - confirm the MetaVoice identity via GET /config since the name is JS-rendered."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 58003,
+    "http_path": "/docs",
+    "title_contains": "FastAPI",
+    "response_body_contains": [
+      "/tts",
+      "/health",
+      "status",
+      "ok",
+      "FastAPI"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "/tts",
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/config",
+    "/queue/join",
+    "/"
+  ],
+  "known_vulns": [
+    "Unauthenticated POST /tts on 0.0.0.0:58003 - open TTS/voice-clone synthesis and GPU compute abuse",
+    "CORSMiddleware allow_origins=[\"*\"] - cross-site request forgery from any browser origin against the FastAPI server",
+    "FastAPI /docs and /openapi.json expose the full API schema unauthenticated",
+    "Gradio UI on 7861 carries the Gradio CVE class - CVE-2024-1561 local file read via /file=, path traversal on vulnerable pins",
+    "Project effectively frozen (company wound down) - no patches for any future finding"
+  ],
+  "default_creds": [],
+  "risk_notes": "MetaVoice's standout signal is the non-standard port 58003 paired with the defined unauthenticated /tts and /health REST endpoints - a clean, dork-able fingerprint distinct from generic FastAPI. Vectors on an exposed instance: (1) Unauthenticated zero-shot voice cloning / compute theft via POST /tts (JSON in, binary audio out) at operator GPU cost; (2) CORS allow_origins=[\"*\"] enables cross-site-request abuse from any origin running in a victim browser on a reachable network; (3) Full API disclosure via /docs and /openapi.json; (4) the Gradio UI on 7861 adds a second unauth surface carrying the Gradio file-read/traversal CVE class (CVE-2024-1561) on vulnerable pins. The FastAPI surface is JSON at root but /docs and /openapi.json are reachable and carry the /tts + /health schema; the Gradio :7861 surface is a JS-rendered SPA (http.html-blind for the name - resolve via /config). The project is real but frozen (MetaVoice the company wound down, no commits in the trailing window), so any finding is permanent with no upstream fix.",
+  "deployment_notes": "~4.2k stars, Apache-2.0, real but effectively inactive/frozen (not formally git-archived; MetaVoice the company wound down). Two listeners defined in docker-compose: 'ui' (Gradio app.py on 7861, entrypoint 'poetry run python app.py') and 'server' (FastAPI serving.py on 58003). serving.py binds 0.0.0.0:58003 with CORS '*'; GET /health returns {\"status\":\"ok\"}, POST /tts takes JSON and returns binary audio, and FastAPI auto-docs at /docs + /openapi.json. No published official image on Docker Hub/ghcr - ships a Dockerfile + docker-compose.yml for local build. Server header is 'uvicorn' on both. Model weights metavoiceio/metavoice-1B-v0.1 on HuggingFace. Harvest the FastAPI surface via port 58003 (the strongest discriminator) plus the /tts+/health openapi schema; the Gradio surface via port 7861 + gradio-app, resolving identity through GET /config.",
+  "docker_images": [],
+  "github_repos": [
+    "metavoiceio/metavoice-src"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

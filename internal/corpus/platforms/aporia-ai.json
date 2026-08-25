@@ -1,0 +1,66 @@
+{
+  "platform": "aporia-ai",
+  "display_name": "Aporia (AI Guardrails)",
+  "category": "ai-guardrail-saas",
+  "default_ports": [443],
+  "api_paths": ["/{project_id}/validate", "/{project_id}/chat/completions"],
+  "auth_default": "on",
+  "auth_config_env": ["APORIO_API_BASE", "X-APORIA-API-KEY"],
+  "default_creds": [],
+  "install_tell": "SaaS only via Aporia tenants under *.aporia.com (e.g. gr-prd-trial.aporia.com). FastAPI proxy that wraps OpenAI-style calls with project-scoped guardrail validation. Operator points LiteLLM at the tenant URL with X-APORIA-API-KEY header.",
+  "misconfig_patterns": [
+    "Tenant URL hardcoded in operator LiteLLM config; key in plaintext env",
+    "OpenAPI schema at /openapi.json discloses internal route shape (/{project_id}/chat/completions, /{project_id}/validate)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"aporia.com\"",
+      "ssl.cert.subject.cn:\"*.aporia.com\"",
+      "http.html:\"X-APORIA-API-KEY\""
+    ],
+    "active_probe": {
+      "path": "/anyid/validate",
+      "method": "POST",
+      "port": 443,
+      "host_header": "gr-prd-trial.aporia.com",
+      "response_markers": ["X-APORIA-API-KEY header missing", "error.message"],
+      "false_positive_check": "JSON body must contain literal 'X-APORIA-API-KEY' string"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"aporia.com\"",
+    "strict": "ssl.cert.subject.cn:\"*.aporia.com\"",
+    "version": "http.html:\"X-APORIA-API-KEY\""
+  },
+  "deployment_tells": [
+    "Cloudflare-fronted (162.159.x.x)",
+    "FastAPI title 'FastAPI' v0.1.0 at /openapi.json",
+    "Tenant URL pattern gr-{env}-{tier}.aporia.com"
+  ],
+  "pivot_paths": [
+    "GET /openapi.json -- discloses internal routes (no auth required)",
+    "POST /anyid/validate -- HTTP 400 with X-APORIA-API-KEY branded error",
+    "Cert-CN pivot via *.aporia.com SAN"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane D (commercial SaaS guardrail consumed by LiteLLM via api_base + key).",
+  "disclosure_contact": {
+    "security_txt": "https://aporia.com/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "dmarc@aporia.com",
+    "channel_observed": "DMARC reports mailbox; vendor likely routes via security@aporia.com"
+  },
+  "dmarc_posture": {
+    "policy": "quarantine",
+    "rua": "dmarc@aporia.com",
+    "adkim": "r",
+    "aspf": "r",
+    "mx_provider": "Google Workspace",
+    "insight_80_placement": "Series B (quarantine + relaxed alignment matches mid-stage AI-security band)"
+  },
+  "insight_82_status": "CONFIRMED (HTTP 400, body 'X-APORIA-API-KEY header missing' is distinctive vendor banner)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py",
+    "POST gr-prd-trial.aporia.com/anyid/validate marker probe 2026-06-07",
+    "dig +short TXT _dmarc.aporia.com 2026-06-07"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "name": "BabyAGI",
+  "category": "agent-platform",
+  "github": "https://github.com/yoheinakajima/babyagi",
+  "description": "New-framework self-building agent on the functionz function-store. Ships a Flask dashboard (8080) at /dashboard. Classic babyagi is CLI-only (no listener).",
+  "default_ports": [8080, 80, 443],
+  "protocols": ["http", "https"],
+  "auth_default": "none",
+  "auth_bypass": "ui-unauth",
+  "tls_default": false,
+  "fingerprint_status": "candidate",
+  "fingerprint_note": "<title>Function Dashboard</title> + DOM id functionGrid, OR 200 JSON array at /api/functions. WARNING: 'Function Dashboard' title COLLIDES with functionhealth.com (consumer SPA); require functionGrid or JSON-array /api/functions to confirm.",
+  "dorks": {
+    "basic": "http.title:\"Function Dashboard\"",
+    "strict": "http.html:\"functionGrid\"",
+    "version": null
+  },
+  "dork_notes": "1 host 2026-06-19 REFUTED (functionhealth.com name collision). Title alone is NOT sufficient.",
+  "nuclei_template": false,
+  "nuclei_template_name": null,
+  "aimap_status": "absent",
+  "aimap_status_version": null,
+  "aimap_fingerprint_name": null,
+  "aimap_ports": null,
+  "aimap_probes": null,
+  "severity": "high",
+  "severity_note": "Unauth dashboard = write-then-run RCE primitive (PUT /api/function/<name> then POST /api/execute/<name>). DO NOT call those in recon. Provider keys via add_key_wrapper store.",
+  "exposure_data": "OpenAI/LiteLLM keys, function source + version history, execution logs, RCE primitive",
+  "research_date": "2026-06-19",
+  "sources": [
+    "https://github.com/yoheinakajima/babyagi",
+    "CANDIDATE:  cat-agent-platforms survey 2026-06-19, 0 confirmed (1 host refuted, name collision with functionhealth.com)"
+  ]
+}

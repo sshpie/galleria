@@ -1,0 +1,64 @@
+{
+  "platform": "rabbitmq",
+  "display_name": "RabbitMQ",
+  "category": "event_streaming",
+  "default_ports": [
+    5672,
+    15672,
+    5671,
+    15671
+  ],
+  "api_paths": [
+    "/api/overview",
+    "/"
+  ],
+  "auth_default": "creds-required",
+  "auth_config_env": [
+    "loopback_users"
+  ],
+  "default_creds": [
+    {
+      "user": "guest",
+      "pass": "guest",
+      "context": "restricted to loopback connections only since 3.3.0 (2014) unless operator clears loopback_users"
+    }
+  ],
+  "install_tell": "docker run -p 5672:5672 -p 15672:15672 rabbitmq:3-management \u2014 COUNTER-THESIS: secure-by-default for remote mgmt, guest/guest does not work remotely unless operator explicitly overrides loopback_users",
+  "misconfig_patterns": [
+    "loopback_users cleared in config -> guest/guest reachable remotely",
+    "custom user created with weak/default password"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"RabbitMQ Management\"",
+      "http.title:\"RabbitMQ Management\" http.headers:\"WWW-Authenticate\""
+    ],
+    "active_probe": {
+      "path": "/api/overview",
+      "method": "GET",
+      "response_markers": [
+        "401 with WWW-Authenticate header confirming product identity without creds"
+      ],
+      "false_positive_check": "401 response body/header must reference rabbit_management realm"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"RabbitMQ Management\"",
+    "strict": "http.title:\"RabbitMQ Management\" http.headers:\"WWW-Authenticate\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "AMQP 5672 always requires SASL handshake (PLAIN/AMQPLAIN) \u2014 no anonymous bind path",
+    "expect thesis-falsifying result here similar to Data Labeling/doccano (~99% auth-on) \u2014 log as publishable if it lands that way"
+  ],
+  "pivot_paths": [
+    "if loopback_users override found: guest/guest or weak creds -> queue/exchange topology, message payloads, vhost list, user/permission table"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://www.rabbitmq.com/docs/access-control#loopback-users",
+    "https://www.rabbitmq.com/docs/management",
+    "[CANDIDATE \u2014  cat-event-streaming Stage -1, 2026-07-14]",
+    "[Stage -1 correction, 2026-07-14] PRIMARY-SOURCE CONFIRMED 2026-07-14 (thehackernews/csoonline/whitewebsecurity coverage of CVE-2026-5721 OAuth-secret-leak research): the actual precedent methodology is NOT a Shodan credential dork \u2014 a researcher harvested AMQP-listener population from Shodan on port 5672, THEN separately active-scanned port 15672 on that population and attempted guest/guest, finding 882 hosts running rabbitmq_management_plugin, 518 (59%) accepting guest/guest remotely despite the loopback_users default. This is a two-stage harvest-then-verify pattern, not a single dork \u2014 adopt it: Shodan harvest on product:\"RabbitMQ\" / port 5672,15672 population, defer credential-test to the verify (3v) stage, never claim guest/guest exposure from a dork alone."
+  ]
+}

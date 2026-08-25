@@ -1,0 +1,65 @@
+{
+  "platform": "zscaler-ai-guard",
+  "display_name": "Zscaler AI Guard (zseclipse policy engine)",
+  "category": "guardrail",
+  "entry_type": "FRAMEWORK_SAAS",
+  "vendor_parent": "Zscaler Inc (NASDAQ: ZS)",
+  "apex": {
+    "corporate": "zscaler.com",
+    "product": "zseclipse.net"
+  },
+  "default_ports": [443],
+  "api_paths": [
+    "/v1/detection/execute-policy"
+  ],
+  "auth_default": "on",
+  "auth_scheme": "Bearer token (ZSCALER_AI_GUARD_API_KEY); optional user-context propagation (key_alias, user_id, team_id) toggled by SEND_USER_API_KEY_* env vars",
+  "auth_config_env": ["ZSCALER_AI_GUARD_API_KEY", "ZSCALER_AI_GUARD_URL", "SEND_USER_API_KEY_ALIAS", "SEND_USER_API_KEY_USER_ID", "SEND_USER_API_KEY_TEAM_ID"],
+  "default_creds": [],
+  "default_api_base": "https://api.us1.zseclipse.net/v1/detection/execute-policy",
+  "install_tell": "LiteLLM guardrail_hooks/zscaler_ai_guard POSTs to api.us1.zseclipse.net; regional edges via envoy-west-lb fronted Envoy gateway behind AWS ELB",
+  "misconfig_patterns": [
+    "SEND_USER_API_KEY_USER_ID toggle leaks LiteLLM-side user identity into Zscaler policy logs; cross-org user attribution surface.",
+    "us1 / eu / ap regional edges differ in policy version; routing skew can be observed."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"zseclipse.net\"",
+      "ssl.cert.subject.cn:\"api.us1.zseclipse.net\"",
+      "ssl.cert.subject.cn:\"zseclipse.net\""
+    ],
+    "active_probe": {
+      "path": "/v1/detection/execute-policy",
+      "method": "POST",
+      "port": 443,
+      "notes": "Customer tenant; do not probe production"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"zseclipse.net\"",
+    "strict": "ssl.cert.subject.cn:\"api.us1.zseclipse.net\"",
+    "version": "ssl:\"envoy-west-lb.zseclipse.net\""
+  },
+  "deployment_tells": [
+    "Regional gateway: api.us1.zseclipse.net, GSLB at api.gslb.zseclipse.net",
+    "Backend: envoy-west-lb.zseclipse.net resolving to AWS ELB (k8s-envoygat-envoydef-...elb.us-west-2.amazonaws.com)",
+    "Envoy + Kubernetes deployment signature in ELB DNS name"
+  ],
+  "dmarc": {
+    "zscaler.com": "p=reject (multi-RUA: dmarcian + mxtoolbox + self)",
+    "zseclipse.net": "NO DMARC (product apex)"
+  },
+  "mx_provider": {
+    "zscaler.com": "Google Workspace",
+    "zseclipse.net": "NO MX (product apex)"
+  },
+  "vulnerabilities": [],
+  "disclosure_contact": {
+    "security_txt": "https://www.zscaler.com/.well-known/security.txt (verify)",
+    "channel_observed": "self-aggregated dmarc@zscaler.com plus dmarcian + mxtoolbox"
+  },
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py",
+    "DNS dig 2026-06-07"
+  ]
+}

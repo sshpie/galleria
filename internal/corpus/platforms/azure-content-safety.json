@@ -1,0 +1,73 @@
+{
+  "platform": "azure-content-safety",
+  "display_name": "Azure AI Content Safety (cloud-native, wrapped by LiteLLM)",
+  "category": "guardrail",
+  "entry_type": "cloud_native",
+  "default_ports": [443],
+  "api_paths": [
+    "/contentsafety/text:shieldPrompt",
+    "/contentsafety/text:analyze"
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "AZURE_CONTENT_SAFETY_API_KEY",
+    "AZURE_CONTENT_SAFETY_API_BASE"
+  ],
+  "default_creds": [],
+  "install_tell": "Azure AI Content Safety resource provisioned in customer Azure subscription; endpoint typically https://{resource}.cognitiveservices.azure.com or {resource}.contentsafety.cognitive.microsoft.com. Auth = Ocp-Apim-Subscription-Key header. API version pin (default 2024-09-01).",
+  "misconfig_patterns": [
+    "Ocp-Apim-Subscription-Key in LiteLLM .env on a publicly-readable box: same single-key blast radius as OpenAI moderation. Key rotates per-resource, not per-purpose.",
+    "AZURE_CONTENT_SAFETY_MAX_TEXT_LENGTH = 10000 hardcoded in the wrapper. Text-splitter chunks at word boundaries; an attacker who knows the chunking boundary can craft payloads that are benign per-chunk but malicious in aggregate (cross-chunk policy evasion).",
+    "API version pin 2024-09-01 default: operators who never override get whatever Microsoft retires next; surface migrations sometimes change response shape and silently break the parsing path.",
+    "Cross-reference: microsoft-purview is a SIBLING surface under the same Microsoft umbrella but a different product (Purview = governance/DLP, Content Safety = realtime moderation). Slice A's microsoft-purview.json covers Purview; this entry covers Content Safety."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"cognitiveservices.azure.com\"",
+      "ssl:\"contentsafety.cognitive.microsoft.com\"",
+      "ssl.cert.subject.cn pivot identifies the Azure tenant but not the operator"
+    ],
+    "active_probe": {
+      "path": "/contentsafety/text:analyze?api-version=2024-09-01",
+      "method": "POST",
+      "port": 443,
+      "body": "{\"text\":\"test\",\"categories\":[\"Hate\"]}",
+      "response_markers": ["categoriesAnalysis", "401", "Unauthorized"],
+      "false_positive_check": "Status-code-alone is identity-not-auth-state; 401 confirms resource exists; 404 = wrong resource path."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"cognitiveservices.azure.com\"",
+    "strict": "ssl.cert.subject.cn:\"contentsafety.cognitive.microsoft.com\"",
+    "version": "http.html:\"Azure AI Content Safety\""
+  },
+  "deployment_tells": [
+    "Per-resource subdomain on cognitiveservices.azure.com",
+    "Ocp-Apim-Subscription-Key header in client traffic (visible in misconfigured browser SPAs)",
+    "api-version query parameter is mandatory and a Microsoft-API tell"
+  ],
+  "pivot_paths": [
+    "Cert-pivot ssl.cert.subject.cn finds the resource name; resource name + leaked subscription key = full content-safety API access.",
+    "SPA bundles that embed Content Safety calls directly (instead of going through a backend) leak the subscription key; trivial to grep public GitHub for Ocp-Apim-Subscription-Key + contentsafety.",
+    "LiteLLM wrapper inherits the same CVE chain as Bedrock/OpenAI wrappers."
+  ],
+  "vulnerabilities": [],
+  "litellm_wrapper_delta": {
+    "transparent_passthrough": "mostly",
+    "added_surface": [
+      "Subscription key centralized in LiteLLM .env.",
+      "10K-character chunking logic introduces a cross-chunk evasion vector that direct API callers do not have (direct callers handle their own splitting).",
+      "LiteLLM /guardrails/list discloses the content-safety guardrail presence and config name."
+    ],
+    "verdict": "Mostly transparent at the API contract (same /contentsafety/text:* endpoints, same auth header). LiteLLM adds chunking (new evasion surface) and credential centralization. The cloud API itself is unchanged."
+  },
+  "disclosure_contact": {
+    "security_txt": "https://www.microsoft.com/.well-known/security.txt",
+    "channel_observed": "secure@microsoft.com / MSRC (cloud vendor; sibling to microsoft-purview)"
+  },
+  "sources": [
+    "LiteLLM litellm/proxy/guardrails/guardrail_hooks/azure/{base,prompt_shield,text_moderation}.py (2026-06-07)",
+    "Azure AI Content Safety REST API docs"
+  ],
+  "cross_reference": "Slice A covered microsoft-purview (separate Microsoft governance/DLP product). This entry is the realtime moderation sibling; do not conflate."
+}

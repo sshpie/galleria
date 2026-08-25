@@ -1,0 +1,65 @@
+{
+  "platform": "lasso",
+  "display_name": "Lasso Security (GenAI Security)",
+  "category": "ai-guardrail-saas",
+  "default_ports": [443],
+  "api_paths": ["/gateway/v3/classify", "/gateway/v3/classifix"],
+  "auth_default": "on",
+  "auth_config_env": ["LASSO_API_BASE", "lasso-api-key"],
+  "default_creds": [],
+  "install_tell": "SaaS at server.lasso.security/gateway/v3. Two endpoints: /classify (read-only intent classification) and /classifix (mask/transform). LiteLLM hook chooses endpoint based on masking config. NestJS-style stack (UnauthorizedException / ISO timestamp in error bodies).",
+  "misconfig_patterns": [
+    "API key in LiteLLM litellm_params persists to operator-side YAML",
+    "Masking-mode operators rely on /classifix to scrub PII; if endpoint fails open, the downstream LLM sees raw PII (verification gate, not Lasso-side bug)"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"lasso.security\"",
+      "ssl.cert.subject.cn:\"*.lasso.security\""
+    ],
+    "active_probe": {
+      "path": "/gateway/v3/classify",
+      "method": "POST",
+      "port": 443,
+      "host_header": "server.lasso.security",
+      "response_markers": ["UnauthorizedException", "Invalid API key", "statusCode\":401"],
+      "false_positive_check": "JSON body must contain both 'name':'UnauthorizedException' AND 'message':'Invalid API key'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"lasso.security\"",
+    "strict": "ssl.cert.subject.cn:\"*.lasso.security\"",
+    "version": "http.html:\"/gateway/v3/\" http.html:\"UnauthorizedException\""
+  },
+  "deployment_tells": [
+    "NestJS error-shape (UnauthorizedException + statusCode + timestamp)",
+    "/gateway/v3/ path versioning",
+    "DMARC p=reject with sp=none -- aggressive enforcement on parent, subdomain leniency"
+  ],
+  "pivot_paths": [
+    "POST /gateway/v3/classify with no key -- HTTP 401 with NestJS-shaped body",
+    "Cert-CN pivot via *.lasso.security",
+    "Investigate sp=none -- subdomain spoofability is the asymmetric posture"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "Lane D (commercial SaaS classifier + transformer).",
+  "disclosure_contact": {
+    "security_txt": "https://lasso.security/.well-known/security.txt (status unverified)",
+    "dmarc_rua": "dmarc@lasso.security",
+    "channel_observed": "DMARC reports mailbox"
+  },
+  "dmarc_posture": {
+    "policy": "reject",
+    "pct": 100,
+    "rua": "dmarc@lasso.security",
+    "sp": "none",
+    "mx_provider": "Google Workspace",
+    "insight_80_placement": "Series B+ (p=reject at pct=100); sp=none is the asymmetric tell -- parent locked, subdomains open"
+  },
+  "insight_82_status": "CONFIRMED-WEAK (HTTP 401 with NestJS-shaped UnauthorizedException + Invalid API key; framework-default rather than vendor-name-literal, but population-distinctive when paired with /gateway/v3/ path)",
+  "sources": [
+    "https://github.com/BerriAI/litellm/blob/litellm_internal_staging/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py",
+    "POST server.lasso.security/gateway/v3/classify marker probe 2026-06-07",
+    "dig +short TXT _dmarc.lasso.security 2026-06-07"
+  ]
+}

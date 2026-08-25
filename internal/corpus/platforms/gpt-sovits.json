@@ -1,0 +1,99 @@
+{
+  "name": "GPT-SoVITS",
+  "slug": "gpt-sovits",
+  "category": "voice-tts-conversational",
+  "description": "Zero-shot and few-shot voice cloning / TTS toolkit (RVC-Boss/GPT-SoVITS) combining a GPT text-to-semantic model with a SoVITS acoustic model. Ships a custom FastAPI/uvicorn HTTP inference server (api.py legacy, api_v2.py current) on port 9880 and a suite of Gradio WebUIs (training 9874, inference 9872, UVR5 vocal separation 9873, subfix subtitle editor 9871). Clones a target voice from a single short reference clip. No built-in authentication on the API server or any of the WebUIs.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "Neither the api_v2.py FastAPI server (port 9880) nor the Gradio WebUIs (9872/9874/9873/9871) implement any authentication by default. Gradio's launch() is called without auth= in the upstream repo, so the inference and training UIs are fully open when bound to 0.0.0.0. The HTTP API exposes /tts, /control (restart/exit), /set_gpt_weights and /set_sovits_weights with no token check. Operators are expected to firewall the ports or place a reverse proxy in front; hobbyist and RunPod/Vast.ai deployments frequently expose 9880 and 9872 directly. Reference-audio path parameters accept server-local filesystem paths, giving an unauthenticated caller a file-oriented primitive on the API server.",
+  "default_ports": [
+    9880,
+    9874,
+    9872,
+    9873,
+    9871
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:9880 http.html:\"tts\"",
+      "rationale": "Default GPT-SoVITS API port; FastAPI /docs body renders the /tts route. Broad — pair with strict tier to strip generic FastAPI TTS wrappers"
+    },
+    {
+      "tier": "basic",
+      "query": "http.html:\"gradio\" http.html:\"GPT-SoVITS\"",
+      "rationale": "Gradio inference/training WebUI (9872/9874) with the project name rendered in the app title/markdown header; disambiguates from generic RVC/Applio Gradio apps"
+    },
+    {
+      "tier": "strict",
+      "query": "port:9880 http.html:\"set_gpt_weights\" http.html:\"set_sovits_weights\"",
+      "rationale": "The /set_gpt_weights and /set_sovits_weights routes rendered in the FastAPI Swagger body are unique to GPT-SoVITS api_v2.py; near-zero false positives"
+    },
+    {
+      "tier": "strict",
+      "query": "http.title:\"GPT-SoVITS\" http.html:\"reference audio\"",
+      "rationale": "Gradio WebUI title plus the reference-audio upload label; identifies the interactive cloning UI specifically (9872/9874)"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"GPT-SoVITS\" http.html:\"v3\" http.html:\"gradio\"",
+      "rationale": "Version marker (v1/v2/v2Pro/v3/v4) rendered in the WebUI header for version-targeted enumeration; adjust the version token per campaign"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 9880,
+    "http_path": "/docs",
+    "title_contains": "GPT-SoVITS",
+    "response_body_contains": [
+      "tts",
+      "set_gpt_weights",
+      "set_sovits_weights",
+      "control",
+      "reference audio",
+      "gradio"
+    ],
+    "http_header": "server: uvicorn"
+  },
+  "api_paths": [
+    "GET /tts",
+    "POST /tts",
+    "POST /control",
+    "GET /set_gpt_weights",
+    "GET /set_sovits_weights",
+    "POST /change_refer",
+    "GET /docs",
+    "GET /openapi.json",
+    "GET /config",
+    "POST /run/predict",
+    "POST /queue/join"
+  ],
+  "known_vulns": [
+    "No built-in auth on api_v2.py (9880) — unauthenticated GET/POST /tts synthesizes arbitrary speech in any cloned voice from any caller",
+    "GET /control endpoint accepts command=exit and command=restart with no auth — unauthenticated DoS / process control on the API server",
+    "Reference-audio and weights parameters accept server-local filesystem paths (ref_audio_path, gpt_weights_path) — path-controlled read/load primitive for an unauthenticated caller",
+    "Gradio WebUIs (9872/9874) launched without auth= and often with share=True — public gradio.live tunnels bypass any host firewall",
+    "Gradio framework CVE-2023-51449 (path traversal in /file, Gradio <4.11.0) and CVE-2024-1561 (arbitrary local file read via /component_server, Gradio 4.3-4.12) apply to the bundled Gradio UIs — leak /proc/self/environ and model/config files",
+    "Gradio SSRF CVE-2024-4325 / CVE-2024-47167 (/queue/join save_url_to_cache) reachable on the WebUI when URL-input components are present",
+    "FastAPI /docs and /openapi.json enabled by default — full schema disclosure aids automated enumeration",
+    "No rate limiting — unbounded GPU compute exhaustion (voice synthesis at operator cost)"
+  ],
+  "default_creds": [],
+  "risk_notes": "This platform's core function is non-consensual voice cloning: a single reference clip fed to an open /tts endpoint yields arbitrary speech in a real person's voice, enabling biometric-identity theft, vishing, fraud, and fabricated-audio disinformation at scale and at the operator's GPU cost. (1) Identity theft / fraud enablement — an unauth 9880 endpoint is a turnkey impersonation service; combined with the /set_*_weights routes an attacker can hot-swap in any uploaded voice model. (2) Reference/training-audio exposure — reference clips and fine-tuned .ckpt/.pth voice models on disk (and reachable via path-controlled parameters or Gradio file-read CVEs) are the labeled voice datasets themselves; harvesting them clones the operator's and third parties' voices offline. (3) Compute theft — open GPU synthesis is automatable with any HTTP client. (4) Gradio file-read chain — CVE-2023-51449 / CVE-2024-1561 on the bundled WebUI leak /proc/self/environ (HF tokens, API keys) and arbitrary host files. (5) Process control — GET /control?command=exit is unauthenticated denial of service. (6) Disinformation — synthesized audio of public figures / executives seeds social-engineering and market-manipulation campaigns.",
+  "deployment_notes": "Docker- and conda-based on CUDA GPU hosts; the official image and one-click Windows package are the common install paths. GPU-as-a-service (RunPod, Vast.ai, AutoDL — heavy zh-CN user base) deployments frequently expose 9880 (API) and 9872/9874 (Gradio UIs) directly. HuggingFace Spaces demos (kevinwang676/GPT-SoVITS-* and forks) are publicly indexed with no auth. api_v2.py is the current server (richer schema, /tts + /control + /set_*_weights); api.py is the legacy server (root POST + /change_refer + /control). WebUI port map: 9874 training, 9873 UVR5, 9872 inference, 9871 subfix, 9880 HTTP API. Ports are configurable in config.py / go-webui launch scripts, so shadow-port discovery matters. Many operators run the whole stack bound to 0.0.0.0 behind only a cloud security group.",
+  "docker_images": [
+    "cnstark/gpt-sovits",
+    "breakstring/gpt-sovits",
+    "xxxxrt666/gpt-sovits"
+  ],
+  "github_repos": [
+    "RVC-Boss/GPT-SoVITS",
+    "jianchang512/gptsovits-api",
+    "kevinwang676/GPT-SoVITS-v3-api"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

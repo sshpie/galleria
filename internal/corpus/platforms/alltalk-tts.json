@@ -1,0 +1,100 @@
+{
+  "name": "AllTalk TTS",
+  "slug": "alltalk-tts",
+  "category": "voice-tts-conversational",
+  "description": "Multi-engine TTS aggregator (Kokoro, XTTS v2, Piper, F5-TTS, Parler) with a FastAPI backend on port 7851 and a Gradio admin UI on port 7852. Designed for local/LAN use alongside SillyTavern and text-generation-webui. No authentication by default on any endpoint.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "Zero authentication layer on the FastAPI server (port 7851). All endpoints — including voice cloning, model reload, settings mutation, and audio file retrieval — are fully open. CORS is wildcard (*) with credentials allowed. No API key, no bearer token, no HTTP Basic. The optional SSL Proxy (Twisted-based) adds TLS termination only, not authentication. Documentation states \"implement proper authentication if exposing over the internet\" but provides no mechanism to do so within the application itself. Default confignew.json binds to 127.0.0.1 in v1; v2 shifts the default binding to 0.0.0.0, meaning any Docker or cloud deployment that exposes the port is fully open to the network.",
+  "default_ports": [
+    7851,
+    7852,
+    7500
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:7851 http.html:\"AllTalk\"",
+      "rationale": "Indexes the root or settings page response body on the canonical API port; \"AllTalk\" appears in the admin template rendered by FastAPI"
+    },
+    {
+      "tier": "strict",
+      "query": "port:7851 http.html:\"tts-generate\"",
+      "rationale": "The string 'tts-generate' is unique to AllTalk's API surface — appears in internal links and demo pages served at the root; high precision"
+    },
+    {
+      "tier": "strict",
+      "query": "port:7852 http.title:\"AllTalk\"",
+      "rationale": "The Gradio interface on port 7852 renders with 'AllTalk' in the page title; Shodan indexes port 7852 on internet-exposed instances"
+    },
+    {
+      "tier": "version",
+      "query": "port:7851 http.html:\"AllTalk\" http.html:\"XTTS\"",
+      "rationale": "Instances running the XTTS engine return its name in /api/currentsettings and settings pages; narrows to XTTS-capable deployments with voice cloning surface"
+    },
+    {
+      "tier": "version",
+      "query": "port:7851 http.html:\"AllTalk\" http.html:\"Kokoro\"",
+      "rationale": "Kokoro engine string present in settings/currentsettings response body; narrows to v2 deployments with the Kokoro engine loaded"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 7851,
+    "http_path": "/api/ready",
+    "response_body_contains": [
+      "Ready",
+      "AllTalk",
+      "tts-generate"
+    ],
+    "title_contains": "AllTalk",
+    "http_header": "access-control-allow-origin: *"
+  },
+  "api_paths": [
+    "/api/ready",
+    "/api/voices",
+    "/api/rvcvoices",
+    "/api/currentsettings",
+    "/api/tts-generate",
+    "/api/tts-generate-streaming",
+    "/api/generate",
+    "/api/previewvoice/",
+    "/api/stop-generation",
+    "/api/reload",
+    "/api/reload_config",
+    "/api/lowvramsetting",
+    "/api/deepspeed",
+    "/api/openai-voicemap",
+    "/api/srt-generation",
+    "/api/trigger-analysis",
+    "/api/save-tts-data",
+    "/v1/audio/speech",
+    "/settings",
+    "/update-settings",
+    "/audio/{filename}",
+    "/audiocache/{filename}",
+    "/tts-demo-request",
+    "/ready",
+    "/",
+    "/static/tts_generator/tts_generator.html"
+  ],
+  "known_vulns": [],
+  "default_creds": [],
+  "risk_notes": "Critical unauth attack surface on exposed instances: (1) Voice cloning — POST /api/tts-generate with a reference audio wav produces a cloned voice output; XTTS v2 supports zero-shot cloning from a 6-second sample; no throttle or auth required. (2) Compute theft — arbitrary TTS generation jobs consume GPU VRAM (3-4 GB per worker at FP16 for XTTS) and CPU; sustained requests cause denial-of-service or run up cloud GPU billing. (3) Audio file retrieval — GET /audio/{filename} and /audiocache/{filename} serve previously generated files; no path sanitization documented; potential path traversal to read arbitrary files accessible to the process. (4) Server state manipulation — POST /api/deepspeed and /api/lowvramsetting toggle performance modes; POST /api/reload swaps the active TTS model; PUT /api/stop-generation aborts in-progress jobs — all unauthenticated, enabling DoS against legitimate users. (5) Settings exfiltration — GET /api/currentsettings returns the full engine configuration including loaded model paths, available engines, and capability flags; GET /api/voices enumerates all installed voice files. (6) Settings mutation — POST /update-settings and /api/save-tts-data modify server configuration without auth. (7) CORS wildcard — any origin can send credentialed cross-site requests to the API, enabling CSRF-style attacks from a victim's browser. No CVEs assigned to date; the no-auth posture is by design for local use but creates a C-tier exposure when internet-facing.",
+  "deployment_notes": "Docker Compose (docker-compose.yml in main repo) exposes ports 7851 and 7852 with no host binding restriction, maps volumes for outputs/, models/, voices/, finetune samples, and mounts dockerconfig.json over confignew.json. Image size is ~21 GB (CUDA 12.4). Primary deployment contexts: alongside SillyTavern (roleplay chatbots), text-generation-webui (LLM frontends), and standalone GPU cloud instances (RunPod, Vast.ai, Lambda). The Multi-Engine Manager (MEM) runs on port 7500 and distributes requests across multiple AllTalk instances. V2 default binding shifted from 127.0.0.1 to 0.0.0.0, making any Docker or cloud deployment network-exposed with no auth. The alltalkbeta branch tracks v2 development. Installation via manual Python venv or Docker; no package manager distribution.",
+  "docker_images": [
+    "erew123/alltalk_tts",
+    "erew123/alltalk_tts:latest",
+    "erew123/alltalk_tts_environment",
+    "nykk3/alltalk-tts:v1.0",
+    "joshxt/alltalk_tts"
+  ],
+  "github_repos": [
+    "erew123/alltalk_tts"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

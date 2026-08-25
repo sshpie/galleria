@@ -1,0 +1,60 @@
+{
+  "platform": "qdrant",
+  "display_name": "Qdrant",
+  "category": "vector_db",
+  "default_ports": [6333, 6334],
+  "api_paths": [
+    "/collections",
+    "/points/search",
+    "/health",
+    "/dashboard",
+    "/openapi.json",
+    "/snapshots",
+    "/collections/{collection_name}/snapshots",
+    "/collections/{collection_name}/shards/{shard_id}/snapshots"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["QDRANT_API_KEY", "QDRANT_READ_ONLY_API_KEY"],
+  "default_creds": [],
+  "install_tell": "docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant",
+  "misconfig_patterns": [
+    "API key not configured in default deployment — REST API fully open",
+    "/dashboard web UI accessible without credentials even when REST API key is configured",
+    "Read-write and read-only API keys not distinguished"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:6333 http.html:\"qdrant\"",
+      "http.html:\"/dashboard\" qdrant",
+      "port:6333",
+      "\"title\":\"qdrant - vector search engine\" \"commit\" port:6333 -\"401\" -\"Unauthorized\""
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": ["\"qdrant - vector search engine\""],
+      "false_positive_check": "response title field must equal 'qdrant - vector search engine'"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"qdrant\" port:6333",
+    "strict": "port:6333 http.html:\"qdrant\"",
+    "version": "port:6333 http.html:\"qdrant\" http.html:\"version\""
+  },
+  "deployment_tells": [
+    "/health returns {\"title\": \"qdrant - vector search engine\", \"version\": \"X.Y.Z\"} unauthenticated",
+    "/dashboard web UI open in browser at :6333/dashboard",
+    "/openapi.json exposes full Qdrant API schema"
+  ],
+  "pivot_paths": [
+    "GET /collections → collection list without auth in default deployment",
+    "GET /dashboard → full collection browser, vector count, payload fields",
+    "GET /openapi.json → enumerate all endpoints including collection management"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Learning LangChain (9781098167271) ch02",
+    "AI-Native LLM Security (9781836203759) ch04",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (backup-endpoint enrichment)"
+  ]
+}

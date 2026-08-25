@@ -1,0 +1,54 @@
+{
+  "platform": "langfuse",
+  "display_name": "Langfuse (self-hosted)",
+  "category": "observability",
+  "default_ports": [3000, 3100],
+  "api_paths": ["/api/public", "/api/v1", "/traces", "/sessions"],
+  "auth_default": "api_key",
+  "auth_config_env": [
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "DATABASE_URL"
+  ],
+  "default_creds": [],
+  "install_tell": "docker run -p 3000:3000 ghcr.io/langfuse/langfuse:latest",
+  "misconfig_patterns": [
+    "API keys embedded in client-side JavaScript",
+    "Traces contain unmasked LLM API credentials passed as context",
+    "Self-hosted deployment without SSL — keys transmitted in plaintext",
+    "Open signup enabled in self-hosted mode"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"langfuse\"",
+      "http.html:\"langfuse\"",
+      "port:3000 http.html:\"langfuse\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "response_markers": ["Langfuse", "traces"],
+      "false_positive_check": "page title must contain Langfuse"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"langfuse\" port:3000",
+    "strict": "http.title:\"langfuse\" port:3000",
+    "version": "http.title:\"langfuse\" port:3000 http.html:\"langfuse@\""
+  },
+  "deployment_tells": [
+    "http.title:Langfuse at port 3000",
+    "/api/public endpoint present",
+    "DATABASE_URL in container environment"
+  ],
+  "pivot_paths": [
+    "Trace endpoint → full conversation history including system prompts without auth",
+    "API keys in client-side JS bundle → downstream LLM API access",
+    "Self-hosted traces contain unmasked PII and API credentials from traced calls"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "AI-Native LLM Security (9781836203759) ch04",
+    "Learning LangChain (9781098167271) ch10"
+  ]
+}

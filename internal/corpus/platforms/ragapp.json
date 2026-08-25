@@ -1,0 +1,102 @@
+{
+  "platform": "ragapp",
+  "display_name": "RAGapp",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    8000,
+    6333,
+    11434
+  ],
+  "api_paths": [
+    "/admin",
+    "/docs",
+    "/api/management/config",
+    "/api/management/agents",
+    "/api/management/files",
+    "/api/management/llamacloud",
+    "/api/management/loader",
+    "/api/management/reranker",
+    "/api/chat",
+    "/api/chat/config",
+    "/api/chat/upload",
+    "/api/sandbox",
+    "/api/files/data",
+    "/api/files/output"
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8000:8000 ragapp/ragapp  (or `docker compose up` in deployments/single bundling qdrant+ollama)",
+  "misconfig_patterns": [
+    "Operator runs `docker run -p 8000:8000 ragapp/ragapp` and binds it to a public interface without the API-gateway auth the README tells them to add -> /admin and /api/management fully open",
+    "Publishing the bundled compose's Qdrant (6333) and Ollama (11434) ports to 0.0.0.0 alongside 8000 -> unauth vector store + unauth local LLM",
+    "Configuring OPENAI_API_KEY / LLAMA_CLOUD_API_KEY in the container then exposing the open /api/management/config write surface -> attacker repoints model provider, abuses paid keys (llmjacking)",
+    "Treating 'deployable in your own cloud like a custom GPT' marketing as 'secure by default' - the auth gap is the operator's responsibility and is silently absent"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"RAGapp\"",
+      "http.title:\"RAGapp\"",
+      "http.html:\"/api/management/config\""
+    ],
+    "active_probe": {
+      "path": "/api/management/config/models",
+      "method": "GET",
+      "response_markers": [
+        "model_provider",
+        "configured",
+        "system_prompt",
+        "JSON body returned 200 unauthenticated from /api/management/config/*",
+        "/api/management/agents returns agent definitions",
+        "FastAPI /docs (OpenAPI) lists /api/management and /api/chat routers"
+      ],
+      "false_positive_check": "RAGapp is built on create-llama scaffolding, so the generic chat routes (/api/chat, /api/files) collide with stock create-llama / LlamaIndex chat apps and with thousands of unrelated FastAPI hosts (any FastAPI app serves /docs and /openapi.json). To avoid the ~50%-rule false positive, anchor on the RAGapp-UNIQUE management surface: (1) the `/api/management/config`, `/api/management/agents`, `/api/management/reranker`, `/api/management/llamacloud` route family is RAGapp-specific (plain create-llama has no /api/management); (2) the literal admin app at `/admin` serving a Next.js RAGapp builder UI plus the string \"RAGapp\" in the HTML; (3) presence of /api/management AND /api/chat AND /admin together. A host that has /api/chat but no /api/management is upstream create-llama, NOT RAGapp - do not tag it. Confirm by reading the OpenAPI at /openapi.json for the /api/management/* path group."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"RAGapp\" http.html:\"/admin\"",
+    "strict": "http.html:\"RAGapp\" http.html:\"/api/management/config\"",
+    "version": ""
+  },
+  "deployment_tells": [
+    "Next.js admin builder served at /admin with the brand string 'RAGapp' and a 'Congratulations 🎉' first-run dialog",
+    "FastAPI /docs (Swagger) and /openapi.json enumerating the /api/management/* and /api/chat/* router groups together",
+    "Default model on the bundled compose is phi3:latest via Ollama (MODEL=${MODEL:-phi3:latest}); standalone .env defaults MODEL_PROVIDER=openai, MODEL=gpt-4o-mini",
+    "Co-hosted Qdrant (6333/6334) and Ollama (11434) on the same IP from the single-deployment compose = the RAGapp+Qdrant+Ollama bundle",
+    "ragapp/ragapp Docker image; APP_HOST 0.0.0.0 APP_PORT 8000; static file mounts at /api/files/data and /api/files/output"
+  ],
+  "pivot_paths": [
+    "GET /openapi.json or /docs -> enumerate full route map and confirm /api/management group (read-only fingerprint confirmation)",
+    "GET /api/management/config/models -> read configured model provider + whether an API key is set (is_configured), no key value exfil needed - presence is the finding",
+    "GET /api/management/agents -> read agent definitions, system prompt, tools (business-logic disclosure, metadata only)",
+    "GET /api/management/files -> enumerate ingested document filenames (names ARE the finding; do not download corpus)",
+    "If 6333 also exposed: GET qdrant /collections -> list vector collections (metadata) confirming co-located unauth vector store",
+    "GET /api/chat/config -> read chat UI config / starter questions revealing the deployment's purpose"
+  ],
+  "vulnerabilities": [
+    "No CVE or GHSA assigned as of 2026-06-12 (github.com/ragapp/ragapp/security/advisories: 'There aren't any published security advisories'). The exposure is a documented design choice (no built-in auth), not a tracked vulnerability - it is a misconfiguration/insecure-default class, not a patchable CVE.",
+    "Design-level: /api/management/* (read+write config, files, agents) and /api/chat ship with zero authentication; the only control is request_limit_middleware (rate limiting). Affects all versions/tags (the architecture has had no in-container auth since initial release).",
+    "Bundled Qdrant in deployments/single/docker-compose.yml runs with QDRANT_API_KEY=\"\" (no vector-DB auth) - inherited exposure if 6333 is published alongside 8000."
+  ],
+  "auth_evidence": "PRIMARY SOURCE, three corroborating files at github.com/ragapp/ragapp (main). (1) README.md states verbatim: \"Just the RAGapp container doesn't come with any authentication layer by design. This is the task of an API Gateway routing the traffic to RAGapp.\" The README's own quickstart is `docker run -p 8000:8000 ragapp/ragapp` and exposes Admin UI /admin, Chat UI /, API /docs with no login step. (2) src/ragapp/main.py mounts the management router at prefix `/api/management` with NO auth dependency; the only middleware anywhere is `Depends(request_limit_middleware)` on the chat and upload routers (a rate limiter, not authentication). (3) src/ragapp/backend/routers/management/config.py defines GET/POST `/chat`, `/models`, `/is_configured`, `/models/list` with no auth dependency on any route. The default deployments/single/docker-compose.yml sets no auth variable for the ragapp service and explicitly `QDRANT_API_KEY=\"\"`. Result: running the documented quickstart and exposing :8000 yields a fully unauthenticated admin UI AND REST API. The vendor explicitly off-loads auth to an external API gateway the operator must add; nothing in the container ships it.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Upstream LLM provider API keys / config: /api/management/config returns model_provider settings; the container holds OPENAI_API_KEY, GEMINI/Anthropic, and LLAMA_CLOUD_API_KEY (config/.env) - write access via POST /api/management/config/models lets an attacker reconfigure the model provider and read/redirect key usage",
+    "Ingested RAG documents / source knowledge base: GET /api/management/files lists and POST uploads/deletes the indexed corpus; static mounts /api/files/data and /api/files/output serve the raw uploaded files directly - any PII/proprietary docs an operator indexed are readable",
+    "Agent / flow definitions revealing business logic: /api/management/agents exposes the configured agent name, role, backstory, tools, and the SYSTEM_PROMPT (config/agents.yaml + config/.env) - the full custom-GPT definition",
+    "Raw vector store contents: the bundled compose exposes Qdrant on 6333/6334 (and Chroma when configured) on the same host with QDRANT_API_KEY=\"\", so embeddings/chunks are directly readable if that port is also exposed",
+    "Unauthenticated LLM inference / cost abuse: POST /api/chat is open, letting anyone run the operator's paid model (llmjacking) and exfiltrate the RAG corpus via crafted queries"
+  ],
+  "sources": [
+    "https://github.com/ragapp/ragapp",
+    "https://github.com/ragapp/ragapp/blob/main/README.md",
+    "https://raw.githubusercontent.com/ragapp/ragapp/main/src/ragapp/main.py",
+    "https://raw.githubusercontent.com/ragapp/ragapp/main/src/ragapp/backend/routers/management/config.py",
+    "https://github.com/ragapp/ragapp/tree/main/src/ragapp/backend/routers/management",
+    "https://raw.githubusercontent.com/ragapp/ragapp/main/deployments/single/docker-compose.yml",
+    "https://raw.githubusercontent.com/ragapp/ragapp/main/src/ragapp/config/.env",
+    "https://github.com/ragapp/ragapp/security/advisories",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "name": "Willow Inference Server (WIS)",
+  "slug": "willow-inference-server",
+  "category": "voice-tts-conversational",
+  "description": "toverainc's self-hosted, GPU-optimized inference server for speech (Whisper ASR) and TTS, and the backend for the Willow ESP32 voice-assistant hardware. Exposes REST, WebSocket, and WebRTC transports on port 19000 with an interactive Swagger UI at /api/docs and a WebRTC demo client at /rtc. No built-in authentication by default. The served Swagger UI and demo pages make it partially Shodan http.html-visible.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "No default authentication. WIS serves its REST API, interactive docs (/api/docs), Willow integration endpoint (/api/willow), and a WebRTC demo client (/rtc) on port 19000 (HTTPS, typically self-signed) with no credential enforcement out of the box. The Swagger UI at /api/docs renders endpoint names and the WIS identity into served HTML, so basic fingerprinting works via Shodan http.html; the WebRTC/WebSocket audio transports themselves are wire-only. TLS uses an operator-generated (often self-signed) cert, so wss/https is on but identity is unverified.",
+  "default_ports": [
+    19000
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:19000 http.html:\"Willow\"",
+      "rationale": "Project name rendered in the served Swagger UI / demo client HTML on the default 19000 port; high signal"
+    },
+    {
+      "tier": "basic",
+      "query": "port:19000 http.html:\"/api/willow\"",
+      "rationale": "The /api/willow integration path is near-unique to WIS and appears in the /api/docs Swagger body; distinguishes it from generic FastAPI/whisper servers"
+    },
+    {
+      "tier": "strict",
+      "query": "port:19000 http.html:\"willow\" http.html:\"/rtc\"",
+      "rationale": "Willow name plus the WebRTC demo-client path /rtc in the same document is very high precision and low volume"
+    },
+    {
+      "tier": "version",
+      "query": "http.html:\"Willow Inference Server\" http.html:\"version\"",
+      "rationale": "WIS version disclosure in the Swagger info block or /api docs; use for version-targeted enumeration"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 19000,
+    "http_path": "/api/docs",
+    "title_contains": "Willow Inference Server",
+    "response_body_contains": [
+      "Willow",
+      "/api/willow",
+      "/rtc",
+      "/api/asr",
+      "whisper"
+    ],
+    "http_header": ""
+  },
+  "api_paths": [
+    "POST /api/asr (speech-to-text)",
+    "POST /api/tts (text-to-speech)",
+    "GET /api/willow (Willow hardware integration endpoint)",
+    "GET /rtc (WebRTC demo client)",
+    "WebRTC / WebSocket audio transport",
+    "GET /api/docs (Swagger UI)",
+    "GET /openapi.json"
+  ],
+  "known_vulns": [
+    "No built-in auth — unauthenticated POST /api/asr and /api/tts accept arbitrary audio/text at operator GPU cost",
+    "Swagger UI /api/docs enabled by default — full API schema disclosure aids automated enumeration",
+    "Self-signed TLS provides encryption but no identity assurance — MITM-able, no client authentication",
+    "GPU compute theft — Whisper large-v2 ASR + TTS on CUDA with no rate limiting; automatable abuse",
+    "Audio PII exfiltration — voice-assistant command audio and dictations processed with no consent or audit logging",
+    "WebRTC/WebSocket transports exposed unauthenticated; the /rtc demo client hands an attacker a ready-made streaming interface",
+    "Early/rapidly-advancing codebase — hardening and stable release surface are immature"
+  ],
+  "default_creds": [],
+  "risk_notes": "Primary attack vectors: (1) Compute theft — an open 19000 endpoint is free GPU ASR+TTS, driveable via the shipped Swagger UI and /rtc client. (2) Voice-assistant audio exfiltration — WIS backs the Willow ESP32 hardware, so exposed instances often carry home/office command audio (highly sensitive) processed with no auth or logging. (3) MITM via self-signed TLS — the cert authenticates nothing on the WebRTC/REST transports. (4) Schema-driven enumeration — /api/docs discloses every endpoint and parameter shape. (5) The /rtc WebRTC demo gives an attacker a turnkey real-time speech pipe into the operator's GPU.",
+  "deployment_notes": "Self-hosted on CUDA GPU hosts (CPU fallback supported). Default HTTPS bind on port 19000 (typically self-signed cert). Serves REST (/api/asr, /api/tts, /api/willow), a Swagger UI at /api/docs (Shodan http.html-visible), and a WebRTC demo client at /rtc; the real-time audio rides WebRTC/WebSocket (wire-only). Ready-to-deploy Docker containers were promised for the 1.0 release; earlier versions build from source. Primary role is the backend for the Willow open-source voice-assistant hardware (toverainc/willow), so exposed instances frequently serve real household/office voice-command traffic. No auth by default; project self-describes as very early and advancing rapidly. Basic host discovery via the served Swagger UI; deep transport work needs active WebRTC probing.",
+  "docker_images": [
+    "ghcr.io/toverainc/willow-inference-server:latest"
+  ],
+  "github_repos": [
+    "toverainc/willow-inference-server",
+    "toverainc/willow"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-expand-2026-08-06"
+    }
+  ]
+}

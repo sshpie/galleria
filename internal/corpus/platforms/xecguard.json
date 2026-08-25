@@ -1,0 +1,71 @@
+{
+  "platform": "xecguard",
+  "display_name": "CyCraft XecGuard",
+  "category": "ai-guardrails",
+  "apex": "cycraft.ai (parent: cycraft.com.tw)",
+  "api_apex": "api-xecguard.cycraft.ai",
+  "api_endpoint": "/v1/guard (xecguard_v2 model)",
+  "default_ports": [
+    443
+  ],
+  "auth_default": "on",
+  "auth_config_env": [
+    "XECGUARD_API_KEY",
+    "XECGUARD_API_BASE",
+    "XECGUARD_MODEL"
+  ],
+  "default_creds": [],
+  "vendor_status": "REAL \u2014 Taiwanese cybersecurity vendor CyCraft Technology (cycraft.com.tw); founded 2017; Taipei; XecGuard is their AI-guardrails product line; xecguard_v2 default model; foreign-origin tool (Taiwan) \u2014 disclose per Nick's loadout transparency convention",
+  "install_tell": "api-xecguard.cycraft.ai (US-fronted: 18.173.121.0/24 AWS CloudFront); default policies = Default_Policy_SystemPromptEnforcement + Default_Policy_HarmfulContentProtection",
+  "misconfig_patterns": [
+    "XECGUARD_API_KEY leaked",
+    "cycraft.ai apex has NO DMARC and NO SPF (parent cycraft.com.tw is the corporate domain) \u2014 product subsidiary domain spoofable"
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl.cert.subject.cn:\"*.cycraft.ai\"",
+      "ssl.cert.subject.cn:\"api-xecguard.cycraft.ai\""
+    ],
+    "active_probe": {
+      "path": "/v1/guard",
+      "method": "POST",
+      "response_markers": [
+        "xecguard",
+        "policy",
+        "verdict",
+        "BALANCED"
+      ],
+      "false_positive_check": "Require cycraft cert SAN"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl.cert.subject.cn:\"cycraft.ai\"",
+    "strict": "ssl.cert.subject.cn:\"cycraft.ai\" http.html:\"XecGuard\"",
+    "version": "http.html:\"xecguard_v2\" OR http.html:\"Default_Policy_SystemPromptEnforcement\""
+  },
+  "dmarc_posture": "NO DMARC, NO SPF on cycraft.ai \u2014 product domain unprotected (parent cycraft.com.tw separate); ORIGIN: TAIWAN (foreign tool \u2014 disclose)",
+  "deployment_tells": [
+    "api-xecguard.cycraft.ai on AWS CloudFront US edge",
+    "xecguard_v2 model id",
+    "BALANCED grounding strictness"
+  ],
+  "pivot_paths": [
+    "XECGUARD_API_KEY -> guardrail evaluations tenant-wide"
+  ],
+  "vulnerabilities": [
+    "cycraft.ai apex has no DMARC/SPF \u2014 phishing-spoofable; uncommon for an AI-security vendor"
+  ],
+  "founder_attribution": "Benson Wu / Jeremy Chiu (CyCraft Technology cofounders)",
+  "sources": [
+    {
+      "type": "litellm_source",
+      "url": "github.com/BerriAI/litellm/blob/main/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py",
+      "status": "CONFIRMED"
+    },
+    {
+      "type": "dns",
+      "url": "cycraft.ai (no _dmarc TXT, no SPF)",
+      "status": "CONFIRMED"
+    }
+  ]
+}

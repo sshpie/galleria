@@ -1,0 +1,60 @@
+{
+  "platform": "aegisai",
+  "display_name": "AegisAI (Agentic AI Email Security)",
+  "category": "email-guardrail",
+  "default_ports": [443],
+  "api_paths": ["/", "/console"],
+  "auth_default": "on",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "SaaS; Google Workspace API integration on customer side (inbound MX = Google for aegisai.ai itself, p=reject DMARC). Cat-33 architectural taxonomy classifies AegisAI as INBOUND (sits between human sender and human recipient), not the outbound-LLM-email lane Sluice founded. Vendor self-positions as outbound; primary-source verification refutes.",
+  "misconfig_patterns": [
+    "Production demo (demo.aegisai.ai) behind GCP IAP -- credential leak in demo would land on Google-side. No public-facing API found.",
+    "Staging tenants exposed by hostname (langfuse.staging.aegisai.ai, phishhook.staging.aegisai.ai) reveal observability + product naming; Langfuse staging is its own attack surface to verify separately."
+  ],
+  "fingerprint": {
+    "passive": [
+      "ssl:\"aegisai.ai\"",
+      "http.title:\"Aegis AI Console\""
+    ],
+    "active_probe": {
+      "path": "/",
+      "method": "GET",
+      "port": 443,
+      "host_header": "console.aegisai.ai",
+      "response_markers": ["Aegis AI Console", "aegisai"],
+      "false_positive_check": "HTML body must contain title 'Aegis AI Console' literal"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "ssl:\"aegisai.ai\"",
+    "strict": "http.title:\"Aegis AI Console\"",
+    "version": "http.html:\"aegisai\" http.html:\"Aegis\""
+  },
+  "deployment_tells": [
+    "Cloudflare-fronted (104.21.10.113 / 172.67.131.118) for production",
+    "Subdomain population: api, assets, connect, console, demo, gateway, internal, lookout, protect, trust, www",
+    "demo.aegisai.ai on 136.110.173.127 (non-Cloudflare) gated by GCP Identity-Aware Proxy",
+    "Staging cluster runs Langfuse (langfuse.staging.aegisai.ai) and an internal phishhook product",
+    "MX is Google (aspmx.l.google.com); Workspace tenant"
+  ],
+  "pivot_paths": [
+    "GET console.aegisai.ai/ -- branded SPA confirms identity",
+    "demo.aegisai.ai produces 'Invalid IAP credentials' on GET / -- GCP IAP fingerprint, not a finding",
+    "ssl.cert.subject.cn:\"*.aegisai.ai\" -- operator pivot; subdomain wildcard cert reveals SaaS topology",
+    "Langfuse on staging.aegisai.ai is its own platform-JSON probe target (Cat-04)"
+  ],
+  "vulnerabilities": [],
+  "category_lane_classification": "INBOUND (misclassified by vendor as outbound-AI-email). Verified 2026-06-07: vendor self-description in Cat-33 deep brief calls out the mislabel. Architectural fit is inbound-side phishing/safety detection over Google Workspace API.",
+  "disclosure_contact": {
+    "security_txt": "https://aegisai.ai/.well-known/security.txt (404 as of 2026-06-07)",
+    "dmarc_rua": "ryan@aegisai.ai",
+    "channel_observed": "founder-personal mailbox; direct contact"
+  },
+  "sources": [
+    "https://aegisai.ai/",
+    "DNS hostsearch hackertarget 2026-06-07",
+    "passive probe console.aegisai.ai title 2026-06-07",
+    "Cat-33 deep brief 33-ai-email-guardrails-deep-brief-2026-06-06.md"
+  ]
+}

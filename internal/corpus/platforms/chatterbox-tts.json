@@ -1,0 +1,99 @@
+{
+  "name": "Chatterbox TTS",
+  "slug": "chatterbox-tts",
+  "category": "voice-tts-conversational",
+  "description": "Zero-shot voice cloning TTS engine by Resemble AI (MIT license). Self-hosted via FastAPI (port 8000) or Gradio (port 7860). Provides OpenAI-compatible /v1/audio/speech endpoint, real-time streaming, and GPU-accelerated inference. No authentication enabled by default across all known community server implementations.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "Auth is OFF by default in all major community server wrappers (devnen/Chatterbox-TTS-Server, travisvn/chatterbox-tts-api, MaciejBratko variant, bhimrazy Docker image). The travisvn implementation supports an optional REQUIRE_API_KEY env var but ships with it unset/disabled. No server implementation enables auth by default. The official resemble-ai/chatterbox Python library is a pure ML library with no HTTP auth surface. Operators are expected to front with a reverse proxy for auth, but most self-hosted deployments skip this.",
+  "default_ports": [
+    8000,
+    7860
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:8000 http.title:\"Chatterbox TTS\"",
+      "rationale": "Matches the default FastAPI server page title served by devnen/Chatterbox-TTS-Server on the standard port"
+    },
+    {
+      "tier": "strict",
+      "query": "port:8000 http.html:\"chatterbox\" http.html:\"/v1/audio/speech\"",
+      "rationale": "Conjunctive body match on the model name plus the OpenAI-compat endpoint path present in all major server implementations"
+    },
+    {
+      "tier": "strict",
+      "query": "port:7860 http.title:\"Chatterbox\" http.html:\"voice_clone\"",
+      "rationale": "Targets the Gradio UI variant (HuggingFace Spaces pattern) exposed on port 7860 with voice cloning UI elements"
+    },
+    {
+      "tier": "basic",
+      "query": "port:8000 http.html:\"api/ui/initial-data\"",
+      "rationale": "The /api/ui/initial-data endpoint path is hardcoded in the devnen server frontend and appears in page source, uniquely identifying that codebase"
+    },
+    {
+      "tier": "version",
+      "query": "port:8000 http.html:\"chatterbox-tts\" http.html:\"exaggeration\"",
+      "rationale": "The exaggeration parameter is unique to Chatterbox TTS (emotion intensity control); its presence in API docs/UI narrows to this platform specifically"
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 8000,
+    "http_path": "/api/model-info",
+    "response_body_contains": [
+      "engine",
+      "chatterbox",
+      "resemble"
+    ],
+    "title_contains": "Chatterbox TTS"
+  },
+  "api_paths": [
+    "/tts",
+    "/v1/audio/speech",
+    "/v1/audio/speech/stream",
+    "/v1/audio/speech/upload",
+    "/v1/audio/voices",
+    "/api/model-info",
+    "/api/ui/initial-data",
+    "/api/unload",
+    "/save_settings",
+    "/reset_settings",
+    "/voices",
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json"
+  ],
+  "known_vulns": [
+    "CWE-22 path traversal in voice file parameters - fixed in devnen/Chatterbox-TTS-Server v2.0.0; pre-v2.0.0 deployments allow directory escape via ../ in voice reference path",
+    "Unauthenticated GPU compute consumption via POST /tts - no rate limiting or auth by default across all implementations",
+    "Unauthenticated voice sample upload via POST /v1/audio/speech/upload in travisvn implementation",
+    "Server config disclosure via GET /api/ui/initial-data - returns full configuration including file paths and model settings without any auth check",
+    "Unauthenticated settings modification via POST /save_settings and POST /reset_settings in devnen server"
+  ],
+  "default_creds": [],
+  "risk_notes": "Unauth access enables: (1) Unlimited voice cloning - attacker supplies any ~10s reference audio clip and synthesizes arbitrary speech attributed to that voice (fraud/deepfake vector); (2) GPU compute theft - TTS inference is GPU-intensive; unauth /tts POST drains operator GPU capacity at zero cost to attacker; (3) Server config exfil via /api/ui/initial-data - exposes filesystem paths, loaded model identity, engine type; (4) Voice library enumeration via /v1/audio/voices - reveals all stored voice profiles by name; (5) Settings tampering via /save_settings - attacker can alter model parameters, disable features, or corrupt config state without credentials. The PerTh (Perceptual Threshold) audio watermark embedded in output is an attribution mechanism for generated audio, not an access control - it does not prevent unauth use. High-value target class: researcher/developer self-hosted instances commonly exposed during model testing with public IPs and no firewall rules.",
+  "deployment_notes": "Commonly deployed as: (1) bare uvicorn/FastAPI on port 8000 with no reverse proxy - most exposed instances fit this pattern; (2) Docker Compose with GPU passthrough (NVIDIA CUDA 12.x, ROCm for AMD, MPS for Apple Silicon); (3) Kubernetes with ClusterIP (internal-only) - the secure minority; (4) Hugging Face Spaces via Gradio on port 7860 - public by design; (5) CloudClusters/RunPod managed hosting. The NVIDIA ACE plugin variant integrates into game engines via NVIGI and is not network-exposed in the typical sense. Most self-hosted deployments bind to 0.0.0.0 by default per docker-compose configurations.",
+  "docker_images": [
+    "bhimrazy/chatterbox-tts",
+    "hanseware/chatterbox-tts-ui",
+    "lancer1977/chatterbox-tts-docker",
+    "decentralize/chatterbox-tts-api"
+  ],
+  "github_repos": [
+    "resemble-ai/chatterbox",
+    "devnen/Chatterbox-TTS-Server",
+    "travisvn/chatterbox-tts-api",
+    "MaciejBratko/Chatterbox-TTS-Server-OpenaiAPI-Compatible",
+    "dwain-barnes/chatterbox-streaming-api-docker",
+    "TSavo/chatterbox-tts-api",
+    "Brioch/chatterbox-tts-api",
+    "BrunBrand/Chatterbox-TTS-Server-mt"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-04"
+    }
+  ]
+}

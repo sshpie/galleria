@@ -1,0 +1,75 @@
+{
+  "platform": "continue-dev",
+  "display_name": "Continue.dev",
+  "category": "ai_code_assistant_client",
+  "default_ports": [],
+  "api_paths": [],
+  "auth_default": "n/a-no-server",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "VS Code / JetBrains extension; `cn` CLI (npm install -g @continuedev/cli)",
+  "misconfig_patterns": [
+    "Continue is a CLIENT — no first-party self-hosted server exists. The operator-side surface to assess is the UPSTREAM LLM gateway that Continue is pointed at (Ollama 11434, LiteLLM 4000, vLLM 8000, TGI 80/3000/8080).",
+    "Local JSON-RPC channel between IDE webview and Continue core is bound to localhost; if ever observed reachable across the network that mis-binding is itself the finding (CVE-2026-8770 lsTool path traversal becomes remotely exploitable in that misconfig).",
+    "config.yaml committed to public repos can leak operator's upstream-gateway URL + apiKey — github-code-search class, not a network-probe class.",
+    "Continue Hub (hub.continue.dev / Mission Control) is SaaS-only; there is no self-hosted Hub to scan."
+  ],
+  "fingerprint": {
+    "passive": [],
+    "active_probe": {
+      "path": null,
+      "method": null,
+      "response_markers": [],
+      "false_positive_check": "No first-party server fingerprint exists because no first-party server is shipped. Any 'Continue' string seen in a banner is operator-side (TLS cert CN, CORS allow-list on a reverse-proxied upstream gateway) and attributes to the upstream platform, not to Continue."
+    }
+  },
+  "shodan_dorks": {
+    "basic": null,
+    "strict": null,
+    "version": null,
+    "notes": "No Continue-server Shodan dork is meaningful. Route population questions to upstream platforms: ollama, litellm, vllm, tgi (see their tome entries)."
+  },
+  "deployment_tells": [
+    "Operator stacks following the canonical Continue self-host guide run Ollama (11434) -> LiteLLM (4000) -> nginx (443/80), with only nginx public.",
+    "TLS cert CN containing continue.dev or hub.continue.dev on a reverse-proxied LLM gateway is a weak operator-attribution signal (rare; operators usually use their own domain).",
+    "CI-mode deployment runs `cn` headless inside a GitHub Action; no network listener.",
+    "config.yaml leaking from a public repo with embedded gateway apiKey is the realistic Continue-related finding pattern."
+  ],
+  "pivot_paths": [
+    "Identify operator stack -> shadow-sweep 11434 (Ollama), 4000 (LiteLLM), 8000 (vLLM), 8080 (TGI) on same IP/ASN.",
+    "github code search `filename:config.yaml continuedev` -> harvest exposed upstream-gateway URLs + apiKeys (separate engagement scope required).",
+    "If a Continue JSON-RPC channel is ever observed on a non-loopback interface, treat as a chained misconfiguration finding (CVE-2026-8770 lsTool path traversal becomes remotely reachable)."
+  ],
+  "vulnerabilities": [
+    "CVE-2026-8770 — Continue (continuedev/continue) <=1.2.22: path traversal in core/tools/implementations/lsTool.ts via unvalidated dirPath over local JSON-RPC. Attack vector: LOCAL. No vendor advisory at publication; vendor non-responsive.",
+    "GitHub issue #9025 — community-reported privacy complaint: extension allegedly transmits code/telemetry to api.github.com/copilot_internal/user and us.i.posthog.com despite local-only configuration. Not a CVE."
+  ],
+  "scope_verdict": {
+    "is_server_platform": false,
+    "verdict": "CLI/extension-only — out of scope for Continue-branded Shodan-population probing. The platform's attack surface lives on its UPSTREAM gateways (Ollama, LiteLLM, vLLM, TGI), which are in scope under their own tome entries. The CLI-only verdict IS the finding for this platform (Insight #21 / agno-survey pattern).",
+    "exposed_surface_summary": "Local JSON-RPC channel (localhost only). No HTTP daemon. No --port flag in CLI. No on-prem Hub. Mission Control is SaaS-only."
+  },
+  "ecosystem_co_deployment": [
+    "ollama (11434, OpenAI-compatible /v1/*, auth=none default)",
+    "litellm (4000, OpenAI-compatible, master-key gate)",
+    "vllm (8000, OpenAI-compatible, auth typically none)",
+    "tgi (80/3000/8080, HuggingFace Text Generation Inference)",
+    "nginx reverse proxy (443/80)",
+    "postgresql 5432 (LiteLLM request logs)"
+  ],
+  "github": "https://github.com/continuedev/continue",
+  "description": "Open-source AI coding assistant: VS Code/JetBrains extension + `cn` CLI. Repo is read-only as of 2026-06; product repositioned to CI-quality-checks ('Source-controlled AI checks, enforceable in CI. Powered by the open-source Continue CLI'). Hub (hub.continue.dev) is SaaS-only; Mission Control is the managed cloud config plane.",
+  "research_date": "2026-06-09",
+  "sources": [
+    {"url": "https://github.com/continuedev/continue", "status": "CANDIDATE", "note": "Upstream repo; archive/read-only positioning"},
+    {"url": "https://docs.continue.dev/customize/overview", "status": "CANDIDATE", "note": "Architecture docs; no server component documented"},
+    {"url": "https://docs.continue.dev/guides/cli", "status": "CANDIDATE", "note": "cn CLI has interactive + headless modes only; no --port / --listen / server mode"},
+    {"url": "https://docs.continue.dev/guides/understanding-configs", "status": "CANDIDATE", "note": "Hub described as managed cloud; no self-host option mentioned"},
+    {"url": "https://docs.continue.dev/guides/how-to-self-host-a-model", "status": "CANDIDATE", "note": "Self-hosting guide is about the UPSTREAM model gateway (Ollama/vLLM/TGI), not Continue"},
+    {"url": "https://deepwiki.com/continuedev/continue/3-core-components", "status": "CANDIDATE", "note": "Core uses message-passing IDE<->core, no network HTTP server documented"},
+    {"url": "https://www.sentinelone.com/vulnerability-database/cve-2026-8770/", "status": "CANDIDATE", "note": "CVE-2026-8770 lsTool path traversal, local attack vector"},
+    {"url": "https://github.com/continuedev/continue/issues/9025", "status": "CANDIDATE", "note": "Community-reported privacy/telemetry complaint"},
+    {"url": "https://mojalab.com/complete-self-hosted-llm-setup-ollama-litellm-continue-dev-integration-guide/", "status": "CANDIDATE", "note": "Canonical self-host stack: Ollama 11434 -> LiteLLM 4000 -> nginx"},
+    {"url": "case-studies/platform-intel/cat-tabby-continue-osint-2026-06-09.md", "status": "CANDIDATE", "note": " brief, doc-grounded, host-unverified"}
+  ]
+}

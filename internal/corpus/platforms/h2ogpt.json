@@ -1,0 +1,107 @@
+{
+  "platform": "h2ogpt",
+  "display_name": "h2oGPT",
+  "category": "llm_app_builder_rag",
+  "default_ports": [
+    7860,
+    5000
+  ],
+  "api_paths": [
+    "/v1/models",
+    "/v1/chat/completions",
+    "/v1/completions",
+    "/config",
+    "/info",
+    "/api/predict",
+    "/queue/join",
+    "/gradio_api/info",
+    "/file="
+  ],
+  "auth_default": "open-by-default",
+  "auth_config_env": [
+    "H2OGPT_AUTH",
+    "H2OGPT_OPENAI_USER",
+    "H2OGPT_OPENAI_API_KEY",
+    "GRADIO_SERVER_PORT",
+    "OPENAI_SERVER_PORT",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "SECRET_KEY"
+  ],
+  "default_creds": [],
+  "install_tell": "git clone https://github.com/h2oai/h2ogpt && cd h2ogpt && docker-compose up -d --build   # UI at https://localhost:7860 ; OpenAI proxy at https://localhost:5000/v1 ; alternate: docker run ... -p 7860:7860 -p 5000:5000 gcr.io/.../h2ogpt python generate.py",
+  "misconfig_patterns": [
+    "Quickstart docker-compose exposed directly to the internet with no reverse-proxy auth and no --auth flag = fully open chat UI",
+    "OpenAI proxy on 5000 left unauthenticated (--enforce_h2ogpt_api_key unset) = open LLM gateway / LLM-jacking surface",
+    "Upstream LLM provider API key baked into env or --inference_server and reachable through an open proxy",
+    "Private/PHI documents ingested into the RAG corpus on an internet-exposed instance",
+    "Outdated bundled Gradio version vulnerable to path-traversal file read",
+    "--auth_access='open' leaving self-service account creation enabled when auth IS turned on"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"h2oGPT\"",
+      "http.html:\"h2ogpt\"",
+      "http.html:\"h2oai/h2ogpt\"",
+      "http.component:\"Gradio\" http.html:\"h2oGPT\""
+    ],
+    "active_probe": {
+      "path": "/config",
+      "method": "GET",
+      "response_markers": [
+        "JSON Gradio config blob containing \"title\":\"h2oGPT\"",
+        "\"version\" gradio field with h2oGPT component tree (markdown/chatbot/dataframe blocks)",
+        "css/js asset references to h2ogpt",
+        "/v1/models returns OpenAI-style {\"object\":\"list\",\"data\":[...]} with an h2oai-served model id when probing port 5000"
+      ],
+      "false_positive_check": "h2oGPT is a Gradio app, so a bare `http.component:\"Gradio\"` or port-7860 match collides with tens of thousands of unrelated HuggingFace/Gradio demos — that is the ~50% false-positive trap. Disambiguate by requiring the vendor-unique string \"h2oGPT\"/\"h2ogpt\" in the title or body, OR by confirming the GET /config JSON contains title \"h2oGPT\" with the h2oGPT component tree. The paired OpenAI proxy on 5000 (/v1/models answering alongside a Gradio /config on 7860 on the same host) is a strong second discriminator since vanilla Gradio demos do not ship that proxy. Do NOT attribute h2o-3 (the AutoML/Flow product on port 54321 with /3/ and /99/ REST paths) to h2oGPT — different product, different CVEs, different port; the shared \"h2oai\" string is not sufficient."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"h2oGPT\"",
+    "strict": "http.title:\"h2oGPT\" http.component:\"Gradio\"",
+    "version": "http.html:\"h2ogpt\" http.html:\"gradio\""
+  },
+  "deployment_tells": [
+    "Two-port pairing on a single host: Gradio UI on 7860 + OpenAI-compatible proxy on 5000 (--openai_server defaults on)",
+    "Gradio framework banner/headers with an h2oGPT-titled /config",
+    "gcr.io / h2oai container image lineage (gcr.io/.../h2ogpt) in image metadata or compose build context",
+    "Named volumes cache:/workspace/.cache and save:/workspace/save; auth persisted at /workspace/h2ogpt_auth/auth.db when --auth is enabled",
+    "Self-host with local GPU (nvidia deploy reservation in docker-compose) — common on bare-metal/colo, university, and cloud-GPU IPs"
+  ],
+  "pivot_paths": [
+    "GET /config (port 7860) — read the Gradio app config to confirm h2oGPT and enumerate component/endpoint surface without sending any chat",
+    "GET /v1/models (port 5000) — confirm the OpenAI proxy is unauth and enumerate the backing model id (read-only, no completion)",
+    "GET /file=<path> — Gradio file route; on unpatched Gradio (CVE-2024-1561) read local config to confirm exposure (restraint: confirm reachability, do not exfiltrate)",
+    "List the document collections / chat sources in the UI to characterize whether ingested RAG corpus is private PII vs public docs — names are the finding, no document download",
+    "Inspect /info or the OpenAI proxy /v1/models response to attribute the upstream inference backend (vLLM/TGI/OpenAI) for operator attribution"
+  ],
+  "vulnerabilities": [
+    "CVE-2024-1561 (GHSA-g9cj-cfpp-4g2x) — Gradio path traversal via the local file route; h2oGPT is built on Gradio and exposes /file=, so unpatched Gradio versions allow arbitrary local file read on a default h2oGPT deploy. Affects Gradio < 4.13 (fix in 4.13.0).",
+    "No widely-published DEDICATED h2oai/h2ogpt CVE found as of 2026-06; the document-chat app's exposure is dominated by (a) its open-by-default posture and (b) inherited Gradio CVEs rather than a unique app CVE.",
+    "ATTRIBUTION CAUTION — the h2oai *AutoML* product h2o-3 (separate codebase, port 54321) carries critical CVEs (CVE-2024-8616 arbitrary file overwrite, CVE-2024-6863 arbitrary file encryption, CVE-2024-6573 / CVE-2025-6544 JDBC deserialization RCE, CVE-2024-7768 / CVE-2024-8062 DoS). These are NOT h2oGPT and must not be cross-attributed; listed only to prevent false fingerprint mapping."
+  ],
+  "auth_evidence": "Default docker-compose.yml (github.com/h2oai/h2ogpt/blob/main/docker-compose.yml) publishes `'${H2OGPT_PORT}:7860'` and runs `command: ${H2OGPT_ARGS}` with NO --auth flag baked in; the documented launch (`docker-compose up -d --build`, reachable at localhost:7860) yields an unauth Gradio UI. docs/FAQ.md states verbatim: \"No landing page authentication, but login possible inside app for Login tab\" — auth is an opt-in Login tab, not a gate. The documented `docker run` in docs/README_DOCKER.md only adds auth if the operator keeps the optional `--auth=...`/`--h2ogpt_api_keys=...` lines (\"for open-access remove --h2ogpt_api_keys line\"). Auth flags (--auth, --auth_filename, --enforce_h2ogpt_api_key, --enforce_h2ogpt_ui_key) all default to off/None. Result: quickstart on an exposed port = fully unauth chat UI + unauth OpenAI proxy.",
+  "auth_confidence": "HIGH",
+  "sensitive_assets": [
+    "Ingested RAG documents / private user-uploaded files (the entire point of h2oGPT is private-doc chat) readable via the doc-collection UI and Gradio /file= path",
+    "Upstream LLM API keys (OPENAI_API_KEY / vendor keys) passed via env or --inference_server config, exposed in /config or settings if the proxy/UI leaks them",
+    "Conversation history and saved chat state (the /workspace/save volume; --auth_filename auth.db persisted across restarts)",
+    "Document collection / vector store contents (Chroma DB built from ingested docs) browsable through the UI",
+    "OpenAI-compatible proxy (port 5000) usable as a free unauthenticated LLM gateway = LLM-jacking of the operator's backend model/credits",
+    "Model and inference-server backend identity revealed via /v1/models and --inference_server config (vLLM/TGI endpoints)"
+  ],
+  "sources": [
+    "https://github.com/h2oai/h2ogpt",
+    "https://raw.githubusercontent.com/h2oai/h2ogpt/main/README.md",
+    "https://github.com/h2oai/h2ogpt/blob/main/docker-compose.yml",
+    "https://github.com/h2oai/h2ogpt/blob/main/docs/README_DOCKER.md",
+    "https://github.com/h2oai/h2ogpt/blob/main/docs/FAQ.md",
+    "https://github.com/h2oai/h2ogpt/blob/main/docs/README_CLIENT.md",
+    "https://github.com/h2oai/h2ogpt/blob/main/docs/README_InferenceServers.md",
+    "https://github.com/advisories/GHSA-g9cj-cfpp-4g2x",
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-1561",
+    "[CANDIDATE -  Cat-34 rag-app-builders Stage -1 OSINT 2026-06-12; software-default characterization, no live host probed yet]",
+    "data/platform-intel/cat34-rag-app-builders-osint-2026-06-12.md"
+  ]
+}

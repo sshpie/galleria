@@ -1,0 +1,62 @@
+{
+  "platform": "mlflow",
+  "display_name": "MLflow Tracking Server",
+  "category": "observability",
+  "default_ports": [5000],
+  "api_paths": [
+    "/api/2.0/experiments",
+    "/api/2.0/runs",
+    "/metrics/",
+    "/",
+    "/api/2.0/mlflow/registered-models/list",
+    "/api/2.0/mlflow/model-versions/search",
+    "/api/2.0/mlflow/artifacts/list",
+    "/ajax-api/2.0/mlflow/artifacts/list?run_uuid=<id>&path=<p>"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "MLFLOW_TRACKING_USERNAME",
+    "MLFLOW_TRACKING_PASSWORD"
+  ],
+  "default_creds": [],
+  "install_tell": "pip install mlflow && mlflow server --host 0.0.0.0 --port 5000",
+  "misconfig_patterns": [
+    "No authentication in default deployment",
+    "Artifact storage world-readable on backing store",
+    "Backend store credentials (database URL) exposed in environment"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"MLflow\"",
+      "port:5000 http.html:\"mlflow\"",
+      "http.html:\"static-files/lib/mlflow\" http.html:\"runs/search\" port:5000,8080"
+    ],
+    "active_probe": {
+      "path": "/api/2.0/experiments",
+      "method": "GET",
+      "response_markers": ["\"experiments\""],
+      "false_positive_check": "response must include experiments array with MLflow experiment structure"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "\"mlflow\" port:5000",
+    "strict": "http.title:\"MLflow\" port:5000",
+    "version": "http.title:\"MLflow\" port:5000 http.html:\"version\""
+  },
+  "deployment_tells": [
+    "http.title:MLflow — highly distinctive at port 5000",
+    "/api/2.0/experiments returns full experiment list without auth",
+    "/metrics/ path accessible"
+  ],
+  "pivot_paths": [
+    "GET /api/2.0/experiments → experiment names → reveal project structure and team organization",
+    "GET /api/2.0/runs → run parameters → model names, hyperparameters, data paths",
+    "Artifact store URI in experiment metadata → S3/GCS bucket pivot"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "LLMOps (9781098154196) ch06",
+    "LLMOps (9781098154196) ch08",
+    "Cat-13 Backup+Snapshot survey 2026-06-20 (backup-endpoint enrichment)"
+  ]
+}

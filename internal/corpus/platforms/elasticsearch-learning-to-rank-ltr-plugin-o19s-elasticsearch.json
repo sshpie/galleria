@@ -1,0 +1,121 @@
+{
+ "name": "Elasticsearch Learning-to-Rank (LTR) plugin (o19s/elasticsearch-learning-to-rank)",
+ "category": "cat31-cat31",
+ "vendor": {
+  "company": "Open Source Connections (OSC), with major contributions from Wikimedia Foundation, Snagajob, Bonsai, and Yelp",
+  "backing": "OSS (Apache-2.0). Note: the o19s plugin is the COMMUNITY/OSS plugin for the open-source Elasticsearch distribution. Elastic later shipped its own first-party LTR for Elastic-licensed ES 8.12+; they are distinct. This dossier covers the o19s plugin.",
+  "hq": "Open Source Connections - Charlottesville, Virginia, USA",
+  "repo": "https://github.com/o19s/elasticsearch-learning-to-rank",
+  "scale": "~1.5k GitHub stars. De-facto reference LTR implementation for OSS Elasticsearch; also the upstream that AWS OpenSearch LTR and the OpenSearch LTR plugin forked from. Production users historically include Wikimedia (Wikipedia search), Yelp, Snagajob.",
+  "status": "active"
+ },
+ "ports": [
+  "9200/tcp (Elasticsearch HTTP/REST - where /_ltr is served)",
+  "9300/tcp (Elasticsearch transport, node-to-node)",
+  "5601/tcp (Kibana, common co-deployment - adjacent, not the plugin)"
+ ],
+ "auth_default": "OFF",
+ "dorks": [
+  "product:Elasticsearch port:9200",
+  "port:9200 \"cluster_name\" \"You Know, for Search\"",
+  "port:9200 \"X-elastic-product\" \"cluster_name\"",
+  "port:9200 \"number\" \"build_flavor\" \"lucene_version\""
+ ],
+ "verification_primitive": {
+  "probe": "GET http://TARGET:9200/_ltr  (read-only; no body). Optionally follow with GET /_ltr/_stats and GET /_ltr/_featureset.",
+  "success_signal": "HTTP 200 returning a JSON object listing feature stores (default '_default_' and/or named stores). Contrast: 401/403 = ES security ON (surface present, access not exercised); 400 'no handler found for uri [/_ltr]' or 404 = ES open but LTR plugin NOT installed; connection refused = node not reachable.",
+  "impact_when_open": "Read confirms the LTR plugin is installed and unauthenticated. GET /_ltr/_featureset/* then leaks the relevance design: index field names, query templates, personalization parameters (e.g. user lat/lon, user-segment fields), and any painless script_feature logic - reconnaissance into the underlying data model. An open node is by definition an open Elasticsearch, so the real impact is the full ES dataset (read/write/delete), with /_ltr write routes (PUT /_ltr, DELETE /_ltr, POST _createmodel) as an additional integrity/availability surface."
+ },
+ "endpoints": [
+  {
+   "method": "GET",
+   "path": "/",
+   "returns": "Elasticsearch root banner JSON: name, cluster_name, cluster_uuid, version.number, version.build_flavor/lucene_version, and tagline 'You Know, for Search'. Confirms an open ES node (host for the plugin)."
+  },
+  {
+   "method": "GET",
+   "path": "/_ltr",
+   "returns": "Lists all LTR feature stores on the cluster (ListStoresAction). 200 with a stores list = LTR plugin present AND unauth-readable. Cleanest plugin-presence + open-auth signal."
+  },
+  {
+   "method": "GET",
+   "path": "/_ltr/_stats",
+   "returns": "Plugin usage/performance stats across nodes (RestLTRStats, base URI '/_ltr/_stats'; also /_ltr/_stats/{stat} and /_ltr/_stats/nodes/{nodeId}). Confirms plugin install + node topology when open."
+  },
+  {
+   "method": "GET",
+   "path": "/_ltr/{store}",
+   "returns": "{\"exists\": true|false} for a named/default feature store index."
+  },
+  {
+   "method": "GET",
+   "path": "/_ltr/_featureset",
+   "returns": "Lists feature sets (supports ?prefix=). Reveals feature/query design, field names, personalization params (e.g. user lat/lon templates)."
+  },
+  {
+   "method": "GET",
+   "path": "/_ltr/_featureset/{name}",
+   "returns": "Full feature set definition: mustache/painless/derived templates -> leaks index field names and query logic."
+  },
+  {
+   "method": "GET",
+   "path": "/_ltr/_model/{name}",
+   "returns": "Stored ranking model definition (ranklib/xgboost/linear)."
+  },
+  {
+   "method": "GET",
+   "path": "/.ltrstore/_search",
+   "returns": "Direct read of the hidden feature-store index documents (bypasses the _ltr abstraction) on an open ES."
+  },
+  {
+   "method": "PUT",
+   "path": "/_ltr",
+   "returns": "Initializes the default .ltrstore feature store (WRITE). Open-write proof primitive."
+  },
+  {
+   "method": "POST",
+   "path": "/_ltr/_featureset/{name}",
+   "returns": "Creates a feature set, including script_feature painless templates (WRITE; scripting surface)."
+  },
+  {
+   "method": "POST",
+   "path": "/_ltr/_featureset/{name}/_createmodel",
+   "returns": "Uploads a trained model (WRITE)."
+  },
+  {
+   "method": "DELETE",
+   "path": "/_ltr",
+   "returns": "Destroys the entire default feature store (destructive WRITE)."
+  }
+ ],
+ "cves": [
+  "NONE-PLUGIN-SPECIFIC",
+  "CVE-2015-1427",
+  "CVE-2014-3120",
+  "CVE-2025-25014"
+ ],
+ "sources": [
+  "https://github.com/o19s/elasticsearch-learning-to-rank",
+  "https://raw.githubusercontent.com/o19s/elasticsearch-learning-to-rank/master/README.md",
+  "https://github.com/o19s/elasticsearch-learning-to-rank/blob/main/src/main/java/com/o19s/es/ltr/feature/store/index/IndexFeatureStore.java",
+  "https://github.com/o19s/elasticsearch-learning-to-rank/blob/main/src/main/java/com/o19s/es/ltr/rest/RestStoreManager.java",
+  "https://github.com/o19s/elasticsearch-learning-to-rank/blob/main/src/main/java/com/o19s/es/ltr/rest/RestLTRStats.java",
+  "https://github.com/o19s/elasticsearch-learning-to-rank/releases",
+  "https://elasticsearch-learning-to-rank.readthedocs.io/en/latest/",
+  "https://elasticsearch-learning-to-rank.readthedocs.io/en/latest/building-features.html",
+  "https://elasticsearch-learning-to-rank.readthedocs.io/en/latest/training-models.html",
+  "https://elasticsearch-learning-to-rank.readthedocs.io/en/latest/searching-with-your-model.html",
+  "https://elasticsearch-learning-to-rank.readthedocs.io/en/latest/advanced-functionality.html",
+  "https://www.elastic.co/docs/reference/elasticsearch/configuration-reference/networking-settings",
+  "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html",
+  "https://www.elastic.co/docs/solutions/search/ranking/learning-to-rank-ltr",
+  "https://book.hacktricks.xyz/network-services-pentesting/9200-pentesting-elasticsearch",
+  "https://openportcheckers.com/blog/port-9200-elasticsearch",
+  "https://www.welivesecurity.com/2020/07/27/almost-4000-databases-wiped-meow-attacks/",
+  "https://cybelangel.com/blog/new-cyber-attack-wipes-out-over-one-third-of-unsecured-databases/",
+  "https://threatprotect.qualys.com/2025/05/08/elasticsearch-kibana-arbitrary-code-execution-vulnerability-cve-2025-25014/",
+  "https://github.com/yoryio/ShodanFavicon",
+  "-deepdive:cat31"
+ ],
+ "status_note": "CONFIRMED via primary-source deep-dive"
+}

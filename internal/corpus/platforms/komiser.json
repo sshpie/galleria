@@ -1,0 +1,51 @@
+{
+  "platform": "komiser",
+  "display_name": "Komiser (Tailwarden)",
+  "category": "cost-allocation",
+  "default_ports": [3000],
+  "api_paths": [
+    "/api/v1/resources",
+    "/api/v1/stats",
+    "/api/v1/accounts",
+    "/"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 3000:3000 komiser; binary/container/helm (Elastic License 2.0)",
+  "misconfig_patterns": [
+    "v3 supports config.toml auth but base self-host binds 3000 with NO mandatory login",
+    "Multi-cloud inventory exposed if config omits auth",
+    "UNVERIFIED auth default — needs live-probe confirm"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.title:\"Komiser\" port:3000"
+    ],
+    "active_probe": {
+      "path": "/api/v1/stats",
+      "method": "GET",
+      "response_markers": ["resources", "regions", "costs", "savings"],
+      "false_positive_check": "JSON with resources/regions/costs/savings keys; Next.js SPA titled Komiser"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Komiser\"",
+    "strict": "http.title:\"Komiser\" port:3000",
+    "version": "http.title:\"Komiser\""
+  },
+  "deployment_tells": [
+    "Next.js/TypeScript SPA",
+    "port 3000 (collides with many node apps)",
+    "multi-cloud: AWS/Azure/GCP/OCI/DO/Civo/Linode/Tencent/Scaleway"
+  ],
+  "pivot_paths": [
+    "GET /api/v1/resources -> full multi-cloud resource inventory",
+    "GET /api/v1/accounts -> connected cloud account list -> org structure",
+    "GET /api/v1/stats -> cost + savings aggregates"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

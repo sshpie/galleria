@@ -1,0 +1,48 @@
+{
+  "platform": "infracost-pricing-api",
+  "display_name": "Infracost Cloud Pricing API (self-hosted)",
+  "category": "cost-allocation",
+  "default_ports": [4000],
+  "api_paths": [
+    "/graphql",
+    "/health"
+  ],
+  "auth_default": "none",
+  "auth_config_env": ["INFRACOST_API_KEY"],
+  "default_creds": [],
+  "install_tell": "docker-compose / helm (IBM-Cloud/infracost-cloud-pricing-api); Node/Express + Postgres, 3M+ price rows",
+  "misconfig_patterns": [
+    "Self-hosted reads not auth-enforced by default (INFRACOST_API_KEY settable but not required)",
+    "GraphQL Playground exposed at /graphql",
+    "Pricing data not tenant cost — lower sensitivity than allocation APIs"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"GraphQL Playground\" port:4000"
+    ],
+    "active_probe": {
+      "path": "/health",
+      "method": "GET",
+      "response_markers": ["\"status\":\"success\""],
+      "false_positive_check": "GET /health -> {\"status\":\"success\"}; /graphql serves GraphQL Playground HTML"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"GraphQL Playground\" port:4000",
+    "strict": "http.html:\"GraphQL Playground\" http.html:\"infracost\"",
+    "version": "http.html:\"infracost\""
+  },
+  "deployment_tells": [
+    "GraphQL Playground at /graphql",
+    "/health returns success JSON",
+    "Node/Express server backed by Postgres"
+  ],
+  "pivot_paths": [
+    "POST /graphql -> query 3M+ cloud price rows -> which providers/regions/instance-types the operator scopes",
+    "GET /graphql -> Playground introspection -> schema map"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "platform": "redash",
+  "display_name": "Redash (open-source BI / SQL dashboards; AI-wired when data sources reach pgvector / embedding tables / LLM-analytics warehouses)",
+  "category": "bi-dashboard",
+  "subcategory": "sql-query-dashboard",
+  "default_ports": [5000, 80, 443],
+  "api_paths": ["/setup", "/login", "/api/session", "/ping", "/api/data_sources"],
+  "auth_default": "on",
+  "auth_config_env": ["REDASH_COOKIE_SECRET", "REDASH_SECRET_KEY", "REDASH_PASSWORD_LOGIN_ENABLED"],
+  "default_creds": [],
+  "install_tell": "Flask + gunicorn (default port 5000) BI tool; reverse-proxied behind nginx/CDN on 80/443 in most deployments. Auth-on-default: a fresh instance renders the login wall. A zero-user instance instead renders the /setup first-admin wizard (title 'Redash Initial Setup') -- the claimable-admin tier. Data sources include pgvector-backed Postgres and embedding-table queries, observable only post-auth.",
+  "misconfig_patterns": [
+    "Exposed /setup (title 'Redash Initial Setup') = unauth first-admin creation = claimable admin = full instance takeover (dashboards, saved queries, data-source connection strings). 7/1810 hosts in the Cat-16 dump.",
+    "Redash <=10.0.0 default REDASH_COOKIE_SECRET / SECRET_KEY (CVE-2021-41192) = forgeable session cookie = auth bypass on the login-walled tier.",
+    "Post-auth data-source / query-runner SSRF reachable to cloud IMDS; chains off a setup-wizard admin claim."
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"frame-src redash.io\" (Redash app CSP; source-unique; survives catch-all body echo)",
+      "http.favicon.hash:698624197 (Redash favicon mmh3; 1621/1990 cohort, zero FP)",
+      "Server: gunicorn/<ver> (when banner not hidden by proxy; 536/1990)"
+    ],
+    "active_probe": {
+      "path": "/setup",
+      "method": "GET",
+      "port": 5000,
+      "host_header": "",
+      "response_markers": ["title 'Redash Initial Setup' = pre-auth admin wizard (claimable)", "title 'Login to Redash' = auth wall", "CSP header contains 'frame-src redash.io'"],
+      "false_positive_check": "Title-only match catches a catch-all deception fleet (decoy Set-Cookie walls: X-Qlik-Session, OFBiz JSESSIONID, i_like_gitea, webvpn) and unrelated device titles. Require 'frame-src redash.io' in CSP or favicon 698624197. NEVER POST the /setup form -- that creates the admin (destructive, outward-facing). Names ARE the finding."
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.title:\"Login to Redash\"",
+    "strict": "http.html:\"frame-src redash.io\"",
+    "version": "http.favicon.hash:698624197",
+    "setup_wizard": "http.title:\"Redash Initial Setup\""
+  },
+  "deployment_tells": [
+    "Default gunicorn on 5000; reverse-proxied 80/443 dominate (586/657 of 1810 dump)",
+    "Login wall on 1978/1985 Redash-titled hosts (auth-on-default)",
+    "Zero-user instance renders /setup wizard instead of login (7-host claimable tier)"
+  ],
+  "pivot_paths": [
+    "Setup-wizard hosts -> (verify lane) confirm /setup still renders live -> claimable-admin candidate",
+    "Post-admin -> /api/data_sources connection strings (pgvector/warehouse creds) = the AI-backend link",
+    "Admin -> add data source -> query-runner SSRF -> cloud IMDS instance-role creds"
+  ],
+  "vulnerabilities": [
+    "Setup-wizard takeover (class): exposed /setup = unauth first-admin creation",
+    "CVE-2021-41192: Redash <=10.0.0 default SECRET_KEY / cookie secret = session forgery / auth bypass",
+    "Data-source / query-runner SSRF (post-auth) reachable to cloud metadata"
+  ],
+  "category_lane_classification": "Cat-16 BI/Dashboard, AI-wired-BI lane. AI-backend (pgvector/embedding/warehouse) observable only post-auth; 'names ARE the finding only post-auth' platform except the setup-wizard tier.",
+  "validation_status": {
+    "verdict": "CANDIDATE",
+    "depth": "Stage -1 OSINT only: population mapped from local dump, fingerprint derived and FP-tested against the dump's 7 known FP hosts. No live unauth verification performed by this lane.",
+    "coverage": "1810 unique IPs / 2000 records; 7 setup-wizard hosts isolated; CSP + favicon discriminators FP-tested",
+    "date": "2026-06-28",
+    "note": "Setup-wizard 7-host tier is the finding-rich sub-population, handed to verify lane as CANDIDATE. AI-backend link is post-auth/post-takeover only."
+  },
+  "sources": [
+    "Cat-16 BI/Dashboard Stage -1 OSINT 2026-06-28 (Redash squad): local Shodan dump redash.json.gz, 1810 IPs",
+    "Title histogram: 1958 'Login to Redash', 7 'Redash Initial Setup', catch-all decoy fleet under title query",
+    "Discriminator: CSP 'frame-src redash.io' (1538/1990, 0 FP) and favicon 698624197 (1621/1990, 0 FP)",
+    "STATUS CANDIDATE -- no live probe by this lane"
+  ]
+}

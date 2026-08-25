@@ -1,0 +1,87 @@
+{
+  "name": "NVIDIA Riva Speech Skills",
+  "slug": "nvidia-riva",
+  "category": "voice-tts-conversational",
+  "description": "NVIDIA Riva Speech Skills — a GPU-accelerated, production speech AI server (ASR, TTS, NMT) that fronts NVIDIA Triton Inference Server. The Riva Speech API is gRPC-FIRST: the riva-speech container exposes the Riva gRPC API on port 50051 by default (used by the riva Python/C++ clients and transcribe_file.py). Newer/embedded builds additionally expose HTTP REST and realtime WebSocket endpoints (e.g. /v1/audio/transcriptions, /v1/audio/synthesize). Triton's own HTTP/gRPC/metrics ports (8000/8001/8002) are backend and normally internal. Because the primary surface is gRPC (HTTP/2, no HTML body), Riva is largely a Shodan http.html signal-gap and routes to Censys / active gRPC reflection. Distinct from nvidia-nim. No auth on the Riva API by default.",
+  "auth_tier": "C",
+  "default_auth": "none",
+  "auth_notes": "The Riva Speech API server ships with NO authentication by default — the gRPC endpoint on 50051 accepts unauthenticated RecognizeRequest / SynthesizeRequest / StreamingRecognize calls from any client that can reach it. Riva supports TLS and API-key/metadata auth (and behind NVIDIA's cloud it sits behind an API gateway), but a self-hosted riva-speech container started from the Quick Start scripts exposes 50051 in the clear with no credential check. The optional HTTP REST / WebSocket services inherit the same no-auth default. Auth is something the operator must add (TLS + auth metadata, or a fronting proxy); the container does not enforce it.",
+  "default_ports": [
+    50051,
+    9000,
+    9001
+  ],
+  "shodan_dorks": [
+    {
+      "tier": "basic",
+      "query": "port:50051",
+      "rationale": "SIGNAL-GAP PLATFORM. Riva's primary surface is a gRPC (HTTP/2) listener on 50051 with no HTML body and no descriptive Server header — there is no vendor-unique http.html/http.title string on this port. port:50051 is the only passive Shodan handle and is shared by any gRPC service. Candidate-generation only; confirm via active gRPC server-reflection listing the nvidia.riva.* service namespace (see strict tier)."
+    },
+    {
+      "tier": "basic",
+      "query": "port:50051 \"HTTP/2\" \"grpc\"",
+      "rationale": "gRPC-over-HTTP/2 hint plus port — separates Riva candidates from plain-HTTP services on 50051. Still not Riva-specific; every gRPC server matches. Requires active reflection to confirm Riva."
+    },
+    {
+      "tier": "strict",
+      "query": "services.port: 50051 and services.grpc.supported_methods.service: /nvidia.riva/",
+      "rationale": "CENSYS-ROUTE / ACTIVE. The definitive marker is the gRPC service namespace — Riva exposes services like nvidia.riva.asr.RivaSpeechRecognition and nvidia.riva.tts.RivaSpeechSynthesis. Censys gRPC method enumeration (or an active grpcurl reflection probe) listing an nvidia.riva.* service is a near-zero-FP confirmation. This CANNOT be done from Shodan http.html — it is a gRPC-reflection / Censys signal."
+    },
+    {
+      "tier": "strict",
+      "query": "http.html:\"/v1/audio/transcriptions\" http.html:\"/v1/audio/synthesize\"",
+      "rationale": "For deployments that ALSO enable the Riva HTTP REST service (default REST port ~9001 on newer/embedded builds; realtime WebSocket ~9000), the co-occurrence of the transcribe and synthesize REST paths on the same host is a strong Riva tell that IS visible to Shodan http.html. Note /v1/audio/transcriptions alone overlaps OpenAI-compat servers — the paired /v1/audio/synthesize (TTS) narrows it to a combined speech server like Riva."
+    },
+    {
+      "tier": "version",
+      "query": "port:50051",
+      "rationale": "VERSION SIGNAL GAP on the passive layer. Riva does not advertise its version in a Shodan-visible header; the running Riva release (e.g. 2.x) is recoverable only via an active client GetRivaSpeechRecognitionConfig / model-manifest call or by inferring it from the pinned nvcr.io/nvidia/riva/riva-speech:<tag> image. No passive version dork; route to active gRPC probe or NGC image-tag attribution."
+    }
+  ],
+  "fingerprint_markers": {
+    "port": 50051,
+    "http_path": "",
+    "title_contains": "",
+    "response_body_contains": [
+      "nvidia.riva",
+      "RivaSpeechRecognition",
+      "RivaSpeechSynthesis"
+    ],
+    "http_header": "content-type: application/grpc"
+  },
+  "api_paths": [
+    "gRPC :50051 nvidia.riva.asr.RivaSpeechRecognition/Recognize",
+    "gRPC :50051 nvidia.riva.asr.RivaSpeechRecognition/StreamingRecognize",
+    "gRPC :50051 nvidia.riva.tts.RivaSpeechSynthesis/Synthesize",
+    "gRPC :50051 nvidia.riva.nmt.RivaTranslation/TranslateText",
+    "HTTP POST /v1/audio/transcriptions (optional REST service)",
+    "HTTP POST /v1/audio/synthesize (optional REST service)",
+    "WS /  realtime (optional WebSocket service)",
+    "Triton (backend, normally internal): HTTP :8000, gRPC :8001, metrics :8002/metrics"
+  ],
+  "known_vulns": [
+    "No auth on the Riva gRPC API by default — unauthenticated ASR/TTS/NMT inference for any client that reaches 50051 (compute theft on expensive GPU + audio PII)",
+    "Optional HTTP REST / WebSocket services inherit the no-auth default when enabled",
+    "Backend Triton ports (8000/8001/8002) if accidentally exposed grant the Triton control surface (model repository, /v2 management, metrics) — a far more dangerous surface than Riva itself (model load/unload, potential model-artifact abuse)",
+    "TLS off by default — gRPC traffic (audio + transcript) is plaintext HTTP/2 unless the operator configures certificates",
+    "gRPC server reflection commonly left enabled — full service/method enumeration aids targeting",
+    "High-value GPU compute (A100/H100-class) makes an open Riva endpoint an attractive compute-theft target at significant operator cost"
+  ],
+  "default_creds": [],
+  "risk_notes": "Attack vectors: (1) Compute theft on premium GPUs — Riva runs on datacenter GPUs; an open 50051 is free ASR/TTS/NMT at high operator cost. (2) Audio PII — StreamingRecognize returns transcripts of arbitrary submitted audio with no auth or logging; conversely Synthesize enables voice generation abuse. (3) The sharpest escalation is an accidentally exposed backend Triton (8000/8001/8002): Triton's management API can list/load/unload models and expose the model repository, turning a speech endpoint into a model-server compromise — always check for co-exposed Triton ports on any Riva host. (4) Plaintext gRPC leaks audio/transcripts on-path. (5) Fingerprint gap: gRPC-first means Shodan http.html under-reports Riva; discovery requires gRPC reflection (grpcurl / Censys gRPC method enum for nvidia.riva.*) or NGC image-tag attribution — many instances go uncounted. Keep strictly separate from nvidia-nim (the NIM microservice packaging) which has a different HTTP-first fingerprint.",
+  "deployment_notes": "Deployed from the Riva Quick Start scripts as the nvcr.io/nvidia/riva/riva-speech Docker container (x86_64 datacenter GPUs, or Linux ARM64 / Jetson embedded builds). Default Riva gRPC API on 50051; the riva-speech server fronts an internal Triton Inference Server (Triton's 8000/8001/8002 are backend and should stay private). Newer and embedded (Jetson) quick-start configs additionally map an HTTP REST endpoint (observed ~9001, paths /v1/audio/transcriptions and /v1/audio/synthesize) and a realtime WebSocket endpoint (~9000); on x86 datacenter deployments the canonical public surface is just the gRPC 50051. TLS and auth are operator-configured, not default. Because it needs NVIDIA GPUs it clusters on cloud GPU instances and on-prem DGX/workstation boxes. DISTINCT from nvidia-nim (slug nvidia-nim) — same vendor, different server packaging and fingerprint.",
+  "docker_images": [
+    "nvcr.io/nvidia/riva/riva-speech"
+  ],
+  "github_repos": [
+    "nvidia-riva/python-clients",
+    "nvidia-riva/cpp-clients",
+    "nvidia-riva/tutorials"
+  ],
+  "sources": [
+    {
+      "status": "CANDIDATE",
+      "source": "osint-platoon-2026-08-05"
+    }
+  ]
+}

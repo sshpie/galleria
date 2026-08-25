@@ -1,0 +1,57 @@
+{
+  "platform": "huggingface-tei",
+  "display_name": "HuggingFace Text Embeddings Inference (TEI)",
+  "category": "embedding_serving",
+  "default_ports": [80, 8080, 3000],
+  "api_paths": ["/info", "/embed", "/embed_sparse", "/rerank", "/metrics", "/health", "/openapi.json"],
+  "auth_default": "none",
+  "auth_config_env": [],
+  "default_creds": [],
+  "install_tell": "docker run -p 8080:80 ghcr.io/huggingface/text-embeddings-inference --model-id BAAI/bge-small-en-v1.5",
+  "misconfig_patterns": [
+    "No authentication in default deployment — all endpoints open",
+    "GET /info discloses model_id, model_pipeline_tag, max_concurrent_requests, version",
+    "GET /metrics Prometheus scrape endpoint open — leaks throughput, request counts, latency histograms",
+    "Docker Registry FP: 'text-embeddings-inference' in banner matches ghcr.io image cache in Registry v2 catalogs — not a live TEI instance"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"feature-extraction\"",
+      "http.html:\"model_pipeline_tag\"",
+      "\"text-embeddings-inference\"",
+      "http.html:\"max_batch_total_tokens\""
+    ],
+    "active_probe": {
+      "path": "/info",
+      "method": "GET",
+      "response_markers": ["model_pipeline_tag", "feature-extraction", "model_id", "max_concurrent_requests"],
+      "false_positive_check": "response must contain model_pipeline_tag field with value feature-extraction — uniquely identifies TEI, not present in any LLM inference server"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"feature-extraction\"",
+    "strict": "http.html:\"feature-extraction\" http.html:\"model_id\"",
+    "version": "http.html:\"max_input_length\" http.html:\"feature-extraction\""
+  },
+  "deployment_tells": [
+    "Shodan-dark by default — GET / returns API JSON not HTML; root path not indexed by Shodan HTML crawler",
+    "Port 8080 is the canonical external mapping (docker -p 8080:80); port 80 is internal container port",
+    "Server: text-embeddings-inference/2.x in HTTP headers on some versions",
+    "GET /metrics returns Prometheus text exposition format with te_embed_* metric family",
+    "GET /info returns: model_id, model_sha, model_pipeline_tag, max_concurrent_requests, max_input_length, max_batch_total_tokens, version, docker_label"
+  ],
+  "pivot_paths": [
+    "GET /info → model_id → BAAI/bge-small/large/m3, nomic-embed-text, multilingual-e5, jina-embeddings-v3",
+    "GET /info → docker_label → image tag reveals TEI version (2.0.x, 2.1.x, 2.4.x)",
+    "GET /metrics → te_request_success{method='embed'} counter → usage volume inference",
+    "GET /openapi.json → full route schema",
+    "model_pipeline_tag: feature-extraction = pure embedding; feature-extraction + rerank = dual-mode"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    " — Cat-27 Embedding Services 2026-06-18",
+    "https://github.com/huggingface/text-embeddings-inference",
+    " OSINT dork file: shodan/queries/27-embedding-services.md"
+  ],
+  "status": "CONFIRMED"
+}

@@ -1,0 +1,66 @@
+{
+  "platform": "couchbase",
+  "display_name": "Couchbase",
+  "category": "vector_feature",
+  "default_ports": [
+    8091
+  ],
+  "api_paths": [
+    "/pools",
+    "/pools/default",
+    "/pools/default/buckets"
+  ],
+  "auth_default": "none",
+  "auth_config_env": [
+    "CB_USERNAME",
+    "CB_PASSWORD"
+  ],
+  "default_creds": [
+    {
+      "user": "Administrator",
+      "pass": "password",
+      "context": "default setup wizard value"
+    }
+  ],
+  "install_tell": "docker run -p 8091:8091 couchbase:latest",
+  "misconfig_patterns": [
+    "/pools endpoint returns cluster topology without authentication",
+    "implementationVersion in /pools response leaks Couchbase version",
+    "FTS vector search (Couchbase 7.6+) requires auth for index access"
+  ],
+  "fingerprint": {
+    "passive": [
+      "port:8091 \"couchbase\"",
+      "http.html:\"couchbase\""
+    ],
+    "active_probe": {
+      "path": "/pools",
+      "method": "GET",
+      "response_markers": [
+        "\"implementationVersion\"",
+        "\"componentsVersion\""
+      ],
+      "false_positive_check": "response must include implementationVersion field — uniquely identifies Couchbase /pools endpoint"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "port:8091 \"couchbase\"",
+    "strict": "port:8091 \"couchbase\"",
+    "version": "port:8091 \"implementationVersion\""
+  },
+  "deployment_tells": [
+    "GET /pools returns {implementationVersion:..., componentsVersion:...} without auth — topology leak",
+    "Web console at :8091 — try Administrator:password",
+    "FTS vector indexes require auth to enumerate"
+  ],
+  "pivot_paths": [
+    "GET /pools → Couchbase version + cluster topology without auth",
+    "GET /pools/default/buckets → bucket names (requires auth in most configs)",
+    "Web console :8091 → Administrator:password → FTS vector index list"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "https://docs.couchbase.com/server/current/fts/fts-using-node-to-node-encryption.html",
+    "[CANDIDATE —  Cat-02 OSINT 2026-06-05; doc-grounded, host-unverified]"
+  ]
+}

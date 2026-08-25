@@ -1,0 +1,51 @@
+{
+  "platform": "project-koku",
+  "display_name": "Project Koku (Red Hat Cost Management upstream)",
+  "category": "cost-allocation",
+  "default_ports": [8000],
+  "api_paths": [
+    "/api/cost-management/v1/reports/openshift/costs/",
+    "/api/cost-management/v1/sources/",
+    "/api/cost-management/v1/organizations/",
+    "/status/"
+  ],
+  "auth_default": "rbac",
+  "auth_config_env": ["x-rh-identity"],
+  "default_creds": [],
+  "install_tell": "docker-compose (dev) + container images; OpenShift-oriented (Django+Postgres+Masu+Celery)",
+  "misconfig_patterns": [
+    "RBAC/identity-header (x-rh-identity) gated by design in production",
+    "Raw docker-compose dev stack can bind :8000 unauthenticated — UNVERIFIED exposure",
+    "Mark CANDIDATE — production auth-ON, dev-stack unconfirmed"
+  ],
+  "fingerprint": {
+    "passive": [
+      "http.html:\"cost-management\" port:8000"
+    ],
+    "active_probe": {
+      "path": "/status/",
+      "method": "GET",
+      "response_markers": ["cost-management"],
+      "false_positive_check": "Django REST Framework browsable API with meta/links/data envelope under /api/cost-management/v1/; gunicorn server"
+    }
+  },
+  "shodan_dorks": {
+    "basic": "http.html:\"cost-management\"",
+    "strict": "http.html:\"/api/cost-management/v1/\" port:8000",
+    "version": "http.html:\"cost-management\""
+  },
+  "deployment_tells": [
+    "Django REST Framework browsable API",
+    "path prefix /api/cost-management/v1/",
+    "gunicorn server header",
+    "auth-ON RBAC — CANDIDATE"
+  ],
+  "pivot_paths": [
+    "GET /api/cost-management/v1/sources/ (post-auth) -> connected cloud+OpenShift sources",
+    "GET /reports/openshift/costs/ -> per-cluster cost reports"
+  ],
+  "vulnerabilities": [],
+  "sources": [
+    "Cat-FinOps Cost-Allocation survey 2026-07-03 (Stage -1 OSINT Platoon)"
+  ]
+}
