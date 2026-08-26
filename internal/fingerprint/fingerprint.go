@@ -39,6 +39,7 @@ const (
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
 	TypeGhh                  HoneypotType = "GHH"                      // Google Hack Honeypot — fake PHP shell trapping Google dork scanners
+	TypeHellpot              HoneypotType = "HELLPOT"                   // Go HTTP tarpit serving infinite Markov-chain HTML to crawlers
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -267,6 +268,16 @@ func HTTP(ip string, port int) *Result {
 		r.HoneypotType = ghfp.HoneypotType
 		r.Confidence = ghfp.Confidence
 		r.Evidence = ghfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ae: HellPot tarpit — robots.txt CRLF + /wp-login pair + infinite body preamble.
+	hpfp := HellPot(ip, port)
+	if hpfp.IsHoneypot {
+		r.HoneypotType = hpfp.HoneypotType
+		r.Confidence = hpfp.Confidence
+		r.Evidence = hpfp.Evidence
 		r.IsHoneypot = true
 		return r
 	}
@@ -2167,6 +2178,60 @@ func rawUDP(addr, payload string) string {
 	buf := make([]byte, 2048)
 	n, _ := conn.Read(buf)
 	return string(buf[:n])
+}
+
+// HellPot runs behavioral fingerprinting for HellPot (yunginnanet/HellPot).
+//
+// HellPot is a Go HTTP tarpit that serves infinite Markov-chain-generated HTML
+// (sourced from Nietzsche's "The Birth of Tragedy") to bots that hit disallowed
+// robots.txt paths. It traps crawlers that ignore robots.txt — primarily by luring
+// them into reading a response that never ends.
+//
+// Signals:
+//
+//	HTTP  — GET /robots.txt → CRLF line endings + Disallow:/wp-login (no .php) — 92%
+//	HTTP  — GET /wp-login.php → no Content-Length header + body starts "<html>\n<body>\n" — 95%
+//	HTTP  — GET /wp-login.php → Nietzsche n-gram ("Dionysian", "Apollonian") in body — 99%
+func HellPot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// H1: robots.txt — HellPot generates CRLF-terminated robots.txt with Disallow:/wp-login
+	// (the bare path without .php extension). Real WordPress robots.txt uses LF and only
+	// lists /wp-login.php. The /wp-login bare path is HellPot-specific (router.go:87-117).
+	robotsResp := rawHTTP(addr, "GET /robots.txt HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	hasCRLF := strings.Contains(robotsResp, "/wp-login.php\r\n")
+	hasBare := strings.Contains(robotsResp, "Disallow: /wp-login\r\n")
+	if hasCRLF && hasBare {
+		// H2: confirm with tarpit path — no Content-Length, preamble is <html>\n<body>\n.
+		// rawHTTP caps at 8192 bytes so we won't be held by the infinite stream.
+		wpResp := rawHTTP(addr, "GET /wp-login.php HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		hasNoContentLen := !strings.Contains(strings.ToLower(wpResp), "content-length:")
+		hasPreamble := strings.Contains(wpResp, "<html>\n<body>\n")
+		if hasNoContentLen && hasPreamble {
+			// H3: Nietzsche n-gram confirms Markov source text (heffalump/src.go).
+			if strings.Contains(wpResp, "Dionysian") || strings.Contains(wpResp, "Apollonian") ||
+				strings.Contains(wpResp, "Nietzsche") || strings.Contains(wpResp, "Birth of Tragedy") {
+				r.HoneypotType = TypeHellpot
+				r.Confidence = 99
+				r.Evidence = `HellPot H3: robots.txt CRLF+/wp-login + tarpit preamble + Nietzsche n-gram in body (heffalump/src.go — "The Birth of Tragedy" Markov source)`
+				r.IsHoneypot = true
+				return r
+			}
+			r.HoneypotType = TypeHellpot
+			r.Confidence = 95
+			r.Evidence = `HellPot H2: robots.txt CRLF+Disallow:/wp-login + /wp-login.php returns no Content-Length with "<html>\n<body>\n" preamble (router.go infinite stream, no DOCTYPE)`
+			r.IsHoneypot = true
+			return r
+		}
+		r.HoneypotType = TypeHellpot
+		r.Confidence = 92
+		r.Evidence = `HellPot H1: robots.txt uses CRLF and lists Disallow:/wp-login (bare, no .php) — HellPot-generated; real WordPress robots.txt uses LF and only lists /wp-login.php`
+		r.IsHoneypot = true
+		return r
+	}
+
+	return r
 }
 
 // GHH runs behavioral fingerprinting for GHH (Google Hack Honeypot) v1.2.

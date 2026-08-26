@@ -24,6 +24,7 @@ Port Verification Blue Team Asset
 | SAP Cloud Active Defense | Kubernetes-based deception platform |
 | FCaptcha | Bot-detection CAPTCHA server |
 | GHH | Fake PHP shell, traps dork scanners |
+| HellPot | Endless page that traps web crawlers |
 | Portspoof | Makes every port look open |
 
 Also identifies 339 AI/ML platforms including:
