@@ -38,6 +38,8 @@ const (
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
+	TypeLophiid              HoneypotType = "LOPHIID"                     // Go distributed honeypot framework with LLM responses and gRPC control plane
+	TypeNodepot              HoneypotType = "NODEPOT"                     // Node.js WordPress honeypot logging RFI/LFI/XSS attacks
 	TypePasithea             HoneypotType = "PASITHEA"                   // Java/NanoHTTPD honeypot returning 200 OK with "<h1>404 Not Found</h1>" body
 	TypeMsurguyHoneypot      HoneypotType = "MSURGUY_HONEYPOT"          // Laravel hidden-field + time-based form spam protection bundle
 	TypeGhh                  HoneypotType = "GHH"                      // Google Hack Honeypot — fake PHP shell trapping Google dork scanners
@@ -274,7 +276,27 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ae: Pasithea — HTTP 200 + "<h1>404 Not Found</h1>" body + NanoHTTPD Server header.
+	// Test 6ae: Lophiid — X-Lophiid-Debug header or /metrics lophiid_ namespace.
+	lofp := Lophiid(ip, port)
+	if lofp.IsHoneypot {
+		r.HoneypotType = lofp.HoneypotType
+		r.Confidence = lofp.Confidence
+		r.Evidence = lofp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6af: Nodepot — /dork.html attack corpus + /admin Nodepot Admin UI.
+	npfp := Nodepot(ip, port)
+	if npfp.IsHoneypot {
+		r.HoneypotType = npfp.HoneypotType
+		r.Confidence = npfp.Confidence
+		r.Evidence = npfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6af: Pasithea — HTTP 200 + "<h1>404 Not Found</h1>" body + NanoHTTPD Server header.
 	psfp := Pasithea(ip, port)
 	if psfp.IsHoneypot {
 		r.HoneypotType = psfp.HoneypotType
@@ -2200,6 +2222,101 @@ func rawUDP(addr, payload string) string {
 	buf := make([]byte, 2048)
 	n, _ := conn.Read(buf)
 	return string(buf[:n])
+}
+
+// Lophiid identifies the Lophiid distributed honeypot framework (mrheinen/lophiid).
+//
+// Lophiid is a Go honeypot framework with distributed agents, gRPC control plane,
+// LLM-generated responses, JavaScript content engine, YARA rules, and Prometheus
+// metrics. Two probe-safe signals are available externally without authentication:
+// the X-Lophiid-Debug / X-Lophiid-Version response headers (debug mode, H19) and
+// the unauthenticated Prometheus /metrics endpoint exposing lophiid_* metric names.
+//
+// Signals:
+//
+//	HTTP  — response contains X-Lophiid-Debug or X-Lophiid-Version header (H19 debug mode) — definitive
+//	HTTP  — GET /metrics → body contains "lophiid_" Prometheus namespace (H13 — unauthenticated) — definitive
+func Lophiid(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// L1: GET / — check for X-Lophiid-Debug or X-Lophiid-Version response headers (H19).
+	// Debug mode adds these headers to every response; reveals software identity and version.
+	homeResp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	lowerHome := strings.ToLower(homeResp)
+	if strings.Contains(lowerHome, "x-lophiid-debug") || strings.Contains(lowerHome, "x-lophiid-version") {
+		r.HoneypotType = TypeLophiid
+		r.Confidence = 99
+		r.Evidence = `Lophiid L1: X-Lophiid-Debug or X-Lophiid-Version header in HTTP response (pkg/backend/responder/llm_responder.go — debug mode headers expose software identity and version on every response)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// L2: GET /metrics — Prometheus endpoint is unauthenticated (H13).
+	// Exposes lophiid_* metric names including request rates, rule match rates, LLM latency.
+	metricsResp := rawHTTP(addr, "GET /metrics HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(metricsResp, "lophiid_") {
+		r.HoneypotType = TypeLophiid
+		r.Confidence = 99
+		r.Evidence = `Lophiid L2: GET /metrics returns unauthenticated Prometheus metrics with "lophiid_" namespace (cmd/api/api_server.go — no auth on /metrics; exposes rule match rates and LLM latency)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	return r
+}
+
+// Nodepot identifies the Nodepot Node.js WordPress honeypot (schmalle/Nodepot).
+//
+// Nodepot emulates WordPress login/xmlrpc/plugin paths, logs RFI/LFI/XSS attacks,
+// fetches dropped payloads via curl, and reports to EWS/hpfeeds/Twitter. Two
+// definitive HTTP-layer signals are available without triggering the payload
+// downloader: /dork.html contains the full accumulated attack corpus (db.js:111-119)
+// and /admin exposes the unauthenticated admin panel (servercore.js:77-82).
+//
+// Signals:
+//
+//	HTTP  — GET /dork.html → contains "startLobby.php" (Nodepot-specific attack string in corpus) — definitive
+//	HTTP  — GET /admin → "Nodepot Admin UI" in body (servercore.js:77 — raw log + navbar) — definitive
+//	HTTP  — HTTP 200 on any path including non-existent (servercore.js catch-all) — 85%
+func Nodepot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// N1: /dork.html — written by db.js:111-119 every time a new attack URL is seen.
+	// Contains the full accumulated attack corpus. "startLobby.php" is a default dork
+	// string in rules.js that appears in every corpus from first attack onward.
+	dorkResp := rawHTTP(addr, "GET /dork.html HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(dorkResp, "startLobby.php") {
+		r.HoneypotType = TypeNodepot
+		r.Confidence = 99
+		r.Evidence = `Nodepot N1: GET /dork.html contains "startLobby.php" — Nodepot-specific attack corpus written by db.js:111-119; accumulates every matched attack URL`
+		r.IsHoneypot = true
+		return r
+	}
+	// Also check for other Nodepot-specific dork strings.
+	if strings.Contains(dorkResp, "mosConfig_absolute_path") || strings.Contains(dorkResp, "phpMyAdmin") {
+		if httpCode(dorkResp) == 200 {
+			r.HoneypotType = TypeNodepot
+			r.Confidence = 90
+			r.Evidence = `Nodepot N1b: GET /dork.html returns HTTP 200 with WordPress attack corpus strings (db.js:111-119 — unauthenticated corpus exposure)`
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	// N2: /admin panel — served unauthenticated (servercore.js:77-82), raw log injection
+	// readable. "Nodepot Admin UI" is hardcoded in the navbar template.
+	adminResp := rawHTTP(addr, "GET /admin HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(adminResp, "Nodepot Admin UI") {
+		r.HoneypotType = TypeNodepot
+		r.Confidence = 99
+		r.Evidence = `Nodepot N2: GET /admin returns unauthenticated panel with "Nodepot Admin UI" navbar (servercore.js:77-82 — raw log file served without auth or encoding)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	return r
 }
 
 // Pasithea identifies PasitheaHoneypot (Marist-Innovation-Lab/PasitheaHoneypot).

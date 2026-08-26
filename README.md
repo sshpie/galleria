@@ -23,6 +23,8 @@ Port Verification Blue Team Asset
 | EoHoneypotBundle | Hidden form fields catch bots |
 | msurguy/Honeypot | Hidden fields trap Laravel form bots |
 | Pasithea | Fake REST API, logs all traffic |
+| Nodepot | Fake WordPress, logs web attacks |
+| Lophiid | LLM-powered distributed web honeypot |
 | SAP Cloud Active Defense | Kubernetes-based deception platform |
 | FCaptcha | Bot-detection CAPTCHA server |
 | GHH | Fake PHP shell, traps dork scanners |
