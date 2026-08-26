@@ -44,6 +44,15 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 					v.Evidence = ocfp.Evidence
 					return v
 				}
+				// RedisHoneyPot: static run_id + absent AUTH command + RESP type mismatch.
+				rhfp := fingerprint.RedisHoneypot(ip, port)
+				if rhfp.IsHoneypot {
+					v.State = "HONEYPOT"
+					v.HoneypotType = string(rhfp.HoneypotType)
+					v.Confidence = rhfp.Confidence
+					v.Evidence = rhfp.Evidence
+					return v
+				}
 				// Multi-step Redis depth test: INVALIDCMD after PING.
 				fp := fingerprint.Redis(ip, port)
 				if fp.IsHoneypot {

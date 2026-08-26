@@ -38,6 +38,7 @@ const (
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
+	TypeRedisHoneypot        HoneypotType = "REDIS_HONEYPOT"               // Go Redis honeypot with static run_id/master_replid/PID and missing AUTH
 	TypeLophiid              HoneypotType = "LOPHIID"                     // Go distributed honeypot framework with LLM responses and gRPC control plane
 	TypeNodepot              HoneypotType = "NODEPOT"                     // Node.js WordPress honeypot logging RFI/LFI/XSS attacks
 	TypePasithea             HoneypotType = "PASITHEA"                   // Java/NanoHTTPD honeypot returning 200 OK with "<h1>404 Not Found</h1>" body
@@ -707,6 +708,69 @@ func Redis(ip string, port int) *Result {
 		r.HoneypotType = TypeReal
 		r.Confidence = 90
 		r.Evidence = fmt.Sprintf("Redis: INVALIDCMD → %s (correct -ERR dialect)", strings.TrimSpace(badResp[:min(len(badResp), 60)]))
+		return r
+	}
+
+	return r
+}
+
+// RedisHoneypot identifies cypwnpwnsocute/RedisHoneyPot.
+//
+// RedisHoneyPot is a Go RESP server using the gev event loop. All INFO fields are
+// loaded from a static redis.conf — run_id, master_replid, process_id, uptime, and
+// connection counters never change between sessions or restarts. The AUTH command
+// is absent from the dispatch table, so clients receive "-ERR unknown command `AUTH`"
+// which real Redis 6.x never emits. GET returns +(nil) instead of $-1 (RESP type mismatch).
+//
+// Signals:
+//
+//	RESP  — AUTH x → "-ERR unknown command `AUTH`" (real Redis 6.x always handles AUTH) — definitive
+//	RESP  — INFO server → run_id:41be2f14e917b27b95ab0fe58f90d9521661dcd1 (static, redis.conf:18) — definitive
+//	RESP  — INFO replication → master_replid:e8ab6fdf... (static, redis.conf:124) — definitive
+//	RESP  — GET __probe → +(nil) response type (should be $-1 bulk null) — 90%
+func RedisHoneypot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// R1: AUTH probe — redis.conf declares requirepass but the AUTH command is not
+	// implemented. Real Redis 6.x returns +OK or -WRONGPASS; this returns unknown command.
+	authResp, _ := rawTCPExchange(addr, "*2\r\n$4\r\nAUTH\r\n$8\r\ngalleria\r\n")
+	if strings.Contains(authResp, "unknown command") && strings.Contains(authResp, "AUTH") {
+		r.HoneypotType = TypeRedisHoneypot
+		r.Confidence = 99
+		r.Evidence = `RedisHoneyPot R1: AUTH → "-ERR unknown command `+"`"+`AUTH`+"`"+`" (server.go has no case "auth" — real Redis 6.x always implements AUTH; response definitively identifies this honeypot)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// R2: INFO server — run_id is hardcoded in redis.conf:18 and never regenerated.
+	infoResp, _ := rawTCPExchange(addr, "*2\r\n$4\r\nINFO\r\n$6\r\nserver\r\n")
+	if strings.Contains(infoResp, "run_id:41be2f14e917b27b95ab0fe58f90d9521661dcd1") {
+		r.HoneypotType = TypeRedisHoneypot
+		r.Confidence = 99
+		r.Evidence = "RedisHoneyPot R2: INFO server returns static run_id:41be2f14e917b27b95ab0fe58f90d9521661dcd1 (redis.conf:18 — hardcoded; real Redis regenerates a random 40-hex run_id on every startup)"
+		r.IsHoneypot = true
+		return r
+	}
+
+	// R2b: INFO replication — master_replid is static (redis.conf:124).
+	replResp, _ := rawTCPExchange(addr, "*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n")
+	if strings.Contains(replResp, "master_replid:e8ab6fdf17602f25e3aee87612ddaa3919502761") {
+		r.HoneypotType = TypeRedisHoneypot
+		r.Confidence = 99
+		r.Evidence = "RedisHoneyPot R2b: INFO replication returns static master_replid:e8ab6fdf17602f25e3aee87612ddaa3919502761 (redis.conf:124 — hardcoded; real Redis regenerates after restart or simulated failover)"
+		r.IsHoneypot = true
+		return r
+	}
+
+	// R3: GET nonexistent key → +(nil) (simple string) instead of $-1 (bulk null).
+	// RESP type mismatch — any Redis client expecting $-1 breaks (server.go uses wrong type).
+	getResp, _ := rawTCPExchange(addr, "*2\r\n$3\r\nGET\r\n$22\r\ngalleria_probe_9f3ab2\r\n")
+	if strings.HasPrefix(getResp, "+(nil)") {
+		r.HoneypotType = TypeRedisHoneypot
+		r.Confidence = 90
+		r.Evidence = "RedisHoneyPot R3: GET nonexistent key returns +(nil) simple string instead of $-1 bulk null (server.go RESP type mismatch; breaks any standard Redis client)"
+		r.IsHoneypot = true
 		return r
 	}
 

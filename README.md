@@ -25,6 +25,7 @@ Port Verification Blue Team Asset
 | Pasithea | Fake REST API, logs all traffic |
 | Nodepot | Fake WordPress, logs web attacks |
 | Lophiid | LLM-powered distributed web honeypot |
+| RedisHoneyPot | Fake Redis with hardcoded static fields |
 | SAP Cloud Active Defense | Kubernetes-based deception platform |
 | FCaptcha | Bot-detection CAPTCHA server |
 | GHH | Fake PHP shell, traps dork scanners |
