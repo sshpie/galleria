@@ -38,6 +38,9 @@ const (
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
+	TypePghoney              HoneypotType = "PGHONEY"                      // Go PostgreSQL honeypot with hardcoded MD5 auth salt 0x336FBFD2
+	TypeNosqlpot             HoneypotType = "NOSQLPOT"                     // Python 2 Redis+CouchDB honeypot; AUTH absent, static INFO fields
+	TypeStickyElephant       HoneypotType = "STICKY_ELEPHANT"              // Ruby PostgreSQL honeypot; cleartext auth accepts all passwords, pid=666
 	TypeRedisHoneypot        HoneypotType = "REDIS_HONEYPOT"               // Go Redis honeypot with static run_id/master_replid/PID and missing AUTH
 	TypeLophiid              HoneypotType = "LOPHIID"                     // Go distributed honeypot framework with LLM responses and gRPC control plane
 	TypeNodepot              HoneypotType = "NODEPOT"                     // Node.js WordPress honeypot logging RFI/LFI/XSS attacks
@@ -277,7 +280,26 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ae: Lophiid — X-Lophiid-Debug header or /metrics lophiid_ namespace.
+	// Test 6ae: nosqlpot CouchDB — charset=utf-7 Content-Type + trailing semicolon in JSON body.
+	// The couchpot component uses text/plain; charset=utf-7 (server.conf:9) and emits
+	// invalid JSON with a trailing semicolon (couchpot/couch.conf:2).
+	couchLower := strings.ToLower(firstBody)
+	if strings.Contains(couchLower, "charset=utf-7") {
+		r.HoneypotType = TypeNosqlpot
+		r.Confidence = 95
+		r.Evidence = `nosqlpot CouchDB: Content-Type charset=utf-7 (couchpot/server.conf:9 — real CouchDB always returns charset=utf-8; utf-7 is not a valid JSON charset)`
+		r.IsHoneypot = true
+		return r
+	}
+	if strings.Contains(couchLower, `"couchdb"`) && strings.Contains(firstBody, "};") {
+		r.HoneypotType = TypeNosqlpot
+		r.Confidence = 99
+		r.Evidence = `nosqlpot CouchDB: "couchdb" welcome JSON body with trailing "}" semicolon (couchpot/couch.conf:2 — invalid JSON; real CouchDB never returns semicolon-terminated body)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6af: Lophiid — X-Lophiid-Debug header or /metrics lophiid_ namespace.
 	lofp := Lophiid(ip, port)
 	if lofp.IsHoneypot {
 		r.HoneypotType = lofp.HoneypotType
@@ -2585,6 +2607,245 @@ func GHH(ip string, port int) *Result {
 	r.Confidence = 85
 	r.Evidence = `GHH G1: GET /phpshell.php returns <title>PHP Shell 1.7</title> (phpshell.php:102 — hardcoded page title)`
 	r.IsHoneypot = true
+	return r
+}
+
+// pgStartup builds a PostgreSQL v3.0 startup packet for the given user and database.
+// Format: Int32(length) + Int32(0x00030000) + "user\0<user>\0database\0<db>\0\0"
+func pgStartup(user, database string) []byte {
+	params := "user\x00" + user + "\x00database\x00" + database + "\x00\x00"
+	length := 4 + 4 + len(params) // length field includes itself (4) + protocol (4) + params
+	buf := make([]byte, length)
+	binary.BigEndian.PutUint32(buf[0:], uint32(length))
+	binary.BigEndian.PutUint32(buf[4:], 0x00030000) // protocol version 3.0
+	copy(buf[8:], params)
+	return buf
+}
+
+// pgPassword builds a PostgreSQL cleartext password message ('p' + Int32 + password + '\0').
+func pgPassword(password string) []byte {
+	body := password + "\x00"
+	length := 4 + len(body) // Int32 includes itself
+	buf := make([]byte, 1+length)
+	buf[0] = 'p'
+	binary.BigEndian.PutUint32(buf[1:], uint32(length))
+	copy(buf[5:], body)
+	return buf
+}
+
+// pgScanMsg scans a raw PostgreSQL wire buffer for the first message of msgType.
+// Returns body bytes (after type byte + 4-byte length field), or nil if not found.
+func pgScanMsg(data []byte, msgType byte) []byte {
+	offset := 0
+	for offset+5 <= len(data) {
+		t := data[offset]
+		msgLen := int(binary.BigEndian.Uint32(data[offset+1:]))
+		if msgLen < 4 {
+			break
+		}
+		end := offset + 1 + msgLen
+		if end > len(data) {
+			break
+		}
+		if t == msgType {
+			return data[offset+5 : end]
+		}
+		offset = end
+	}
+	return nil
+}
+
+// Pghoney identifies the pghoney Go PostgreSQL honeypot (betheroot/pghoney).
+//
+// pghoney captures PostgreSQL credentials via a partial Postgres wire implementation.
+// serverutils.go:67 hardcodes MD5 auth salt bytes {51, 111, 191, 210} (0x336FBFD2) —
+// every connection from every client gets the same 4-byte salt. Real PostgreSQL generates
+// a cryptographically random salt per connection.
+//
+// Signals:
+//
+//	PGwire — MD5 auth challenge (type 5) with static salt 0x336FBFD2 — definitive
+func Pghoney(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	if err != nil {
+		return r
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(probeTimeout))
+
+	conn.Write(pgStartup("galleria", "galleria"))
+
+	buf := make([]byte, 128)
+	n, err := conn.Read(buf)
+	if err != nil || n < 9 {
+		return r
+	}
+	resp := buf[:n]
+
+	// AuthenticationRequest is type 'R'; auth type 5 = MD5, followed by 4-byte salt.
+	if resp[0] != 'R' {
+		return r
+	}
+	authType := binary.BigEndian.Uint32(resp[5:9])
+	if authType == 5 && n >= 13 {
+		salt := resp[9:13]
+		// Static salt {51, 111, 191, 210} = 0x336FBFD2 hardcoded in serverutils.go:67.
+		if salt[0] == 0x33 && salt[1] == 0x6F && salt[2] == 0xBF && salt[3] == 0xD2 {
+			r.HoneypotType = TypePghoney
+			r.Confidence = 99
+			r.Evidence = "pghoney P1: MD5 auth salt 0x336FBFD2 ({51,111,191,210}) hardcoded in serverutils.go:67 — identical on every connection and every restart; real PostgreSQL generates a cryptographically random 4-byte salt per connection"
+			r.IsHoneypot = true
+		}
+	}
+	return r
+}
+
+// StickyElephant identifies the sticky_elephant Ruby PostgreSQL honeypot (betheroot/sticky_elephant).
+//
+// sticky_elephant captures PostgreSQL credentials via a Ruby Postgres wire server.
+// handler/handshake.rb:authenticate() sends AuthOk unconditionally — every password is
+// accepted without verification. postgres_simulator.rb hardcodes pid=666 in BackendKeyData.
+// SELECT queries return fixture rows {name:'Perl', breed:'dromedary'} regardless of query.
+//
+// Signals:
+//
+//	PGwire — cleartext auth (type 3) + any password accepted (AuthOk type 0) — 90%
+//	PGwire — BackendKeyData message contains pid=666 — definitive
+func StickyElephant(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	if err != nil {
+		return r
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(probeTimeout))
+
+	conn.Write(pgStartup("galleria", "galleria"))
+
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	if err != nil || n < 9 {
+		return r
+	}
+
+	// Phase 1: expect cleartext auth challenge ('R', authtype=3).
+	// sticky_elephant always uses cleartext; pghoney uses MD5 (authtype=5).
+	if buf[0] != 'R' {
+		return r
+	}
+	authType := binary.BigEndian.Uint32(buf[5:9])
+	if authType != 3 {
+		return r
+	}
+
+	// Phase 2: send any password — authenticate() sends AuthOk unconditionally.
+	conn.Write(pgPassword("galleria"))
+
+	// Phase 3: read AuthOk + ParameterStatus + BackendKeyData + ReadyForQuery.
+	total := 0
+	for total < cap(buf)-1 {
+		n2, err2 := conn.Read(buf[total:])
+		if n2 > 0 {
+			total += n2
+		}
+		if err2 != nil || total >= 32 {
+			break
+		}
+	}
+
+	if total < 9 {
+		r.HoneypotType = TypeStickyElephant
+		r.Confidence = 90
+		r.Evidence = `sticky_elephant S1: cleartext auth (type 3) accepted with arbitrary password (handler/handshake.rb:authenticate() sends AuthOk unconditionally — no credential check)`
+		r.IsHoneypot = true
+		return r
+	}
+	resp := buf[:total]
+
+	// Confirm AuthOk at offset 0 ('R' + len=8 + authtype=0).
+	if resp[0] != 'R' || binary.BigEndian.Uint32(resp[5:9]) != 0 {
+		r.HoneypotType = TypeStickyElephant
+		r.Confidence = 85
+		r.Evidence = `sticky_elephant S1: cleartext auth (type 3) + password response accepted (handler/handshake.rb:authenticate() unconditional)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Scan for BackendKeyData 'K'; real PostgreSQL uses actual OS PID, sticky_elephant hardcodes 666.
+	if body := pgScanMsg(resp, 'K'); body != nil && len(body) >= 4 {
+		pid := binary.BigEndian.Uint32(body[0:4])
+		if pid == 666 {
+			r.HoneypotType = TypeStickyElephant
+			r.Confidence = 99
+			r.Evidence = "sticky_elephant S2: BackendKeyData pid=666 (postgres_simulator.rb:send_backend_key_data(666,...) — hardcoded constant; real PostgreSQL sends the actual OS process ID of the backend)"
+			r.IsHoneypot = true
+			return r
+		}
+	}
+
+	r.HoneypotType = TypeStickyElephant
+	r.Confidence = 90
+	r.Evidence = `sticky_elephant S1: cleartext auth (type 3) + AuthOk for arbitrary password "galleria" (handler/handshake.rb:authenticate() sends AuthOk unconditionally)`
+	r.IsHoneypot = true
+	return r
+}
+
+// Nosqlpot identifies the nosqlpot Python 2 Redis/CouchDB honeypot (torque59/nosqlpot).
+//
+// nosqlpot emulates Redis via Twisted+fakeredis and CouchDB via CherryPy. The Redis
+// component has no AUTH handler — AUTH falls to the catch-all returning
+// "-ERR unknown command 'auth'" (lowercase, single-quote format). The INFO response
+// contains static fields (process_id=30064, loading=1, redis_version=2.4.16) that
+// never change. The CouchDB component (port 8112 default) returns invalid JSON with
+// a trailing semicolon and Content-Type: text/plain; charset=utf-7.
+//
+// Signals (Redis, RESP layer):
+//
+//	RESP  — AUTH → "-ERR unknown command 'auth'" (lowercase single-quote — definitive vs RedisHoneyPot's backtick/uppercase)
+//	RESP  — INFO → process_id = 30064 (static, never changes) — definitive
+//
+// Signals (CouchDB, HTTP layer — checked inline in HTTP()):
+//
+//	HTTP  — Content-Type: charset=utf-7 — 95%
+//	HTTP  — "couchdb" JSON body with trailing "}" semicolon — definitive
+func Nosqlpot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// N1: AUTH probe — nosqlpot has no AUTH handler; response uses lowercase single-quote format.
+	// Distinguishes from RedisHoneyPot (backtick+uppercase "AUTH") and real Redis (-NOAUTH/-WRONGPASS).
+	authResp, _ := rawTCPExchange(addr, "AUTH galleria\r\n")
+	if strings.Contains(authResp, "unknown command") && strings.Contains(authResp, "'auth'") {
+		r.HoneypotType = TypeNosqlpot
+		r.Confidence = 99
+		r.Evidence = `nosqlpot N1: AUTH → "-ERR unknown command 'auth'" (redisdeploy.py — AUTH absent from dispatch; lowercase single-quote format distinguishes from RedisHoneyPot's backtick-uppercase format and real Redis -NOAUTH/-WRONGPASS)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// N2: INFO → static process_id=30064 (redispot/info — hardcoded, never updates).
+	infoResp, _ := rawTCPExchange(addr, "INFO\r\n")
+	if strings.Contains(infoResp, "process_id = 30064") {
+		r.HoneypotType = TypeNosqlpot
+		r.Confidence = 99
+		r.Evidence = "nosqlpot N2: INFO returns static process_id=30064 (redispot/info — hardcoded; real Redis reports actual OS PID, changes on every restart)"
+		r.IsHoneypot = true
+		return r
+	}
+	// N2b: loading=1 never clears + EOL version string.
+	if strings.Contains(infoResp, "loading = 1") && strings.Contains(infoResp, "redis_version = 2.4.16") {
+		r.HoneypotType = TypeNosqlpot
+		r.Confidence = 95
+		r.Evidence = "nosqlpot N2b: INFO loading=1 (never clears — RDB always in-progress) + redis_version=2.4.16 (EOL 2013) — redispot/info static fields"
+		r.IsHoneypot = true
+		return r
+	}
+
 	return r
 }
 

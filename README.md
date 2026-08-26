@@ -26,6 +26,9 @@ Port Verification Blue Team Asset
 | Nodepot | Fake WordPress, logs web attacks |
 | Lophiid | LLM-powered distributed web honeypot |
 | RedisHoneyPot | Fake Redis with hardcoded static fields |
+| pghoney | Fake Postgres, captures login attempts |
+| nosqlpot | Fake Redis and CouchDB, logs queries |
+| sticky_elephant | Fake Postgres, accepts any password |
 | SAP Cloud Active Defense | Kubernetes-based deception platform |
 | FCaptcha | Bot-detection CAPTCHA server |
 | GHH | Fake PHP shell, traps dork scanners |

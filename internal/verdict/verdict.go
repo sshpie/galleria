@@ -44,6 +44,15 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 					v.Evidence = ocfp.Evidence
 					return v
 				}
+				// nosqlpot Redis: AUTH → "unknown command 'auth'" + static INFO fields.
+				nqfp := fingerprint.Nosqlpot(ip, port)
+				if nqfp.IsHoneypot {
+					v.State = "HONEYPOT"
+					v.HoneypotType = string(nqfp.HoneypotType)
+					v.Confidence = nqfp.Confidence
+					v.Evidence = nqfp.Evidence
+					return v
+				}
 				// RedisHoneyPot: static run_id + absent AUTH command + RESP type mismatch.
 				rhfp := fingerprint.RedisHoneypot(ip, port)
 				if rhfp.IsHoneypot {
@@ -161,6 +170,26 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 			v.HoneypotType = string(fp.HoneypotType)
 			v.Confidence = fp.Confidence
 			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
+	// PostgreSQL (port 5432): pghoney (static MD5 salt) then sticky_elephant (cleartext + pid=666).
+	if port == 5432 {
+		phfp := fingerprint.Pghoney(ip, port)
+		if phfp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(phfp.HoneypotType)
+			v.Confidence = phfp.Confidence
+			v.Evidence = phfp.Evidence
+			return v
+		}
+		sefp := fingerprint.StickyElephant(ip, port)
+		if sefp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(sefp.HoneypotType)
+			v.Confidence = sefp.Confidence
+			v.Evidence = sefp.Evidence
 			return v
 		}
 	}
