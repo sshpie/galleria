@@ -3118,31 +3118,32 @@ func MysqlHoneypotd(ip string, port int) *Result {
 	}
 
 	ver1, cid1, ok1 := readGreeting()
-	if !ok1 {
+	if !ok1 || !strings.Contains(ver1, "8.0.19") {
 		return r
 	}
 
-	if cid1 == 0 && strings.Contains(ver1, "8.0.19") {
-		ver2, cid2, ok2 := readGreeting()
-		if ok2 && cid2 == 1 && ver2 == ver1 {
-			r.HoneypotType = TypeMysqlHoneypotd
-			r.Confidence = 95
-			r.Evidence = fmt.Sprintf("mysql-honeypotd: thread_id=0 then thread_id=1 across two connections (globals.c:17 srand+sequential counter) + server_version=%s (hardcoded EOL; real MySQL thread_ids are non-sequential and non-zero)", ver1)
-			r.IsHoneypot = true
-			return r
+	// Always try a second connection to detect sequential increment.
+	// The critical check is cid2 == cid1+1 regardless of starting value —
+	// by the time MysqlHoneypotd runs, OpenCanary and MysqlPot have already
+	// consumed earlier thread_id values.
+	ver2, cid2, ok2 := readGreeting()
+	if ok2 && ver2 == ver1 && cid2 == cid1+1 {
+		confidence := 95
+		if cid1 == 0 {
+			confidence = 99 // started at 0 → definitively fresh process
 		}
 		r.HoneypotType = TypeMysqlHoneypotd
-		r.Confidence = 80
-		r.Evidence = fmt.Sprintf("mysql-honeypotd: thread_id=0 on first connection + server_version=%s (globals.c:17 — sequential counter from 0; real MySQL starts above 1 with non-sequential progression)", ver1)
+		r.Confidence = confidence
+		r.Evidence = fmt.Sprintf("mysql-honeypotd: sequential thread_id %d→%d across two connections (globals.c:17 srand+sequential counter) + server_version=%s (hardcoded; real MySQL uses non-sequential thread_ids that vary across restarts)", cid1, cid2, ver1)
 		r.IsHoneypot = true
 		return r
 	}
 
-	// server_version match with low thread_id is a secondary indicator.
-	if strings.Contains(ver1, "8.0.19") && cid1 < 5 {
+	// Sequential not confirmed; flag only if thread_id is exactly 0 (this prober is first).
+	if cid1 == 0 {
 		r.HoneypotType = TypeMysqlHoneypotd
-		r.Confidence = 70
-		r.Evidence = fmt.Sprintf("mysql-honeypotd: server_version=%s + low thread_id=%d (globals.c default version + sequential-from-0 counter)", ver1, cid1)
+		r.Confidence = 80
+		r.Evidence = fmt.Sprintf("mysql-honeypotd: thread_id=0 on first connection + server_version=%s (globals.c sequential counter from 0; real MySQL never starts at 0)", ver1)
 		r.IsHoneypot = true
 	}
 	return r
