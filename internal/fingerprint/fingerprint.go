@@ -3096,7 +3096,7 @@ func MysqlPot(ip string, port int) *Result {
 // Signals:
 //
 //	MySQL wire — thread_id = 0 on first connection + server_version "8.0.19" — 80%
-//	MySQL wire — two consecutive connections: thread_id = 0, then 1 — 95%
+//	MySQL wire — two consecutive connections: thread_id = N, then N+1 — 95% (99% if N=0)
 func MysqlHoneypotd(ip string, port int) *Result {
 	r := &Result{Port: port, HoneypotType: TypeUnknown}
 	addr := fmt.Sprintf("%s:%d", ip, port)
