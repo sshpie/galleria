@@ -38,6 +38,7 @@ const (
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
+	TypeGhh                  HoneypotType = "GHH"                      // Google Hack Honeypot — fake PHP shell trapping Google dork scanners
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -256,6 +257,16 @@ func HTTP(ip string, port int) *Result {
 		r.HoneypotType = kfp.HoneypotType
 		r.Confidence = kfp.Confidence
 		r.Evidence = kfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ad: GHH (Google Hack Honeypot) — fake phpshell with static command outputs.
+	ghfp := GHH(ip, port)
+	if ghfp.IsHoneypot {
+		r.HoneypotType = ghfp.HoneypotType
+		r.Confidence = ghfp.Confidence
+		r.Evidence = ghfp.Evidence
 		r.IsHoneypot = true
 		return r
 	}
@@ -2156,6 +2167,51 @@ func rawUDP(addr, payload string) string {
 	buf := make([]byte, 2048)
 	n, _ := conn.Read(buf)
 	return string(buf[:n])
+}
+
+// GHH runs behavioral fingerprinting for GHH (Google Hack Honeypot) v1.2.
+//
+// GHH (ghh.sourceforge.net) emulates a PHP shell (phpshell.php) to trap attackers
+// who find it via Google dorks. All command outputs are hardcoded static strings —
+// `id` always returns root, `ps` always returns PID 16919, `uname -r` always returns
+// "2.6.8-2-k7", and `/etc/passwd` contains the typo "/bin/bas" (missing 'h').
+//
+// Signals:
+//
+//	HTTP  — GET /phpshell.php → <title>PHP Shell 1.7</title> (phpshell.php:102) — 85%
+//	HTTP  — POST command=id → uid=0(root) gid=0(root) groups=0(root) (phpshell.php:720) — 99%
+//	HTTP  — POST command=ps → PID 16919 hardcoded (phpshell.php:182) — 99%
+func GHH(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// G1: GET /phpshell.php — title "PHP Shell 1.7" is hardcoded (phpshell.php:102).
+	getResp := rawHTTP(addr, "GET /phpshell.php HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if !strings.Contains(getResp, "PHP Shell 1.7") {
+		return r
+	}
+
+	// G2: POST command=id — always returns static uid=0(root) root string (phpshell.php:720).
+	idBody := "command=id"
+	idReq := "POST /phpshell.php HTTP/1.1\r\nHost: " + ip +
+		"\r\nContent-Type: application/x-www-form-urlencoded" +
+		"\r\nContent-Length: " + fmt.Sprintf("%d", len(idBody)) +
+		"\r\nConnection: close\r\n\r\n" + idBody
+	idResp := rawHTTP(addr, idReq)
+	if strings.Contains(idResp, "uid=0(root) gid=0(root) groups=0(root)") {
+		r.HoneypotType = TypeGhh
+		r.Confidence = 99
+		r.Evidence = `GHH G2: POST command=id returns static "uid=0(root) gid=0(root) groups=0(root)" (phpshell.php:720 — hardcoded; real systems vary per deployment)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// G1 alone: title match without command confirmation — likely GHH but no interactive proof.
+	r.HoneypotType = TypeGhh
+	r.Confidence = 85
+	r.Evidence = `GHH G1: GET /phpshell.php returns <title>PHP Shell 1.7</title> (phpshell.php:102 — hardcoded page title)`
+	r.IsHoneypot = true
+	return r
 }
 
 // rawTCPBytes sends a binary payload and returns the raw response bytes.
