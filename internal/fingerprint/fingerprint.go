@@ -48,6 +48,11 @@ const (
 	TypeMsurguyHoneypot      HoneypotType = "MSURGUY_HONEYPOT"          // Laravel hidden-field + time-based form spam protection bundle
 	TypeGhh                  HoneypotType = "GHH"                      // Google Hack Honeypot — fake PHP shell trapping Google dork scanners
 	TypeHellpot              HoneypotType = "HELLPOT"                   // Go HTTP tarpit serving infinite Markov-chain HTML to crawlers
+	TypeMongodbHoneyproxy    HoneypotType = "MONGODB_HONEYPROXY"        // Node.js MongoDB proxy; no OP_MSG handler; zero credential capture
+	TypeElastichoney         HoneypotType = "ELASTICHONEY"              // Go Elasticsearch honeypot; hardcoded node UUID and static PID
+	TypeElasticpot           HoneypotType = "ELASTICPOT"               // Python Elasticsearch honeypot; "Green Goblin" instance name
+	TypeMysqlPot             HoneypotType = "MYSQLPOT"                 // C# MySQL honeypot; auth challenge bytes all 0x42 (BBBBBBBB)
+	TypeMysqlHoneypotd       HoneypotType = "MYSQL_HONEYPOTD"          // C MySQL honeypot daemon; thread_id increments from 0 sequentially
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
 	TypeDionaea       HoneypotType = "DIONAEA"        // malware-catching honeypot
 	TypeGlastopf      HoneypotType = "GLASTOPF"      // web application honeypot
@@ -345,6 +350,17 @@ func HTTP(ip string, port int) *Result {
 		r.HoneypotType = hpfp.HoneypotType
 		r.Confidence = hpfp.Confidence
 		r.Evidence = hpfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6ag: Elasticsearch honeypots — elastichoney (Go) and elasticpot (Python).
+	// Both hardcode the same node UUID; distinguished by build hash and instance name.
+	esfp := ElasticsearchHoneypot(ip, port)
+	if esfp.IsHoneypot {
+		r.HoneypotType = esfp.HoneypotType
+		r.Confidence = esfp.Confidence
+		r.Evidence = esfp.Evidence
 		r.IsHoneypot = true
 		return r
 	}
@@ -2846,6 +2862,289 @@ func Nosqlpot(ip string, port int) *Result {
 		return r
 	}
 
+	return r
+}
+
+// MongodbHoneyproxy identifies MongoDB-HoneyProxy (Plazmaz/MongoDB-HoneyProxy).
+//
+// MongoDB-HoneyProxy is a Node.js transparent proxy that forwards OP_QUERY packets
+// to a real backend but has NO handler for OP_MSG (opcode 2013). All MongoDB drivers
+// since version 3.6 (2017) use OP_MSG exclusively for auth and queries. A port open
+// to MongoDB connections that returns no response to OP_MSG is MongoDB-HoneyProxy —
+// real MongoDB always replies to OP_MSG within milliseconds.
+//
+// Signals:
+//
+//	MongoDB wire — OP_MSG (opcode 2013) isMaster → no response from open port — 75%
+func MongodbHoneyproxy(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Minimal OP_MSG carrying {isMaster:1,$db:"admin"}.
+	// Wire format: 16-byte header + 4-byte flagBits + 1-byte sectionKind + 34-byte BSON = 55 bytes.
+	// BSON: {isMaster:int32(1), $db:string("admin")} — 34 bytes including size field.
+	opMsg := []byte{
+		0x37, 0x00, 0x00, 0x00, // msgLen = 55 (LE)
+		0x01, 0x00, 0x00, 0x00, // requestID = 1
+		0x00, 0x00, 0x00, 0x00, // responseTo = 0
+		0xDD, 0x07, 0x00, 0x00, // opCode = 2013 (OP_MSG, LE)
+		0x00, 0x00, 0x00, 0x00, // flagBits = 0
+		0x00,                   // section kind = 0 (body section)
+		// BSON: { isMaster: 1, $db: "admin" } — 34 bytes
+		0x22, 0x00, 0x00, 0x00, // document size = 34
+		0x10,                                                       // type: int32
+		0x69, 0x73, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x00,     // "isMaster\0"
+		0x01, 0x00, 0x00, 0x00, // value = 1
+		0x02,                                               // type: string
+		0x24, 0x64, 0x62, 0x00,                             // "$db\0"
+		0x06, 0x00, 0x00, 0x00,                             // string length = 6 (incl null)
+		0x61, 0x64, 0x6d, 0x69, 0x6e, 0x00,                 // "admin\0"
+		0x00, // end of document
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	if err != nil {
+		return r
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.Write(opMsg)
+
+	buf := make([]byte, 512)
+	n, _ := conn.Read(buf)
+
+	if n == 0 {
+		// Open port, no response to OP_MSG — index.js:106-108 has no opCode 2013 handler.
+		// Real MongoDB 3.6+ always responds to OP_MSG isMaster within milliseconds.
+		r.HoneypotType = TypeMongodbHoneyproxy
+		r.Confidence = 75
+		r.Evidence = "MongoDB-HoneyProxy: TCP connect succeeded, OP_MSG (opcode 2013) isMaster sent, zero bytes returned — index.js:106-108 only handles opCode 2004 (OP_QUERY); real MongoDB 3.6+ always responds to OP_MSG"
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Got a valid MongoDB OP_MSG or OP_REPLY response — real MongoDB.
+	if n >= 16 {
+		respOpCode := binary.LittleEndian.Uint32(buf[12:16])
+		if respOpCode == 2013 || respOpCode == 1 {
+			r.HoneypotType = TypeReal
+			r.Evidence = fmt.Sprintf("MongoDB: OP_MSG response opCode=%d — real MongoDB 3.6+", respOpCode)
+			return r
+		}
+	}
+	return r
+}
+
+// ElasticsearchHoneypot identifies elastichoney (jordan-wright/elastichoney) and
+// elasticpot (bontchev/elasticpot). Both hardcode the same Elasticsearch node UUID
+// (x1JG6g9PRHy6ClCOO2-C4g) and MAC address (08:01:c7:3F:15:DD); build hash
+// distinguishes them. elasticpot also hardcodes instance_name "Green Goblin".
+//
+// Signals (both):
+//
+//	HTTP — GET /_nodes → "id": "x1JG6g9PRHy6ClCOO2-C4g" + "mac_address": "08:01:c7:3F:15:DD" — 85%
+//
+// Signals (elastichoney):
+//
+//	HTTP — GET /_nodes → "build_hash": "89d3241d670db65f994242c8e838b169779e2d4" — 99%
+//	HTTP — GET /_nodes → "pid": 2039 (static) — 99%
+//
+// Signals (elasticpot):
+//
+//	HTTP — GET /_nodes → "build_hash": "b88f43fc40b0bcd7f173a1f9ee2e97816de80b21" — 99%
+//	HTTP — GET /_cluster/settings → "Green Goblin" instance name — 99%
+func ElasticsearchHoneypot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	nodesResp := rawHTTP(addr, "GET /_nodes HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if nodesResp == "" {
+		return r
+	}
+
+	// Both honeypots share this hardcoded node ID (elastichoney main.go:71, elasticpot core/protocol.py).
+	if !strings.Contains(nodesResp, "x1JG6g9PRHy6ClCOO2-C4g") {
+		return r
+	}
+
+	// Distinguish by build hash — each project hardcodes a different fabricated hash.
+	if strings.Contains(nodesResp, "89d3241d670db65f994242c8e838b169779e2d4") {
+		r.HoneypotType = TypeElastichoney
+		r.Confidence = 99
+		r.Evidence = `elastichoney: GET /_nodes → node id "x1JG6g9PRHy6ClCOO2-C4g" + build_hash "89d3241d..." (main.go:71,75 hardcoded — real Elasticsearch generates a random UUID at cluster formation and reports the actual compiled binary hash)`
+		r.IsHoneypot = true
+		return r
+	}
+	if strings.Contains(nodesResp, "b88f43fc40b0bcd7f173a1f9ee2e97816de80b21") {
+		r.HoneypotType = TypeElasticpot
+		r.Confidence = 99
+		r.Evidence = `elasticpot: GET /_nodes → node id "x1JG6g9PRHy6ClCOO2-C4g" + build_hash "b88f43fc..." (core/protocol.py hardcoded — distinct build hash identifies elasticpot vs elastichoney)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Check elasticpot-specific "Green Goblin" instance name.
+	clusterResp := rawHTTP(addr, "GET /_cluster/settings HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if strings.Contains(clusterResp, "Green Goblin") {
+		r.HoneypotType = TypeElasticpot
+		r.Confidence = 99
+		r.Evidence = `elasticpot: GET /_cluster/settings → instance_name "Green Goblin" (core/protocol.py hardcoded — unique to elasticpot)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Node ID matched but build hash absent from response — generic Elasticsearch honeypot signal.
+	r.HoneypotType = TypeElastichoney
+	r.Confidence = 85
+	r.Evidence = `Elasticsearch honeypot: GET /_nodes → shared hardcoded node id "x1JG6g9PRHy6ClCOO2-C4g" (elastichoney main.go:71 — real Elasticsearch generates random UUID; could not distinguish from elasticpot without build hash)`
+	r.IsHoneypot = true
+	return r
+}
+
+// parseMySQLGreeting reads a HandshakeV10 greeting packet from a MySQL wire connection.
+// Returns (serverVersion, connectionID, authPluginData1, ok).
+// authPluginData1 is the first 8 bytes of the auth challenge.
+func parseMySQLGreeting(raw []byte) (version string, connID uint32, auth1 []byte, ok bool) {
+	// Packet layout: [len(3)][seq(1)][proto(1)][version\0][connID(4)][auth1(8)][filler(1)]...
+	if len(raw) < 10 || raw[4] != 0x0a {
+		return "", 0, nil, false
+	}
+	versionEnd := -1
+	for i := 5; i < len(raw); i++ {
+		if raw[i] == 0 {
+			versionEnd = i
+			break
+		}
+	}
+	if versionEnd < 5 {
+		return "", 0, nil, false
+	}
+	version = string(raw[5:versionEnd])
+	cidStart := versionEnd + 1
+	if cidStart+4+8 > len(raw) {
+		return "", 0, nil, false
+	}
+	connID = binary.LittleEndian.Uint32(raw[cidStart : cidStart+4])
+	auth1 = raw[cidStart+4 : cidStart+12]
+	return version, connID, auth1, true
+}
+
+// MysqlPot identifies schmalle/MysqlPot, a C# MySQL honeypot.
+//
+// MysqlPot hardcodes SCRAMBLE = "BBBBBBBBBBBB" (12 bytes of 0x42) in MysqlDefs.cs.
+// The first 8 bytes appear in auth-plugin-data-part-1 of the HandshakeV10 packet —
+// all 0x42. Real MySQL generates a random 20-byte challenge on every connection.
+//
+// Signals:
+//
+//	MySQL wire — HandshakeV10 auth-plugin-data-part-1 = 8×0x42 — 99%
+//	MySQL wire — server_version = "5.5.20-log" (MysqlDefs.cs hardcoded) — 80%
+func MysqlPot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	if err != nil {
+		return r
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(probeTimeout))
+
+	buf := make([]byte, 256)
+	n, err := conn.Read(buf)
+	if err != nil || n < 10 {
+		return r
+	}
+
+	version, _, auth1, ok := parseMySQLGreeting(buf[:n])
+	if !ok {
+		return r
+	}
+
+	// MysqlDefs.cs: SCRAMBLE = "BBBBBBBBBBBB" — all auth challenge bytes are 0x42.
+	allB := true
+	for _, b := range auth1 {
+		if b != 0x42 {
+			allB = false
+			break
+		}
+	}
+	if allB {
+		r.HoneypotType = TypeMysqlPot
+		r.Confidence = 99
+		r.Evidence = fmt.Sprintf("MysqlPot: HandshakeV10 auth-plugin-data-part-1 = 8×0x42 (SCRAMBLE='BBBBBBBBBBBB' hardcoded in MysqlDefs.cs — real MySQL generates a random 20-byte challenge per connection) server_version=%s", version)
+		r.IsHoneypot = true
+		return r
+	}
+	if strings.Contains(version, "5.5.20-log") {
+		r.HoneypotType = TypeMysqlPot
+		r.Confidence = 80
+		r.Evidence = "MysqlPot: server_version=" + version + " (MysqlDefs.cs hardcoded EOL version with unusual -log suffix)"
+		r.IsHoneypot = true
+	}
+	return r
+}
+
+// MysqlHoneypotd identifies sjinks/mysql-honeypotd, a C MySQL honeypot daemon.
+//
+// mysql-honeypotd uses srand(time(NULL)) seeded once at startup (globals.c:17) and
+// a connection counter that starts at 0 (thread_id=0 for the first connection, 1 for
+// the second). Real MySQL server thread IDs are non-sequential, start above 1, and
+// vary across restarts. Two consecutive connections showing thread_id 0→1 with the
+// hardcoded server_version "8.0.19" are a high-confidence fingerprint.
+//
+// Signals:
+//
+//	MySQL wire — thread_id = 0 on first connection + server_version "8.0.19" — 80%
+//	MySQL wire — two consecutive connections: thread_id = 0, then 1 — 95%
+func MysqlHoneypotd(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	readGreeting := func() (version string, connID uint32, ok bool) {
+		conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+		if err != nil {
+			return "", 0, false
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(probeTimeout))
+		buf := make([]byte, 256)
+		n, err := conn.Read(buf)
+		if err != nil || n < 10 {
+			return "", 0, false
+		}
+		v, cid, _, ok2 := parseMySQLGreeting(buf[:n])
+		return v, cid, ok2
+	}
+
+	ver1, cid1, ok1 := readGreeting()
+	if !ok1 {
+		return r
+	}
+
+	if cid1 == 0 && strings.Contains(ver1, "8.0.19") {
+		ver2, cid2, ok2 := readGreeting()
+		if ok2 && cid2 == 1 && ver2 == ver1 {
+			r.HoneypotType = TypeMysqlHoneypotd
+			r.Confidence = 95
+			r.Evidence = fmt.Sprintf("mysql-honeypotd: thread_id=0 then thread_id=1 across two connections (globals.c:17 srand+sequential counter) + server_version=%s (hardcoded EOL; real MySQL thread_ids are non-sequential and non-zero)", ver1)
+			r.IsHoneypot = true
+			return r
+		}
+		r.HoneypotType = TypeMysqlHoneypotd
+		r.Confidence = 80
+		r.Evidence = fmt.Sprintf("mysql-honeypotd: thread_id=0 on first connection + server_version=%s (globals.c:17 — sequential counter from 0; real MySQL starts above 1 with non-sequential progression)", ver1)
+		r.IsHoneypot = true
+		return r
+	}
+
+	// server_version match with low thread_id is a secondary indicator.
+	if strings.Contains(ver1, "8.0.19") && cid1 < 5 {
+		r.HoneypotType = TypeMysqlHoneypotd
+		r.Confidence = 70
+		r.Evidence = fmt.Sprintf("mysql-honeypotd: server_version=%s + low thread_id=%d (globals.c default version + sequential-from-0 counter)", ver1, cid1)
+		r.IsHoneypot = true
+	}
 	return r
 }
 

@@ -33,6 +33,11 @@ Port Verification Blue Team Asset
 | FCaptcha | Bot-detection CAPTCHA server |
 | GHH | Fake PHP shell, traps dork scanners |
 | HellPot | Endless page that traps web crawlers |
+| MongoDB-HoneyProxy | Fake MongoDB, misses modern wire commands |
+| elastichoney | Fake Elasticsearch with hardcoded node ID |
+| elasticpot | Fake Elasticsearch, "Green Goblin" marker |
+| MysqlPot | Fake MySQL, all challenge bytes identical |
+| mysql-honeypotd | Fake MySQL, connection IDs start at zero |
 | Portspoof | Makes every port look open |
 
 Also identifies 339 AI/ML platforms including:

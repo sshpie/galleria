@@ -138,7 +138,33 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
+	// MongoDB (port 27017): MongoDB-HoneyProxy has no OP_MSG handler; real MongoDB responds.
+	if port == 27017 {
+		mhp := fingerprint.MongodbHoneyproxy(ip, port)
+		if mhp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(mhp.HoneypotType)
+			v.Confidence = mhp.Confidence
+			v.Evidence = mhp.Evidence
+			return v
+		}
+	}
+
+	// Elasticsearch (port 9200): elastichoney and elasticpot share a hardcoded node UUID.
+	if port == 9200 || port == 19200 {
+		esfp := fingerprint.ElasticsearchHoneypot(ip, port)
+		if esfp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(esfp.HoneypotType)
+			v.Confidence = esfp.Confidence
+			v.Evidence = esfp.Evidence
+			return v
+		}
+	}
+
 	// MySQL: OpenCanary hardcodes capability bytes 0xff 0xf7 0x08 0x02 in greeting.
+	// MysqlPot: auth challenge bytes all 0x42 (BBBBBBBBBBBB in MysqlDefs.cs).
+	// mysql-honeypotd: thread_id starts at 0 and increments sequentially.
 	if port == 3306 {
 		fp := fingerprint.OpenCanary(ip, port)
 		if fp.IsHoneypot {
@@ -146,6 +172,22 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 			v.HoneypotType = string(fp.HoneypotType)
 			v.Confidence = fp.Confidence
 			v.Evidence = fp.Evidence
+			return v
+		}
+		mpfp := fingerprint.MysqlPot(ip, port)
+		if mpfp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(mpfp.HoneypotType)
+			v.Confidence = mpfp.Confidence
+			v.Evidence = mpfp.Evidence
+			return v
+		}
+		mhdfp := fingerprint.MysqlHoneypotd(ip, port)
+		if mhdfp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(mhdfp.HoneypotType)
+			v.Confidence = mhdfp.Confidence
+			v.Evidence = mhdfp.Evidence
 			return v
 		}
 	}
