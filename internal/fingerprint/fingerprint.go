@@ -38,6 +38,7 @@ const (
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
+	TypeMsurguyHoneypot      HoneypotType = "MSURGUY_HONEYPOT"          // Laravel hidden-field + time-based form spam protection bundle
 	TypeGhh                  HoneypotType = "GHH"                      // Google Hack Honeypot — fake PHP shell trapping Google dork scanners
 	TypeHellpot              HoneypotType = "HELLPOT"                   // Go HTTP tarpit serving infinite Markov-chain HTML to crawlers
 	TypeHoneyd        HoneypotType = "HONEYD"         // virtual honeypot daemon
@@ -272,7 +273,17 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ae: HellPot tarpit — robots.txt CRLF + /wp-login pair + infinite body preamble.
+	// Test 6ae: msurguy/Honeypot Laravel bundle — _wrap hidden div + Laravel Crypt envelope.
+	mhfp := MsurguyHoneypot(ip, port)
+	if mhfp.IsHoneypot {
+		r.HoneypotType = mhfp.HoneypotType
+		r.Confidence = mhfp.Confidence
+		r.Evidence = mhfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6af: HellPot tarpit — robots.txt CRLF + /wp-login pair + infinite body preamble.
 	hpfp := HellPot(ip, port)
 	if hpfp.IsHoneypot {
 		r.HoneypotType = hpfp.HoneypotType
@@ -2178,6 +2189,58 @@ func rawUDP(addr, payload string) string {
 	buf := make([]byte, 2048)
 	n, _ := conn.Read(buf)
 	return string(buf[:n])
+}
+
+// MsurguyHoneypot identifies the msurguy/Honeypot Laravel form protection bundle.
+//
+// msurguy/Honeypot is a Laravel package that hides two fields inside a CSS-only
+// display:none wrapper: a blank text input (the trap field) and a time-based
+// ciphertext input (Laravel Crypt AES-256-CBC envelope). The wrapper class uses
+// a hardcoded "_wrap" suffix tied to the field name. The ciphertext encodes only
+// time() with no session binding, so one harvested value replays forever.
+//
+// Signals:
+//
+//	HTTP  — page body contains `_wrap" style="display:none"` (Honeypot.php:36) — 80%
+//	HTTP  — second input value starts with Base64 `{"iv":` Laravel Crypt envelope — 95%
+//
+// Note: this bundle is deployed on real Laravel sites, not standalone honeypot servers.
+// Presence identifies the protection mechanism and its bypass path (omit both fields,
+// or submit my_name= empty with the harvested ciphertext — valid forever with no expiry).
+func MsurguyHoneypot(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Probe common paths where forms appear.
+	paths := []string{"/", "/contact", "/register", "/login", "/signup"}
+	for _, path := range paths {
+		resp := rawHTTP(addr, "GET "+path+" HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+		if resp == "" {
+			continue
+		}
+		// M1: _wrap hidden div pattern (Honeypot.php:36 — hardcoded _wrap suffix + display:none).
+		if !strings.Contains(resp, `_wrap" style="display:none"`) {
+			continue
+		}
+		// M2: Laravel Crypt envelope in the time input value.
+		// Crypt::encrypt(time()) produces a Base64 JSON {"iv":...,"value":...,"mac":...}.
+		// Base64 of `{"iv":` is `eyJpdiI6` — present on every installation.
+		if strings.Contains(resp, `eyJpdiI6`) {
+			r.HoneypotType = TypeMsurguyHoneypot
+			r.Confidence = 95
+			r.Evidence = fmt.Sprintf(`msurguy/Honeypot M2: %s returns _wrap hidden div + Laravel Crypt envelope (eyJpdiI6 = base64 {"iv":...) in my_time input (Honeypot.php:36+83 — no expiry, no session binding; bypass: omit both fields or replay harvested ciphertext forever)`, path)
+			r.IsHoneypot = true
+			return r
+		}
+		// M1 alone: _wrap pattern without confirmed Laravel envelope.
+		r.HoneypotType = TypeMsurguyHoneypot
+		r.Confidence = 80
+		r.Evidence = fmt.Sprintf(`msurguy/Honeypot M1: %s contains _wrap" style="display:none" hidden field wrapper (Honeypot.php:36 — hardcoded _wrap suffix; bypass: omit the hidden fields from POST)`, path)
+		r.IsHoneypot = true
+		return r
+	}
+
+	return r
 }
 
 // HellPot runs behavioral fingerprinting for HellPot (yunginnanet/HellPot).
