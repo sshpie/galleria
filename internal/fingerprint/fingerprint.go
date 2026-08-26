@@ -38,6 +38,7 @@ const (
 	TypeEoHoneypotBundle     HoneypotType = "EO_HONEYPOT_BUNDLE"      // Symfony form honeypot protection bundle
 	TypeCloudActiveDefense   HoneypotType = "CLOUD_ACTIVE_DEFENSE"    // SAP Kubernetes deception platform
 	TypeFCaptcha             HoneypotType = "FCAPTCHA"                 // Behavioral CAPTCHA server (WebDecoy/FCaptcha)
+	TypePasithea             HoneypotType = "PASITHEA"                   // Java/NanoHTTPD honeypot returning 200 OK with "<h1>404 Not Found</h1>" body
 	TypeMsurguyHoneypot      HoneypotType = "MSURGUY_HONEYPOT"          // Laravel hidden-field + time-based form spam protection bundle
 	TypeGhh                  HoneypotType = "GHH"                      // Google Hack Honeypot — fake PHP shell trapping Google dork scanners
 	TypeHellpot              HoneypotType = "HELLPOT"                   // Go HTTP tarpit serving infinite Markov-chain HTML to crawlers
@@ -273,7 +274,17 @@ func HTTP(ip string, port int) *Result {
 		return r
 	}
 
-	// Test 6ae: msurguy/Honeypot Laravel bundle — _wrap hidden div + Laravel Crypt envelope.
+	// Test 6ae: Pasithea — HTTP 200 + "<h1>404 Not Found</h1>" body + NanoHTTPD Server header.
+	psfp := Pasithea(ip, port)
+	if psfp.IsHoneypot {
+		r.HoneypotType = psfp.HoneypotType
+		r.Confidence = psfp.Confidence
+		r.Evidence = psfp.Evidence
+		r.IsHoneypot = true
+		return r
+	}
+
+	// Test 6af: msurguy/Honeypot Laravel bundle — _wrap hidden div + Laravel Crypt envelope.
 	mhfp := MsurguyHoneypot(ip, port)
 	if mhfp.IsHoneypot {
 		r.HoneypotType = mhfp.HoneypotType
@@ -2189,6 +2200,60 @@ func rawUDP(addr, payload string) string {
 	buf := make([]byte, 2048)
 	n, _ := conn.Read(buf)
 	return string(buf[:n])
+}
+
+// Pasithea identifies PasitheaHoneypot (Marist-Innovation-Lab/PasitheaHoneypot).
+//
+// Pasithea is a Java/NanoHTTPD 2.2.0 honeypot that logs all HTTP traffic and returns
+// HTTP 200 OK with body "<h1>404 Not Found</h1>" to every request. The single-argument
+// NanoHTTPD.newFixedLengthResponse(String) overload defaults to Status.OK, so the status
+// code is never explicitly set (APIrest.java:141-143). This 200+404-body pair is a
+// near-zero false-positive conjunctive fingerprint — no real REST API returns this.
+//
+// Signals:
+//
+//	HTTP  — HTTP 200 + body exactly "<h1>404 Not Found</h1>" on any path — 95%
+//	HTTP  — Server: NanoHTTPD in response headers — boosts to 99%
+//	HTTP  — identical response on GET, POST, PUT, DELETE — confirms catch-all serve() — 99%
+func Pasithea(ip string, port int) *Result {
+	r := &Result{Port: port, HoneypotType: TypeUnknown}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
+	// P1: GET / — check for 200 OK + "<h1>404 Not Found</h1>" body.
+	resp := rawHTTP(addr, "GET / HTTP/1.1\r\nHost: "+ip+"\r\nConnection: close\r\n\r\n")
+	if resp == "" {
+		return r
+	}
+	is200 := strings.HasPrefix(resp, "HTTP/1.1 200") || strings.HasPrefix(resp, "HTTP/1.0 200")
+	has404Body := strings.Contains(resp, "<h1>404 Not Found</h1>")
+	if !is200 || !has404Body {
+		return r
+	}
+
+	// P2: Server: NanoHTTPD header confirms the framework (M2 — not overridden by APIrest.java).
+	hasNanoHTTPD := strings.Contains(resp, "NanoHTTPD")
+	if hasNanoHTTPD {
+		// P3: Confirm catch-all with a second method — POST to non-existent path returns same body.
+		postResp := rawHTTP(addr, "POST /does-not-exist HTTP/1.1\r\nHost: "+ip+"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+		if strings.Contains(postResp, "<h1>404 Not Found</h1>") && (strings.HasPrefix(postResp, "HTTP/1.1 200") || strings.HasPrefix(postResp, "HTTP/1.0 200")) {
+			r.HoneypotType = TypePasithea
+			r.Confidence = 99
+			r.Evidence = `Pasithea P3: GET + POST both return 200 OK + "<h1>404 Not Found</h1>" + Server:NanoHTTPD (APIrest.java:141-143 — newFixedLengthResponse(String) defaults to Status.OK; catch-all serve() returns same body on every path/method)`
+			r.IsHoneypot = true
+			return r
+		}
+		r.HoneypotType = TypePasithea
+		r.Confidence = 99
+		r.Evidence = `Pasithea P2: HTTP 200 OK + "<h1>404 Not Found</h1>" body + Server:NanoHTTPD (APIrest.java:141-143 + M2 — three-field conjunctive fingerprint, near-zero false positive rate)`
+		r.IsHoneypot = true
+		return r
+	}
+
+	r.HoneypotType = TypePasithea
+	r.Confidence = 95
+	r.Evidence = `Pasithea P1: HTTP 200 OK with body "<h1>404 Not Found</h1>" (APIrest.java:141-143 — newFixedLengthResponse(String) single-arg overload defaults to Status.OK; no real REST API returns this combination)`
+	r.IsHoneypot = true
+	return r
 }
 
 // MsurguyHoneypot identifies the msurguy/Honeypot Laravel form protection bundle.

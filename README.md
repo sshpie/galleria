@@ -22,6 +22,7 @@ Port Verification Blue Team Asset
 | express-honeypot | Fake PHP LFI/RFI targets |
 | EoHoneypotBundle | Hidden form fields catch bots |
 | msurguy/Honeypot | Hidden fields trap Laravel form bots |
+| Pasithea | Fake REST API, logs all traffic |
 | SAP Cloud Active Defense | Kubernetes-based deception platform |
 | FCaptcha | Bot-detection CAPTCHA server |
 | GHH | Fake PHP shell, traps dork scanners |

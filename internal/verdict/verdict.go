@@ -156,6 +156,18 @@ func Classify(ip string, port int, sig *floor.Signature, doFingerprint bool) *Ve
 		}
 	}
 
+	// Pasithea (port 8082): Java/NanoHTTPD honeypot — HTTP 200 + "<h1>404 Not Found</h1>" body.
+	if port == 8082 {
+		fp := fingerprint.Pasithea(ip, port)
+		if fp.IsHoneypot {
+			v.State = "HONEYPOT"
+			v.HoneypotType = string(fp.HoneypotType)
+			v.Confidence = fp.Confidence
+			v.Evidence = fp.Evidence
+			return v
+		}
+	}
+
 	// FCaptcha CAPTCHA server (default port 3000, but can run on any HTTP port).
 	if port == 3000 {
 		fp := fingerprint.FCaptcha(ip, port)
