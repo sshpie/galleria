@@ -4,7 +4,8 @@
 [![Go](https://img.shields.io/badge/go-%3E%3D1.21-blue?logo=go)](https://go.dev)
 [![MCP](https://img.shields.io/badge/Claude%20Code-MCP%20server-blueviolet?logo=anthropic)](https://modelcontextprotocol.io)
 
-Port Verification Blue Team Asset
+Separate honeypots and noise from real services before you act on scan results. Identifies 30 honeypot frameworks by behavioral signature, fingerprints 339 AI/ML platforms, and emits clean JSONL with confidence scores and evidence strings.
+
 ## Detects
 
 | Honeypot | Description |
