@@ -6,7 +6,37 @@
 
 Separate honeypots and noise from real services before you act on scan results. Identifies 30 honeypot frameworks by behavioral signature, fingerprints 339 AI/ML platforms, and emits clean JSONL with confidence scores and evidence strings.
 
-Fingerprints are derived from direct static source analysis of each honeypot's codebase — see [`docs/honeypot-research/`](docs/honeypot-research/) for the full research and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how findings map to detection probes.
+## Where the signatures come from
+
+Every detection in galleria traces back to a bug or hardcoded value found in the honeypot's source code. We audited all 30 honeypot codebases — 5 parallel analysis lanes per project, covering injection paths, protocol implementations, authentication logic, and evasion surface. The full findings are in [`docs/honeypot-research/`](docs/honeypot-research/).
+
+The bugs fall into two categories:
+
+**Hardcoded values** — constants the author embedded in source that no real service would ever produce. These identify a honeypot in a single packet, before authentication, with near-zero false-positive rate:
+
+- MysqlPot (`MysqlDefs.cs`): auth challenge scramble is always 12 bytes of `0x42` (`BBBBBBBBBBBB`). Real MySQL generates a cryptographically random 20-byte nonce. One packet, done.
+- Cowrie (`ssh/factory.py:44`): SSH banner hardcoded to `SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2` — a 2012 release. No production server has run that version in over a decade.
+- Cowrie (`ssh/transport.py:229`): KEXINIT packets padded with null bytes. Real OpenSSH uses random padding for all packet types. Detectable passively from a packet capture before any auth attempt.
+- pghoney (`serverutils.go:67`): MD5 auth salt is the same hardcoded value on every connection to every deployment.
+- sticky_elephant (`postgres_simulator.rb`): backend process ID always reported as `666` in ParameterStatus messages. Real PostgreSQL reports the actual OS PID.
+- Dionaea (`sip.py`): SIP digest nonce hardcoded to `foobar123` across all deployments.
+- Conpot (databus template): SNMP `sysLocation` hardcoded to `"Venus"`; Guardian AST station name hardcoded to `"STATOIL STATION"`.
+- OpenCanary (`mssql.py`): NTLM challenge blob contains the string `thinkst.com` verbatim.
+- elastichoney / elasticpot (`main.go`): node UUID, MAC address, and build hash are identical across every deployment worldwide.
+- Lophiid (`backend.go:626`): `SendStatus` is explicitly documented as unauthenticated in the source — `// SendStatus is not authenticated.` Any host can drain the command queue and register phantom nodes.
+
+**Behavioral bugs** — implementation errors that cause a honeypot to respond differently than the real protocol requires. These are detected by sending a specific sequence of messages and observing the deviation:
+
+- Dionaea Memcache: `SET foo bar` → `GET foo` → real Memcache returns `VALUE foo`; Dionaea returns `END`. Values aren't retained between calls because a fresh `FakeRedis` instance is created on every data event.
+- Dionaea MQTT: `CONNECT` with random garbage credentials → real brokers return `CONNACK 0x05` (refused); Dionaea returns `CONNACK 0x00` (accepted) unconditionally.
+- Dionaea SIP: `INVITE` sent without an `Authorization` header → real SIP servers challenge with `407 Proxy Authentication Required`; Dionaea accepts it.
+- nosqlpot Redis (`redisdeploy.py:75`): `AUTH` is missing from the command dispatch table entirely. Every password attempt falls through to the catch-all error branch and returns `unknown command 'auth'`. Real Redis returns `-NOAUTH Authentication required`.
+- MongoDB-HoneyProxy: no OP_MSG handler. The message is silently dropped. Real MongoDB responds.
+- OpenCanary MSSQL (`mssql.py:129`): `bytes.find(str)` raises a `TypeError` in Python 3 on the first valid TDS PRELOGIN packet. The handler crashes before logging anything.
+- sticky_elephant (`handler/handshake.rb`): `authenticate()` calls `send_authentication_ok` without checking the password. Every credential, including random garbage, is accepted.
+- Honeyd FTP: `SYST` command returns `Windows_NT` regardless of the underlying OS. On any Linux host, that's an immediate tell.
+
+The full bug reports — file paths, line numbers, exploit chains — are in [`docs/honeypot-research/`](docs/honeypot-research/). Architecture and competitive comparison vs. honeyscore, nmap NSE, and nuclei templates: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## How it works
 
