@@ -8,6 +8,8 @@ Separate honeypots and noise from real services before you act on scan results. 
 
 ## Where the signatures come from
 
+We audited the source code of every honeypot galleria detects. We found bugs and exploitable errors in all of them. Those bugs are the fingerprints — we identify honeypots by their own mistakes.
+
 Every detection in galleria traces back to a bug or hardcoded value found in the honeypot's source code. We audited all 30 honeypot codebases — 5 parallel analysis lanes per project, covering injection paths, protocol implementations, authentication logic, and evasion surface. The full findings are in [`docs/honeypot-research/`](docs/honeypot-research/).
 
 The bugs fall into two categories:
