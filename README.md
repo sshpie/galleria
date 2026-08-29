@@ -1,43 +1,66 @@
 # galleria
 
-
+[![Release](https://img.shields.io/github/v/release/sshpie/galleria)](https://github.com/sshpie/galleria/releases)
+[![Go](https://img.shields.io/badge/go-%3E%3D1.21-blue?logo=go)](https://go.dev)
+[![MCP](https://img.shields.io/badge/Claude%20Code-MCP%20server-blueviolet?logo=anthropic)](https://modelcontextprotocol.io)
 
 Separate honeypots and noise from real services before you act on scan results. Identifies 30 honeypot frameworks by behavioral signature, fingerprints 339 AI/ML platforms, and emits clean JSONL with confidence scores and evidence strings.
 
+Fingerprints are derived from direct static source analysis of each honeypot's codebase — see [`docs/honeypot-research/`](docs/honeypot-research/) for the full research and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how findings map to detection probes.
+
+## How it works
+
+galleria runs two stages on every host:
+
+**1. Noise floor characterization** — five concurrent probes determine whether the host is running Portspoof or a similar catch-all before any per-port work happens:
+- Junk-port probe (ports 7, 13, 19, 37, 79 — no real service uses these)
+- Canary-port probe (64996-64998 — portspoof listens everywhere, real hosts RST)
+- Decoy path probe (`/galleria-decoy-9f3a2c` — catch-all returns 200, real services 404)
+- Cross-port sampling + timing uniformity (stddev < 15ms across ports = one process handling all)
+- Malformed HTTP verb (`XYZZY-GALLERIA`) — portspoof returns 200, real HTTP returns 400/405
+
+If the floor is confirmed, all HTTP-tier ports are marked `FLOOR` without probing. Only binary protocols (Redis, MQTT, Modbus, SIP, MongoDB) bypass the floor — portspoof speaks HTTP and can't fake binary wire protocol.
+
+**2. Per-port classification** — each port runs against a priority-tiered probe set:
+- Binary protocols: native wire-protocol dialogs (PING/PONG, CONNACK, INVITE, OP_MSG)
+- AI/ML corpus: 339-platform embedded JSON, marker-matched response probes
+- Honeypot fingerprinters: static identifiers and behavioral invariants extracted from source analysis
+- `--fingerprint` mode: multi-step behavioral probes (SET→GET memory retention, garbage-credential auth, protocol depth tests)
+
 ## Detects
 
-| Honeypot | Description |
-|----------|-------------|
-| Cowrie | Fake SSH server, logs attackers |
-| Kippo | SSH trap, captures brute-force |
-| Honeyd | Emulates networks and services |
-| Dionaea | Catches malware via fake services |
-| Glastopf | Fake web app, traps scanners |
-| OpenCanary | Multi-protocol network trap |
-| Canarytokens | Tripwire tokens, detects access |
-| Amun | Fake Windows exploit targets |
-| Conpot | Fake industrial control systems |
-| Krawl | Fake login pages, captures creds |
-| express-honeypot | Fake PHP LFI/RFI targets |
-| EoHoneypotBundle | Hidden form fields catch bots |
-| msurguy/Honeypot | Hidden fields trap Laravel form bots |
-| Pasithea | Fake REST API, logs all traffic |
-| Nodepot | Fake WordPress, logs web attacks |
-| Lophiid | LLM-powered distributed web honeypot |
-| RedisHoneyPot | Fake Redis with hardcoded static fields |
-| pghoney | Fake Postgres, captures login attempts |
-| nosqlpot | Fake Redis and CouchDB, logs queries |
-| sticky_elephant | Fake Postgres, accepts any password |
-| SAP Cloud Active Defense | Kubernetes-based deception platform |
-| FCaptcha | Bot-detection CAPTCHA server |
-| GHH | Fake PHP shell, traps dork scanners |
-| HellPot | Endless page that traps web crawlers |
-| MongoDB-HoneyProxy | Fake MongoDB, drops OP_MSG |
-| elastichoney | Fake Elasticsearch, hardcoded node ID |
-| elasticpot | Fake Elasticsearch, Green Goblin config |
-| MysqlPot | Fake MySQL, identical challenge bytes |
-| mysql-honeypotd | Fake MySQL, sequential thread IDs |
-| Portspoof | Makes every port look open |
+| Honeypot | Key fingerprint | Research |
+|----------|----------------|----------|
+| Cowrie | `SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2` banner; KEXINIT null padding | [analysis](docs/honeypot-research/cowrie-security-analysis.md) |
+| Kippo | Same SSH lineage as Cowrie; management console all-interface no-auth | [analysis](docs/honeypot-research/kippo-security-analysis.md) |
+| Honeyd | FTP `SYST` returns `Windows_NT` on non-Windows hosts | [analysis](docs/honeypot-research/honeyd-security-analysis.md) |
+| Dionaea | Memcache SET→GET state loss; MQTT CONNACK unconditional; SIP nonce `foobar123` | [analysis](docs/honeypot-research/dionaea-security-analysis.md) |
+| Glastopf | 200 on any path with uniform body; caught by floor decoy-path probe | [analysis](docs/honeypot-research/glastopf-security-analysis.md) |
+| OpenCanary | MySQL capability bytes `0xff 0xf7 0x08 0x02`; MSSQL `thinkst.com` in NTLM blob | [analysis](docs/honeypot-research/opencanary-security-analysis.md) |
+| Canarytokens | Kubeconfig cluster name always `k8s-prod-cluster`; MCP JWE default key | [analysis](docs/honeypot-research/canarytokens-security-analysis.md) |
+| Amun | Lotus Domino IMAP banner; POP3 220 instead of +OK; VNC missing trailing `\n` | [analysis](docs/honeypot-research/amun-security-analysis.md) |
+| Conpot | SNMP `sysLocation="Venus"`; Guardian AST `"STATOIL STATION"`; Modbus FC17 stub | [analysis](docs/honeypot-research/conpot-security-analysis.md) |
+| Krawl | Login page structure markers | [analysis](docs/honeypot-research/krawl-security-analysis.md) |
+| express-honeypot | PHP error page fingerprint on LFI probe | [analysis](docs/honeypot-research/express-honeypot-security-analysis.md) |
+| EoHoneypotBundle | Hidden honeypot field naming conventions | [analysis](docs/honeypot-research/EoHoneypotBundle-security-analysis.md) |
+| msurguy/Honeypot | Hidden Laravel form field pattern | [analysis](docs/honeypot-research/honeypot-msurguy-security-analysis.md) |
+| Pasithea | HTTP 200 + `<h1>404 Not Found</h1>` body on port 8082 | [analysis](docs/honeypot-research/pasithea-security-analysis.md) |
+| Nodepot | WordPress response markers + Node.js server header | [analysis](docs/honeypot-research/nodepot-security-analysis.md) |
+| Lophiid | goja JS engine response structure; `SendStatus` unauthenticated (documented in source) | [analysis](docs/honeypot-research/lophiid-security-analysis.md) |
+| RedisHoneyPot | Static `run_id`; absent AUTH command; RESP type mismatch | [analysis](docs/honeypot-research/RedisHoneyPot-security-analysis.md) |
+| pghoney | MD5 auth salt identical on every connection | [analysis](docs/honeypot-research/pghoney-security-analysis.md) |
+| nosqlpot | AUTH returns `unknown command 'auth'`; INFO always reports 1 command | [analysis](docs/honeypot-research/nosqlpot-security-analysis.md) |
+| sticky_elephant | `pid=666` in ParameterStatus; every password accepted unconditionally | [analysis](docs/honeypot-research/sticky_elephant-security-analysis.md) |
+| SAP Cloud Active Defense | Keycloak fingerprint + clone-app HTTP markers | [analysis](docs/honeypot-research/cloud-active-defense-security-analysis.md) |
+| FCaptcha | CAPTCHA challenge response structure on port 3000 | [analysis](docs/honeypot-research/FCaptcha-security-analysis.md) |
+| GHH | Static PHP shell UI markers on dork paths | [analysis](docs/honeypot-research/ghh-security-analysis.md) |
+| HellPot | Absent/absurd Content-Length; unbounded transfer size | [analysis](docs/honeypot-research/hellpot-security-analysis.md) |
+| MongoDB-HoneyProxy | No OP_MSG handler; drops message silently | [analysis](docs/honeypot-research/MongoDB-HoneyProxy-security-analysis.md) |
+| elastichoney | Hardcoded node UUID + MAC + build hash across all deployments | [analysis](docs/honeypot-research/elastichoney-security-analysis.md) |
+| elasticpot | Same hardcoded node UUID as elastichoney (Green Goblin config) | [analysis](docs/honeypot-research/elasticpot-security-analysis.md) |
+| MysqlPot | Auth scramble always `BBBBBBBBBBBB` (0x42 * 12) — single-packet pre-auth ID | [analysis](docs/honeypot-research/MysqlPot-security-analysis.md) |
+| mysql-honeypotd | `thread_id` starts at 0, increments sequentially | [analysis](docs/honeypot-research/mysql-honeypotd-security-analysis.md) |
+| Portspoof | Makes every port look open | floor characterization stage |
 
 Also identifies 339 AI/ML platforms including:
 
@@ -89,8 +112,10 @@ Subcommands:
 JSONL to stdout (or `--out`). Progress to stderr. Last stdout line is always a `summary` record.
 
 ```json
-{"ts":"...","ip":"47.123.220.240","port":22,"state":"HONEYPOT","honeypot_type":"kippo","confidence":95,"evidence":"SSH K_C4: ASCII Protocol mismatch response to malformed packet"}
-{"type":"summary","ts":"...","ip":"47.123.220.240","floor_active":true,"real":0,"unknown":0,"honeypot":3,"floor":412,"honeypot_ids":[{"port":22,"honeypot_type":"kippo","confidence":95}]}
+{"ts":"...","ip":"47.123.220.240","port":22,"state":"HONEYPOT","honeypot_type":"cowrie","confidence":95,"evidence":"SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2 (2012 release)"}
+{"ts":"...","ip":"47.123.220.240","port":6379,"state":"REAL","platform":"redis","auth_off":true,"evidence":"Redis PING->+PONG"}
+{"ts":"...","ip":"47.123.220.240","port":80,"state":"FLOOR","evidence":"portspoof floor via=canary code=200 size=1842"}
+{"type":"summary","ts":"...","ip":"47.123.220.240","floor_active":true,"real":1,"unknown":0,"honeypot":1,"floor":412,"honeypot_ids":[{"port":22,"honeypot_type":"cowrie","confidence":95}]}
 ```
 
 States: `REAL` / `UNKNOWN` / `FLOOR` / `HONEYPOT`
@@ -102,3 +127,9 @@ claude mcp add galleria -- galleria mcp
 ```
 
 Any LLM with Claude Code can then say "scan 47.123.220.240 with galleria" and it runs natively. Tool `scan` accepts `ip`, `ports`, `fingerprint`, `concurrency`.
+
+## Research
+
+The detection signatures are sourced from static source analysis of each honeypot's codebase — not banner-matching or version guessing. Every fingerprint traces back to a specific file and line number in the honeypot's source. Full analysis in [`docs/honeypot-research/`](docs/honeypot-research/) — 29 files covering ~200 findings across the set.
+
+Architecture and competitive comparison: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
